@@ -1,0 +1,71 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  background: #f0f2f5;
+}
+
+.page {
+  padding: 16px;
+}
+
+.toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.map-box {
+  width: 100%;
+  height: 560px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* 车辆/轨迹 divIcon */
+.vehicle-marker {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+}
+
+.vehicle-marker.alarm {
+  background: #dc2626;
+}
+
+.playback-marker {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.stat-card .value {
+  font-size: 26px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.stat-card .label {
+  color: #6b7280;
+  font-size: 13px;
+}

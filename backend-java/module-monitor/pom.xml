@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.mydbd</groupId>
+        <artifactId>backend-java</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <artifactId>module-monitor</artifactId>
+    <name>module-monitor</name>
+    <description>监控域：实时态势、风险预警事件、驾驶员视频分析</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>platform-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,30 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: platform-app
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/mydbd?stringtype=unspecified}
+    username: ${SPRING_DATASOURCE_USERNAME:mydbd}
+    password: ${SPRING_DATASOURCE_PASSWORD:mydbd}
+    hikari:
+      maximum-pool-size: 10
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+mydbd:
+  jwt:
+    secret: ${JWT_HMAC_SECRET:change-me-dev-secret}
+  service-token: ${SERVICE_TOKEN:change-me-service-token}
