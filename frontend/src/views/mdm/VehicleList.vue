@@ -264,6 +264,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import {
   bindDriver,
@@ -518,6 +519,12 @@ function fmt(t?: string | null): string {
 }
 
 onMounted(async () => {
+  // 大屏钻取：从 route.query 恢复筛选条件（deptId/keyword）
+  const q = route.query
+  if (q.deptId !== undefined && q.deptId !== '' && !Number.isNaN(Number(q.deptId))) {
+    filters.deptId = Number(q.deptId)
+  }
+  if (typeof q.keyword === 'string' && q.keyword) filters.keyword = q.keyword
   deptTree.value = await getDeptTree()
   await load()
 })

@@ -207,6 +207,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -222,6 +223,8 @@ import {
   type AlarmType,
   type AlarmStats
 } from '@/api/alarm'
+
+const route = useRoute()
 
 // ===== 列表与筛选 =====
 const query = reactive({
@@ -486,6 +489,14 @@ useRealtime({
 })
 
 onMounted(async () => {
+  // 大屏钻取：从 route.query 恢复筛选条件（plateNo/typeId/handleStatus/beginTime/endTime）
+  const q = route.query
+  if (typeof q.plateNo === 'string' && q.plateNo) query.plateNo = q.plateNo
+  if (typeof q.typeId === 'string' && q.typeId && !Number.isNaN(Number(q.typeId))) query.typeId = Number(q.typeId)
+  if (typeof q.handleStatus === 'string' && q.handleStatus !== '' && !Number.isNaN(Number(q.handleStatus))) query.handleStatus = Number(q.handleStatus)
+  if (typeof q.beginTime === 'string' && typeof q.endTime === 'string' && q.beginTime && q.endTime) {
+    timeRange.value = [q.beginTime, q.endTime]
+  }
   try {
     typeOptions.value = await getAlarmTypes()
   } catch {

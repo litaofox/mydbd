@@ -187,6 +187,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
@@ -200,6 +201,8 @@ import {
 } from '@/api/monitor'
 import { ensureOrder, getOrderFunnel, listAllRules, type RiskRule, type OrderFunnel } from '@/api/risk'
 import OrderDetailDrawer from './OrderDetailDrawer.vue'
+
+const route = useRoute()
 
 const overview = ref<Partial<Overview>>({})
 const risks = ref<RiskEvent[]>([])
@@ -283,6 +286,14 @@ async function loadChart() {
 }
 
 onMounted(async () => {
+  // 大屏钻取：从 route.query 恢复筛选条件（handleStatus/riskLevel）
+  const q = route.query
+  if (q.handleStatus !== undefined && q.handleStatus !== '' && !Number.isNaN(Number(q.handleStatus))) {
+    filters.handleStatus = Number(q.handleStatus)
+  }
+  if (q.riskLevel !== undefined && q.riskLevel !== '' && !Number.isNaN(Number(q.riskLevel))) {
+    filters.riskLevel = Number(q.riskLevel)
+  }
   await Promise.all([loadOverview(), loadRisks(), loadChart()])
   videoAnalyses.value = await getVideoAnalyses()
   // 规则下拉需要 risk:rule:view 权限，无权限时静默降级

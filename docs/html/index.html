@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>文档门户 · 北斗导航数据业务平台</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a94; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;white-space:nowrap;}
+.topbar .sub{font-size:13px;color:#cfe0ff;margin-left:14px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.wrap{max-width:1180px;margin:56px auto 0;padding:0 24px;}
+.hero{background:linear-gradient(135deg,#174a94,#1f5fbf);color:#fff;border-radius:14px;
+  padding:34px 38px;margin:26px 0 8px;}
+.hero h1{margin:0;font-size:26px;font-weight:700;}
+.hero p{margin:10px 0 0;font-size:14.5px;color:#dbe7fa;max-width:760px;}
+.searchbar{display:flex;gap:12px;margin:22px 0 6px;flex-wrap:wrap;}
+.searchbar input{flex:1;min-width:260px;font-size:15px;padding:11px 16px;
+  border:1px solid var(--border);border-radius:10px;outline:none;
+  background:var(--card);color:var(--text);font-family:inherit;}
+.searchbar input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(31,95,191,.15);}
+.searchbar .count{align-self:center;font-size:13.5px;color:var(--muted);white-space:nowrap;}
+.navjump{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0;}
+.navjump a{font-size:13.5px;color:var(--primary-dark);background:var(--card);
+  border:1px solid var(--border);border-radius:999px;padding:4px 14px;text-decoration:none;}
+.navjump a:hover{background:var(--accent-bg);border-color:var(--primary);}
+section{margin:34px 0 0;}
+section>h2{font-size:20px;color:var(--primary-dark);margin:0 0 4px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+section>.desc{font-size:13.5px;color:var(--muted);margin:0 0 14px;padding-left:17px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;}
+.doc{display:block;background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:14px 18px;text-decoration:none;color:var(--text);transition:box-shadow .15s,border-color .15s;}
+.doc:hover{border-color:var(--primary);box-shadow:0 3px 12px rgba(16,42,90,.10);}
+.doc .t{font-size:15px;font-weight:700;color:#16345f;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.doc .no{font-size:12px;font-weight:600;color:var(--primary);background:var(--accent-bg);
+  border-radius:4px;padding:0 6px;font-family:Consolas,Monaco,monospace;}
+.doc .d{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7;}
+.badge{font-size:11.5px;font-weight:600;border-radius:999px;padding:1px 9px;white-space:nowrap;}
+.badge.live{color:var(--green);background:var(--green-bg);}
+.badge.draft{color:var(--amber);background:var(--amber-bg);}
+.badge.ref{color:#44506a;background:#eef1f6;}
+.badge.html{color:var(--primary-dark);background:var(--accent-bg);}
+.badge.md{color:#6d28d9;background:#f3eeff;}
+.empty{display:none;text-align:center;color:var(--muted);padding:46px 0;font-size:14.5px;}
+footer{margin:48px 0 30px;text-align:center;font-size:13px;color:var(--muted);}
+@media (max-width:640px){.hero{padding:24px 22px;} .wrap{padding:0 14px;}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="title">mydbd 文档门户</div>
+  <div class="sub">北斗导航数据业务平台 · 统一文档入口</div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <h1>项目文档中心</h1>
+    <p>这里汇总了平台的全部产品设计与技术设计文档。使用下方搜索框可按编号、名称或关键字快速定位；HTML 文档可直接在浏览器阅读，标注 MD 的文档为源码仓库中的 Markdown 设计稿。</p>
+  </div>
+
+  <div class="searchbar">
+    <input id="q" type="search" placeholder="搜索文档：如 F15、工单、审计、轨迹…" autocomplete="off">
+    <span class="count" id="count"></span>
+  </div>
+  <div class="navjump">
+    <a href="#manual">使用手册</a>
+    <a href="#overview">需求与总览</a>
+    <a href="#prd">产品设计 PRD</a>
+    <a href="#mod">模块设计 MOD</a>
+    <a href="#api">接口与数据设计</a>
+    <a href="#uc">用例 UC</a>
+    <a href="#blueprint">业务蓝图与迁移</a>
+  </div>
+
+  <section id="manual">
+    <h2>使用手册</h2>
+    <p class="desc">面向业务用户的入门与功能说明，先读这里。</p>
+    <div class="grid">
+      <a class="doc" href="USER-DBD-001-系统功能使用手册.html" data-k="USER-DBD-001 使用手册 快速上手 功能说明 操作流程 注意事项">
+        <div class="t"><span class="no">USER-DBD-001</span>系统功能使用手册 <span class="badge live">v1.0</span><span class="badge html">HTML</span></div>
+        <div class="d">18 项已上线功能的用户友好说明：功能概述、核心价值、操作流程、注意事项与常见问题。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="overview">
+    <h2>需求与总览</h2>
+    <p class="desc">功能清单、资源分配与体系说明。</p>
+    <div class="grid">
+      <a class="doc" href="../FUNC-DBD-001-功能清单.md" data-k="FUNC-DBD-001 功能清单 52 项 波次 排期 F01 F40">
+        <div class="t"><span class="no">FUNC-DBD-001</span>系统功能清单 <span class="badge live">第一波已上线</span><span class="badge md">MD</span></div>
+        <div class="d">全平台 52 项功能盘点与三波排期；第一波 18 项（F14~F23、F28~F35）已上线。</div>
+      </a>
+      <a class="doc" href="../design/RES-DBD-001-第一波并行资源分配表.md" data-k="RES-DBD-001 资源分配 并行 仲裁 模块 菜单 错误码">
+        <div class="t"><span class="no">RES-DBD-001</span>第一波并行资源分配表 <span class="badge ref">依据</span><span class="badge md">MD</span></div>
+        <div class="d">第一波并行开发的模块归属、菜单号段、错误码段、脚本编号的唯一仲裁依据。</div>
+      </a>
+      <a class="doc" href="../design/sys/SYS-DBD-001-系统总体架构.md" data-k="SYS-DBD-001 总体架构 架构 模块边界 迭代路线 808 1078">
+        <div class="t"><span class="no">SYS-DBD-001</span>系统总体架构 <span class="badge ref">现行</span><span class="badge md">MD</span></div>
+        <div class="d">平台架构、模块边界与迭代路线（含 JT/T 808 / 1078 规划）。</div>
+      </a>
+      <a class="doc" href="../00-文档总览与迁移清单.md" data-k="00 文档总览 迁移清单 mydatama 版本管理 编号规则">
+        <div class="t"><span class="no">—</span>文档总览与迁移清单 <span class="badge ref">体系说明</span><span class="badge md">MD</span></div>
+        <div class="d">文档目录结构、mydatama 迁移对照与文档版本管理规则。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="prd">
+    <h2>产品设计 PRD（业务说明）</h2>
+    <p class="desc">按功能域分组，每份对应一个模块技术设计（MOD）。均为浏览器可直接阅读的 HTML。</p>
+    <div class="grid">
+      <a class="doc" href="PRD-MON-001-实时消息推送产品设计.html" data-k="PRD-MON-001 F14 实时消息推送 WebSocket 秒级 推送">
+        <div class="t"><span class="no">PRD-MON-001</span>实时消息推送（F14） <span class="badge live">已上线</span></div>
+        <div class="d">位置每秒、报警即时的实时通道；断线自动降级轮询。</div>
+      </a>
+      <a class="doc" href="PRD-MON-002-监控总览大屏产品设计.html" data-k="PRD-MON-002 F15 监控大屏 驾驶舱 在线率 热力 里程 态势">
+        <div class="t"><span class="no">PRD-MON-002</span>监控总览大屏（F15） <span class="badge live">已上线</span></div>
+        <div class="d">1920/4K 自适应全屏驾驶舱：地图+热力+六大统计分区。</div>
+      </a>
+      <a class="doc" href="PRD-MON-003-车辆详情聚合面板产品设计.html" data-k="PRD-MON-003 F16 车辆详情 面板 抽屉 聚合 档案">
+        <div class="t"><span class="no">PRD-MON-003</span>车辆详情聚合面板（F16） <span class="badge live">已上线</span></div>
+        <div class="d">点选车辆即见档案、司机、当日轨迹与最新报警的聚合抽屉。</div>
+      </a>
+      <a class="doc" href="PRD-MON-004-终端报警中心产品设计.html" data-k="PRD-MON-004 F17 报警中心 终端报警 确认 解除 闭环">
+        <div class="t"><span class="no">PRD-MON-004</span>终端报警中心（F17） <span class="badge live">已上线</span></div>
+        <div class="d">报警实时展示、类型解析与"确认→解除"处置闭环。</div>
+      </a>
+      <a class="doc" href="PRD-RISK-001-风控规则引擎产品设计.html" data-k="PRD-RISK-001 F18 CEP 规则引擎 风险事件 电子围栏 分级">
+        <div class="t"><span class="no">PRD-RISK-001</span>风控规则引擎（F18） <span class="badge live">已上线</span></div>
+        <div class="d">8 条内置规则+电子围栏，实时产出分级风险事件。</div>
+      </a>
+      <a class="doc" href="PRD-RISK-004-报警分级与多渠道通知产品设计.html" data-k="PRD-RISK-004 F19 分级通知 多渠道 站内消息 弹窗 短信">
+        <div class="t"><span class="no">PRD-RISK-004</span>报警分级与多渠道通知（F19） <span class="badge live">已上线</span></div>
+        <div class="d">按等级定向通知：弹窗+站内消息，外部渠道预留。</div>
+      </a>
+      <a class="doc" href="PRD-RISK-002-处置工单流转产品设计.html" data-k="PRD-RISK-002 F20 工单 状态机 分派 SLA 闭环 逾期">
+        <div class="t"><span class="no">PRD-RISK-002</span>处置工单流转（F20） <span class="badge live">已上线</span></div>
+        <div class="d">待处理→处理中→已闭环状态机，分派与时限管理。</div>
+      </a>
+      <a class="doc" href="PRD-RISK-003-坐席干预记录产品设计.html" data-k="PRD-RISK-003 F21 干预记录 坐席 电话提醒 教育 漏斗">
+        <div class="t"><span class="no">PRD-RISK-003</span>坐席干预记录（F21） <span class="badge live">已上线</span></div>
+        <div class="d">干预动作留痕与"感知→预警→干预→闭环"漏斗统计。</div>
+      </a>
+      <a class="doc" href="PRD-ANA-001-驾驶行为评分模型产品设计.html" data-k="PRD-ANA-001 F22 驾驶评分 安全分 UBI 扣分 等级">
+        <div class="t"><span class="no">PRD-ANA-001</span>驾驶行为评分模型（F22） <span class="badge live">已上线</span></div>
+        <div class="d">每日 0~100 安全分与风险等级，扣分明细可追溯。</div>
+      </a>
+      <a class="doc" href="PRD-ANA-002-风险趋势与画像产品设计.html" data-k="PRD-ANA-002 F23 风险画像 趋势 黑点路段 热力 车 司机 企业">
+        <div class="t"><span class="no">PRD-ANA-002</span>风险趋势与画像（F23） <span class="badge live">已上线</span></div>
+        <div class="d">车/司机/企业三维度趋势分析与黑点路段热力。</div>
+      </a>
+      <a class="doc" href="PRD-MDM-001-主数据管理模块产品设计.html" data-k="PRD-MDM-001 F28 F29 F30 F31 F32 主数据 车辆档案 终端 驾驶员 绑定 组织架构">
+        <div class="t"><span class="no">PRD-MDM-001</span>主数据管理（F28~F32） <span class="badge live">已上线</span></div>
+        <div class="d">车辆/终端/驾驶员档案、绑定关系与组织架构五合一维护。</div>
+      </a>
+      <a class="doc" href="PRD-IAM-001-用户与权限IAM模块产品设计.html" data-k="PRD-IAM-001 F33 IAM 用户 角色 权限 RBAC 数据范围">
+        <div class="t"><span class="no">PRD-IAM-001</span>用户与权限 IAM（F33） <span class="badge live">已上线</span></div>
+        <div class="d">用户/角色/菜单按钮权限与数据范围（RBAC+范围）。</div>
+      </a>
+      <a class="doc" href="PRD-AUDIT-001-操作审计日志模块产品设计.html" data-k="PRD-AUDIT-001 F34 审计 日志 留痕 检索 脱敏">
+        <div class="t"><span class="no">PRD-AUDIT-001</span>操作审计日志（F34） <span class="badge live">已上线</span></div>
+        <div class="d">关键操作自动留痕、可检索、敏感字段脱敏。</div>
+      </a>
+      <a class="doc" href="PRD-SYS-001-系统配置与通知中心产品设计.html" data-k="PRD-SYS-001 F35 数据字典 系统参数 消息中心 配置">
+        <div class="t"><span class="no">PRD-SYS-001</span>系统配置与通知中心（F35） <span class="badge live">已上线</span></div>
+        <div class="d">字典、参数、站内消息中心：口径可配置不发版。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="mod">
+    <h2>模块技术设计 MOD</h2>
+    <p class="desc">数据库、接口、工程结构的技术设计稿（Markdown，与同名 PRD 配套）。可在仓库或 Markdown 阅读器中查看。</p>
+    <div class="grid">
+      <a class="doc" href="../design/mod/MOD-MON-001-实时消息推送模块设计.md" data-k="MOD-MON-001 F14 推送 WebSocket SessionRegistry">
+        <div class="t"><span class="no">MOD-MON-001</span>实时消息推送 <span class="badge md">MD</span></div>
+        <div class="d">/ws/realtime 单端点、每秒快照与增量推送实现设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-MON-002-监控总览大屏模块设计.md" data-k="MOD-MON-002 F15 大屏 Dashboard 聚合接口">
+        <div class="t"><span class="no">MOD-MON-002</span>监控总览大屏 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">大屏聚合接口、热力网格与前端布局设计（含实施记录）。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-MON-003-车辆详情聚合面板模块设计.md" data-k="MOD-MON-003 F16 详情面板 panel 抽屉">
+        <div class="t"><span class="no">MOD-MON-003</span>车辆详情聚合面板 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">panel 接口契约与共享抽屉组件设计（含实施记录）。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-MON-004-终端报警中心模块设计.md" data-k="MOD-MON-004 F17 报警 traj_warn_info 状态机 乐观锁">
+        <div class="t"><span class="no">MOD-MON-004</span>终端报警中心 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">报警确认/解除状态机与 stats/latest 契约设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-RISK-001-风控规则引擎CEP模块设计.md" data-k="MOD-RISK-001 F18 CEP 规则 围栏 risk_event">
+        <div class="t"><span class="no">MOD-RISK-001</span>风控规则引擎（CEP） <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">规则模型、围栏检测与风险事件产出设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-RISK-002-处置工单流转模块设计.md" data-k="MOD-RISK-002 F20 工单 work_order 状态机 SLA">
+        <div class="t"><span class="no">MOD-RISK-002</span>处置工单流转 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">工单状态机、分派与闭环结果设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-RISK-003-坐席干预记录模块设计.md" data-k="MOD-RISK-003 F21 干预 intervention 漏斗">
+        <div class="t"><span class="no">MOD-RISK-003</span>坐席干预记录 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">干预模型与漏斗统计接口设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-RISK-004-报警分级与多渠道通知模块设计.md" data-k="MOD-RISK-004 F19 通知 notify sys_message 渠道">
+        <div class="t"><span class="no">MOD-RISK-004</span>报警分级与多渠道通知 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">module-notify 派发链路、渠道接口与站内消息设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-ANA-001-驾驶行为评分模型模块设计.md" data-k="MOD-ANA-001 F22 评分 driver_score 模型">
+        <div class="t"><span class="no">MOD-ANA-001</span>驾驶行为评分模型 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">评分特征、计算流程与 driver_score 表设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-ANA-002-风险趋势与画像模块设计.md" data-k="MOD-ANA-002 F23 画像 趋势 聚合 热力">
+        <div class="t"><span class="no">MOD-ANA-002</span>风险趋势与画像 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">多维度聚合查询与画像接口设计（含实施记录）。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-MDM-001-主数据管理模块设计.md" data-k="MOD-MDM-001 F28 F29 F30 F31 F32 主数据 CRUD 绑定">
+        <div class="t"><span class="no">MOD-MDM-001</span>主数据管理 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">五类主数据的表、接口与前端工程设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-IAM-001-用户与权限IAM模块设计.md" data-k="MOD-IAM-001 F33 IAM 用户 角色 菜单 数据权限 雪花">
+        <div class="t"><span class="no">MOD-IAM-001</span>用户与权限 IAM <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">IAM 表结构、鉴权链路与权限模型设计（含实施记录）。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-AUDIT-001-操作审计日志模块设计.md" data-k="MOD-AUDIT-001 F34 审计 AuditFilter 脱敏">
+        <div class="t"><span class="no">MOD-AUDIT-001</span>操作审计日志 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">审计拦截、记录模型与检索接口设计。</div>
+      </a>
+      <a class="doc" href="../design/mod/MOD-SYS-001-系统配置与通知中心模块设计.md" data-k="MOD-SYS-001 F35 字典 参数 缓存 消息">
+        <div class="t"><span class="no">MOD-SYS-001</span>系统配置与通知中心 <span class="badge live">已上线</span><span class="badge md">MD</span></div>
+        <div class="d">字典/参数缓存机制与消息中心表设计（含实施记录）。</div>
+      </a>
+      <a class="doc" href="MOD-TRAJ-001-轨迹数据模拟与可视化模块设计.html" data-k="MOD-TRAJ-001 轨迹 模拟 可视化 样例导入 模拟器">
+        <div class="t"><span class="no">MOD-TRAJ-001</span>轨迹数据模拟与可视化 <span class="badge ref">迁移</span><span class="badge html">HTML</span></div>
+        <div class="d">轨迹域核心模块设计（自 mydatama 迁移，现行口径见文档总览 §3）。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="api">
+    <h2>接口与数据设计</h2>
+    <p class="desc">轨迹域接口规格与数据库设计（HTML 可直接阅读，MD 为源稿）。</p>
+    <div class="grid">
+      <a class="doc" href="API-TRAJ-001-轨迹数据接口规格.html" data-k="API-TRAJ-001 轨迹 接口 ingest 查询 规格">
+        <div class="t"><span class="no">API-TRAJ-001</span>轨迹数据接口规格 <span class="badge html">HTML</span></div>
+        <div class="d">轨迹接入与查询 API 契约（另有 MD 源稿 design/api/）。</div>
+      </a>
+      <a class="doc" href="API-TRAJ-002-模拟器控制接口规格.html" data-k="API-TRAJ-002 模拟器 接口 控制 start stop">
+        <div class="t"><span class="no">API-TRAJ-002</span>模拟器控制接口规格 <span class="badge html">HTML</span></div>
+        <div class="d">轨迹模拟器 start/stop/status 接口契约（另有 MD 源稿）。</div>
+      </a>
+      <a class="doc" href="DDL-TRAJ-001-TRAJ-Schema数据库设计.html" data-k="DDL-TRAJ-001 数据库 schema 表 ER 轨迹 gps">
+        <div class="t"><span class="no">DDL-TRAJ-001</span>TRAJ Schema 数据库设计 <span class="badge html">HTML</span></div>
+        <div class="d">traj schema 全部表结构、字段语义与 ER 图（另有 MD 源稿）。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="uc">
+    <h2>用例 UC</h2>
+    <p class="desc">轨迹域操作用例文档。</p>
+    <div class="grid">
+      <a class="doc" href="UC-TRAJ-001-模拟数据生成与启动.html" data-k="UC-TRAJ-001 用例 模拟数据 生成 启动">
+        <div class="t"><span class="no">UC-TRAJ-001</span>模拟数据生成与启动 <span class="badge html">HTML</span></div>
+        <div class="d">样例导入与模拟器启动的操作用例。</div>
+      </a>
+      <a class="doc" href="UC-TRAJ-002-轨迹回放.html" data-k="UC-TRAJ-002 用例 轨迹 回放 播放">
+        <div class="t"><span class="no">UC-TRAJ-002</span>轨迹回放 <span class="badge html">HTML</span></div>
+        <div class="d">历史轨迹查询与回放操作用例。</div>
+      </a>
+      <a class="doc" href="UC-TRAJ-003-轨迹查询.html" data-k="UC-TRAJ-003 用例 轨迹 查询">
+        <div class="t"><span class="no">UC-TRAJ-003</span>轨迹查询 <span class="badge html">HTML</span></div>
+        <div class="d">车辆与轨迹查询操作用例。</div>
+      </a>
+      <a class="doc" href="UC-TRAJ-004-轨迹总览大屏.html" data-k="UC-TRAJ-004 用例 总览 大屏 监控">
+        <div class="t"><span class="no">UC-TRAJ-004</span>轨迹总览大屏 <span class="badge html">HTML</span></div>
+        <div class="d">实时监控页操作用例。</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="blueprint">
+    <h2>业务蓝图与迁移资料</h2>
+    <p class="desc">平台业务蓝本（来自 mydatama 迁移，内容未删改）。</p>
+    <div class="grid">
+      <a class="doc" href="03-导航系统数据采集与应用平台设计.html" data-k="03 业务蓝图 导航 数据采集 应用平台 设计 行业">
+        <div class="t"><span class="no">03</span>导航系统数据采集与应用平台设计 <span class="badge ref">蓝图</span><span class="badge html">HTML</span></div>
+        <div class="d">业务蓝图：行业背景、系统定位与功能规划总图（另有 MD 源稿 research/）。</div>
+      </a>
+    </div>
+  </section>
+
+  <div class="empty" id="empty">没有匹配的文档，换个关键字试试（如编号 F15、MOD-MON-002）。</div>
+  <footer>mydbd 文档门户 · 与代码版本 v0.2.0 同步 · 2026-10-03</footer>
+</div>
+
+<script>
+(function(){
+  var q=document.getElementById('q'),count=document.getElementById('count'),
+      empty=document.getElementById('empty'),
+      docs=Array.prototype.slice.call(document.querySelectorAll('.doc')),
+      sections=Array.prototype.slice.call(document.querySelectorAll('section'));
+  function norm(s){return s.toLowerCase();}
+  function apply(){
+    var kw=norm(q.value.trim()),n=0;
+    docs.forEach(function(d){
+      var hay=norm(d.textContent+' '+d.getAttribute('data-k'));
+      var show=!kw||hay.indexOf(kw)>=0;
+      d.style.display=show?'':'none';
+      if(show)n++;
+    });
+    sections.forEach(function(s){
+      var vis=s.querySelectorAll('.doc:not([style*="display: none"])').length;
+      var any=Array.prototype.some.call(s.querySelectorAll('.doc'),function(d){return d.style.display!=='none';});
+      s.style.display=any?'':'none';
+    });
+    count.textContent=kw?('匹配 '+n+' / '+docs.length+' 份文档'):('共 '+docs.length+' 份文档');
+    empty.style.display=n?'none':'block';
+  }
+  q.addEventListener('input',apply);
+  apply();
+})();
+</script>
+</body>
+</html>

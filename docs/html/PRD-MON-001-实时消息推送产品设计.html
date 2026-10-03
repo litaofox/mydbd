@@ -77,7 +77,7 @@ strong{color:#16345f;}
   <main class="content">
 
 <h1>实时消息推送（F14）产品设计</h1>
-<p class="cover-meta">对应模块设计：docs/design/mod/MOD-MON-001-实时消息推送模块设计.md ｜ 版本 v1.0 ｜ 2026-10-02</p>
+<p class="cover-meta">功能编号 F14 · 实时监控域 · 第一波 · 关联文档 MOD-MON-001（模块技术设计） · 状态：已上线</p>
 
 <h2 id="1">1. 背景与目标</h2>
 <p>当前监控大屏（<code>/monitor</code>）通过前端 <code>setInterval(refresh, 5000)</code> 每 5 秒轮询 <code>/api/traj/latest</code> 与 <code>/api/monitor/overview</code>，在途车辆位置、风险事件、终端报警均依赖 5 秒一次的全量拉取。存在三个问题：</p>

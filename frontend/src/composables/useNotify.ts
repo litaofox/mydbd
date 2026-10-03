@@ -101,7 +101,7 @@ function handleMessage(router: ReturnType<typeof useRouter>, msg: NotifyPayload)
       title: msg.title,
       message: msg.content,
       type: levelTagType(msg.level) === 'danger' ? 'error' : 'warning',
-      duration: 0,
+      duration: 5000,
       position: 'bottom-right',
       onClick: () => openOrder(router, msg)
     })

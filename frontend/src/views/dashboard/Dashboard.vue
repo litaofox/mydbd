@@ -18,8 +18,8 @@
     <div class="body">
       <!-- 左列 -->
       <aside class="col left">
-        <section class="card">
-          <div class="card-title">车辆在线率</div>
+        <section class="card drill" title="点击查看实时监控" @click="drill('/monitor')">
+          <div class="card-title">车辆在线率<span class="drill-hint">实时监控 ›</span></div>
           <div class="online-row">
             <div ref="onlineRingRef" class="ring"></div>
             <div class="online-nums">
@@ -30,8 +30,8 @@
           </div>
         </section>
 
-        <section class="card">
-          <div class="card-title">今日里程（全网）</div>
+        <section class="card drill" title="点击查看轨迹回放" @click="drill('/playback')">
+          <div class="card-title">今日里程（全网）<span class="drill-hint">轨迹回放 ›</span></div>
           <div class="mileage">
             <span class="big">{{ summary ? fmtKm(summary.mileage.todayMileage) : '--' }}</span>
             <span class="unit">km</span>
@@ -40,13 +40,19 @@
         </section>
 
         <section class="card grow">
-          <div class="card-title">处置工单积压</div>
+          <div class="card-title">处置工单积压<span class="drill-hint" @click.stop="drill('/risk/orders')">全部工单 ›</span></div>
           <div class="wo-grid">
-            <div class="wo-cell"><b>{{ summary?.workOrder.pending ?? '--' }}</b><span>待处理</span></div>
-            <div class="wo-cell"><b>{{ summary?.workOrder.processing ?? '--' }}</b><span>处理中</span></div>
-            <div class="wo-cell danger"><b>{{ summary?.workOrder.overdue ?? '--' }}</b><span>逾期</span></div>
+            <div class="wo-cell drill" title="查看待处理工单" @click="drill('/risk/orders', { status: 'PENDING' })">
+              <b>{{ summary?.workOrder.pending ?? '--' }}</b><span>待处理</span>
+            </div>
+            <div class="wo-cell drill" title="查看处理中工单" @click="drill('/risk/orders', { status: 'PROCESSING' })">
+              <b>{{ summary?.workOrder.processing ?? '--' }}</b><span>处理中</span>
+            </div>
+            <div class="wo-cell danger drill" title="查看逾期工单" @click="drill('/risk/orders', { timeFlag: 'overdue' })">
+              <b>{{ summary?.workOrder.overdue ?? '--' }}</b><span>逾期</span>
+            </div>
           </div>
-          <div class="wo-rate">
+          <div class="wo-rate drill" title="查看已闭环工单" @click="drill('/risk/orders', { status: 'CLOSED' })">
             近 7 日闭环率
             <b>{{ summary ? fmtRate(summary.workOrder.closeRate) : '--' }}</b>
             <span class="sub">（{{ summary?.workOrder.closed7d ?? 0 }}/{{ summary?.workOrder.created7d ?? 0 }}）</span>
@@ -61,11 +67,11 @@
         </section>
         <div class="bottom-row">
           <section class="card half">
-            <div class="card-title">车队分布 TOP8（辆）</div>
+            <div class="card-title">车队分布 TOP8（辆）<span class="drill-hint" @click="drill('/mdm/vehicles')">车辆档案 ›</span></div>
             <div ref="fleetChartRef" class="chart"></div>
           </section>
           <section class="card half">
-            <div class="card-title">区域分布 TOP8（注册地）</div>
+            <div class="card-title">区域分布 TOP8（注册地）<span class="drill-hint" @click="drill('/risk', { handleStatus: 0 })">未处置风险 ›</span></div>
             <div ref="regionChartRef" class="chart"></div>
           </section>
         </div>
@@ -73,13 +79,13 @@
 
       <!-- 右列 -->
       <aside class="col right">
-        <section class="card">
-          <div class="card-title">今日报警态势</div>
+        <section class="card drill" title="点击查看报警中心" @click="drill('/alarms', todayAlarmQuery())">
+          <div class="card-title">今日报警态势<span class="drill-hint">报警中心 ›</span></div>
           <div class="alarm-row">
             <div ref="alarmRingRef" class="ring"></div>
             <div class="alarm-nums">
               <div class="big">{{ alarmStats?.total ?? '--' }}<span class="unit">今日总数</span></div>
-              <div class="sub danger-text">待处理 {{ pendingAlarmCount }}</div>
+              <div class="sub danger-text drill" title="查看待处理报警" @click.stop="drill('/alarms', { ...todayAlarmQuery(), handleStatus: 0 })">待处理 {{ pendingAlarmCount }}</div>
               <div class="grade-legend">
                 <span><i class="dot g3"></i>高 {{ gradeCount(3) }}</span>
                 <span><i class="dot g2"></i>中 {{ gradeCount(2) }}</span>
@@ -114,7 +120,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElLoading } from 'element-plus'
 import * as echarts from 'echarts'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -249,7 +255,26 @@ function handleAlarm(alarms: AlarmBrief[]) {
 }
 
 function goAlarmCenter(a: AlarmVO) {
-  router.push({ path: '/alarms', query: { plateNo: a.plateNo } })
+  drill('/alarms', { plateNo: a.plateNo })
+}
+
+// ===== 钻取跳转（携带查询条件 + Loading）=====
+function todayAlarmQuery(): { beginTime: string; endTime: string } {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return { beginTime: `${day}T00:00:00`, endTime: `${day}T23:59:59` }
+}
+
+function drill(path: string, query: Record<string, string | number> = {}) {
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在跳转…',
+    background: 'rgba(11, 18, 32, 0.6)'
+  })
+  router.push({ path, query }).finally(() => {
+    window.setTimeout(() => loading.close(), 300)
+  })
 }
 
 // ===== 30s 统计轮询 =====
@@ -420,12 +445,33 @@ function renderAlarmRing() {
   })
 }
 
+/**
+ * 动态刻度（需求 2）：按数据最大值计算"整齐"的坐标上界与间隔。
+ * - 数据全 0 → 固定 0~5，避免空图压缩
+ * - 整数计数 → minInterval=1，杜绝小数刻度
+ * - interval 取 1/2/5×10^n 系列，max = interval × 4，保证 4~5 个刻度且柱顶留白
+ */
+function niceAxis(values: number[]): { max: number; interval: number } {
+  const maxVal = Math.max(0, ...values)
+  if (maxVal === 0) return { max: 5, interval: 1 }
+  const rough = maxVal / 4
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)))
+  const norm = rough / mag
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag
+  return { max: step * Math.ceil(maxVal / step), interval: step }
+}
+
 function barOption(rows: { name: string; a: number; b: number; aName: string; bName: string }[]) {
+  const axis = niceAxis(rows.flatMap((r) => [r.a, r.b]))
   return {
     grid: { left: 8, right: 24, top: 22, bottom: 4, containLabel: true },
     legend: { top: 0, textStyle: { color: AXIS_TEXT, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
     xAxis: {
       type: 'value',
+      min: 0,
+      max: axis.max,
+      interval: axis.interval,
+      minInterval: 1,
       axisLabel: { color: AXIS_TEXT, fontSize: 10 },
       splitLine: { lineStyle: { color: 'rgba(148,163,184,.15)' } }
     },
@@ -449,13 +495,24 @@ function renderCharts() {
   const s = summary.value
   if (!s) return
   if (fleetChartRef.value) {
-    fleetChart = fleetChart ?? echarts.init(fleetChartRef.value)
+    if (!fleetChart) {
+      fleetChart = echarts.init(fleetChartRef.value)
+      // 点击车队柱子 → 车辆档案按 deptId 过滤（运行时取最新 summary，避免闭包陈旧）
+      fleetChart.on('click', (p: { dataIndex: number }) => {
+        const f = summary.value?.fleetStats[p.dataIndex]
+        if (f) drill('/mdm/vehicles', { deptId: f.deptId })
+      })
+    }
     fleetChart.setOption(barOption(
       s.fleetStats.map((f) => ({ name: f.deptName, a: f.total, b: f.online, aName: '车辆数', bName: '在线数' }))
     ), true)
   }
   if (regionChartRef.value) {
-    regionChart = regionChart ?? echarts.init(regionChartRef.value)
+    if (!regionChart) {
+      regionChart = echarts.init(regionChartRef.value)
+      // 点击区域柱子 → 风险预警分析（未处置）
+      regionChart.on('click', () => drill('/risk', { handleStatus: 0 }))
+    }
     regionChart.setOption(barOption(
       s.regionStats.map((r) => ({ name: r.cityName, a: r.vehicleCount, b: r.riskCount, aName: '车辆数', bName: '今日风险' }))
     ), true)
@@ -605,6 +662,9 @@ onBeforeUnmount(() => {
   font-weight: 600;
   margin-bottom: 0.5rem;
   flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
 }
 
 /* 在线率 */
@@ -651,6 +711,33 @@ onBeforeUnmount(() => {
 .dot.g2 { background: #f97316; }
 .dot.g1 { background: #eab308; }
 .ticker-card { padding-bottom: 0.4rem; }
+
+.drill {
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+}
+.drill:hover {
+  background: rgba(30, 58, 95, 0.55);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.drill-hint {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 400;
+  cursor: pointer;
+  transition: color 0.18s;
+  flex-shrink: 0;
+}
+.drill:hover .drill-hint,
+.drill-hint:hover {
+  color: #93c5fd;
+}
+.wo-cell.drill:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+.wo-cell.danger.drill:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
 
 /* 飘条 */
 .toasts {

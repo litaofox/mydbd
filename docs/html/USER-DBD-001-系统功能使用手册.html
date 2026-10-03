@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>系统功能使用手册 · 北斗导航数据业务平台</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a94; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.topbar .home{margin-left:auto;font-size:13.5px;color:#cfe0ff;text-decoration:none;
+  border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:3px 12px;}
+.topbar .home:hover{background:rgba(255,255,255,.12);color:#fff;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.toc-inner .sub{padding-left:20px;font-size:13px;}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+.feat{background:#fbfcfe;border:1px solid var(--border);border-radius:10px;
+  padding:6px 22px 14px;margin:22px 0;}
+.feat h3{margin-top:14px;}
+.tag{display:inline-block;font-size:12px;font-weight:600;color:var(--primary-dark);
+  background:var(--accent-bg);border:1px solid #cddcf5;border-radius:999px;
+  padding:1px 10px;margin-left:8px;vertical-align:2px;}
+.lbl{display:inline-block;font-weight:700;color:var(--primary);font-size:14.5px;margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="title">北斗导航数据业务平台 · 系统功能使用手册</div>
+  <a class="home" href="index.html">返回文档门户</a>
+</div>
+<div class="layout">
+  <nav class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 平台总览与快速上手</a></li>
+      <li><a href="#s2">2. 实时监控域</a></li>
+      <li class="sub"><a href="#f14">F14 实时消息推送</a></li>
+      <li class="sub"><a href="#f15">F15 监控总览大屏</a></li>
+      <li class="sub"><a href="#f16">F16 车辆详情面板</a></li>
+      <li class="sub"><a href="#f17">F17 终端报警中心</a></li>
+      <li><a href="#s3">3. 风控闭环域</a></li>
+      <li class="sub"><a href="#f18">F18 风控规则引擎</a></li>
+      <li class="sub"><a href="#f19">F19 分级通知</a></li>
+      <li class="sub"><a href="#f20">F20 处置工单</a></li>
+      <li class="sub"><a href="#f21">F21 坐席干预记录</a></li>
+      <li class="sub"><a href="#f22">F22 驾驶行为评分</a></li>
+      <li class="sub"><a href="#f23">F23 风险趋势与画像</a></li>
+      <li><a href="#s4">4. 主数据管理域</a></li>
+      <li class="sub"><a href="#f28">F28 车辆档案</a></li>
+      <li class="sub"><a href="#f29">F29 终端档案</a></li>
+      <li class="sub"><a href="#f30">F30 驾驶员档案</a></li>
+      <li class="sub"><a href="#f31">F31 绑定关系</a></li>
+      <li class="sub"><a href="#f32">F32 组织架构</a></li>
+      <li><a href="#s5">5. 系统管理域</a></li>
+      <li class="sub"><a href="#f33">F33 用户与权限</a></li>
+      <li class="sub"><a href="#f34">F34 操作审计</a></li>
+      <li class="sub"><a href="#f35">F35 配置与通知中心</a></li>
+      <li><a href="#s6">6. 常见问题</a></li>
+    </ul>
+  </div></nav>
+  <main class="content">
+    <h1>系统功能使用手册</h1>
+    <p class="cover-meta">文档编号：USER-DBD-001 ｜ 版本：v1.0 ｜ 日期：2026-10-03 ｜ 适用：第一波 18 项功能（F14~F23、F28~F35）已全部上线</p>
+    <p class="cover-meta">读者：调度坐席、安全管理员、车队队长、系统管理员等业务用户。技术细节请查阅各功能的 PRD（产品设计）与 MOD（模块设计）文档。</p>
+
+    <h2 id="s1">1. 平台总览与快速上手</h2>
+    <p>本平台面向"两客一危"等营运车辆的北斗监控与安全风险处置：车辆通过北斗终端上报位置与报警，平台实时展示、自动识别风险、驱动"预警 → 工单 → 干预 → 闭环"的处置流程，并沉淀驾驶评分与风险画像供管理决策。</p>
+    <div class="flow">
+      <div class="step"><div class="t">登录平台</div><div class="d">浏览器打开系统地址，输入账号密码</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">看态势</div><div class="d">实时监控 / 监控总览大屏</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">处置风险</div><div class="d">报警中心 / 风险事件 / 处置工单</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">管基础数据</div><div class="d">主数据管理（车辆/终端/司机/组织）</div></div>
+    </div>
+    <h3>1.1 登录与账号</h3>
+    <ul>
+      <li>打开系统地址后进入登录页，输入用户名与密码登录；登录状态失效后会自动回到登录页，重新登录即可继续。</li>
+      <li>演示环境内置四类角色：<strong>超级管理员</strong>（全部功能）、<strong>安全管理员</strong>（系统管理+规则配置）、<strong>调度监控员</strong>（监控与处置，限本部门数据）、<strong>企业车队长</strong>（本企业档案维护与监控）。</li>
+      <li>新账号由超级管理员在"系统管理 → 用户管理"中创建并分配角色。</li>
+    </ul>
+    <h3>1.2 界面结构</h3>
+    <ul>
+      <li><strong>左侧边栏</strong>：功能菜单按"实时监控 / 主数据管理 / 系统管理"分组，只显示你有权访问的菜单。</li>
+      <li><strong>顶栏</strong>：当前页面标题、消息铃铛（未读数）、推送通道状态、退出登录。</li>
+      <li><strong>监控总览大屏</strong>是独立全屏页面，不带侧边栏，适合投墙值守。</li>
+    </ul>
+    <blockquote class="tip"><p>建议的上手顺序：先在"主数据管理"把组织架构、车辆、终端、驾驶员录齐并绑定，再看监控与处置——数据归属、通知对象、评分统计都依赖这些基础档案。</p></blockquote>
+
+    <h2 id="s2">2. 实时监控域</h2>
+    <p>回答"此刻车队在发生什么"：车辆位置、报警动态、整体态势一屏掌握。</p>
+
+    <div class="feat" id="f14">
+      <h3>F14 实时消息推送<span class="tag">已上线 · 无需操作</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>平台与浏览器之间保持一条实时通道：车辆位置每秒刷新，新报警、新风险事件即时弹出提示，无需手动刷新页面。</p>
+      <p class="lbl">核心价值</p>
+      <p>从"5 秒刷一次"变成"秒级感知"，值守人员第一时间看到异常，缩短响应时间。</p>
+      <p class="lbl">操作流程</p>
+      <p>全自动，无需任何操作。打开"实时导航监控""终端报警中心""监控总览大屏"等页面即自动建立连接；顶栏显示当前通道状态。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>网络波动时通道会自动重连；重连期间页面降级为 5 秒轮询，顶栏标签变为"降级轮询"，数据仍持续更新，恢复后自动切回。</li>
+        <li>演示环境下所有在线用户收到同一份推送；数据可见范围仍按各人权限在页面层控制。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f15">
+      <h3>F15 监控总览大屏<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>一块 1920/4K 自适应的全屏驾驶舱：中央是实时车辆地图与近 24 小时风险热力，四周环绕在线率、今日里程、报警态势、最新报警滚动、工单积压、车队/区域分布等统计分区。</p>
+      <p class="lbl">核心价值</p>
+      <p>挂在值守室墙上的"总仪表盘"——不翻页、不筛选，抬眼即知全网状态；报警突增、工单积压一眼可见。</p>
+      <p class="lbl">操作流程</p>
+      <div class="flow">
+        <div class="step"><div class="t">进入</div><div class="d">侧边栏 实时监控 → 监控总览大屏</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">看态势</div><div class="d">位置每秒刷新，统计每 30 秒校正</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">查单车</div><div class="d">点地图车辆图标弹详情</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">退出</div><div class="d">右上"退出大屏"返回监控页</div></div>
+      </div>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>大屏是<strong>纯展示</strong>页面：处置操作（确认报警、建工单等）请回到对应业务页面完成。</li>
+        <li>"在线"口径为最近 5 分钟内有过定位的车辆，可在"系统管理 → 系统参数"中调整窗口。</li>
+        <li>今日里程为里程表差值近似口径，逐点精确里程待后续版本升级。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f16">
+      <h3>F16 车辆详情聚合面板<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>在地图上点击任意车辆，右侧滑出详情抽屉：车辆档案、当前终端与驾驶员、当日轨迹缩略、最新报警，一屏聚合。</p>
+      <p class="lbl">核心价值</p>
+      <p>回答"这辆车现在怎么样、谁在开、今天跑了哪"不用在多个页面之间来回切换。</p>
+      <p class="lbl">操作流程</p>
+      <p>实时监控页或大屏上点车辆图标 → 查看抽屉各区块 → 点"轨迹回放""报警中心"等链接跳转到对应页面深入处理。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>抽屉只读展示，编辑档案请到"主数据管理"对应页面。</li>
+        <li>显示"未绑定"说明该车还没关联终端或驾驶员，请先完成绑定关系维护（见 F31）。</li>
+        <li>无权查看的车辆会被拒绝访问。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f17">
+      <h3>F17 终端报警中心<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>终端上报报警（超速、疲劳、SOS 等）的集中处理页：新报警实时置顶滚动，支持按车牌/类型/等级/状态筛选，每条报警可查看详情并完成"确认 → 解除"处置闭环。</p>
+      <p class="lbl">核心价值</p>
+      <p>报警不再"只看不处理"：每条报警都有明确状态（未处理/已确认/已解除）与处置留痕，杜绝漏处置。</p>
+      <p class="lbl">操作流程</p>
+      <div class="flow">
+        <div class="step"><div class="t">发现</div><div class="d">列表置顶或弹窗提示新报警</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">核实</div><div class="d">点开详情看类型、等级、位置</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">确认</div><div class="d">认领报警，状态变为处理中</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">解除</div><div class="d">处置完成后填写结论解除</div></div>
+      </div>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>报警类型自动翻译成中文名称与等级，无需记忆编码。</li>
+        <li>两人同时处理同一条报警时，后提交者会收到"状态已变化"提示，刷新后按最新状态操作即可。</li>
+        <li>确认与解除操作均写入审计日志。</li>
+      </ul>
+    </div>
+
+    <h2 id="s3">3. 风控闭环域</h2>
+    <p>回答"风险如何变成可管理的事"：规则识别 → 分级通知 → 工单处置 → 干预留痕 → 评分画像。</p>
+
+    <div class="feat" id="f18">
+      <h3>F18 风控规则引擎<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>平台按可配置的规则实时分析终端报警与轨迹数据，自动产出分级风险事件。内置 8 条常用规则（超速、疲劳驾驶、夜间行驶等），并支持电子围栏：车辆进出围栏自动生成事件。</p>
+      <p class="lbl">核心价值</p>
+      <p>把海量原始数据变成"值得处理的风险"，规则可调、等级可控，减少人工盯屏。</p>
+      <p class="lbl">操作流程</p>
+      <p>规则维护：侧边栏 系统管理 → 风控规则（查看/启停/编辑阈值）；围栏维护：系统管理 → 电子围栏（地图上绘制区域）；事件查看：实时监控 → 风险预警分析。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>规则修改即时生效，影响之后新产生的事件，不追溯历史。</li>
+        <li>围栏进出判定依赖车辆定位上报节奏，位置稀疏时判定会延后。</li>
+        <li>演示环境数据来自模拟器与样例导入，规则命中量与真实车队规模会有差异。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f19">
+      <h3>F19 报警分级与多渠道通知<span class="tag">已上线（站内）</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>按风险等级把通知送到对的人：高风险事件即时弹窗+站内消息，处置进展定向推送给工单负责人。短信、语音、App 推送渠道已预留接口，接入后可一键启用。</p>
+      <p class="lbl">核心价值</p>
+      <p>重要风险不淹没在列表里——该知道的人在事件发生当下就知道。</p>
+      <p class="lbl">操作流程</p>
+      <p>接收：留意页面弹窗与顶栏铃铛；查阅：侧边栏 系统管理 → 消息中心（全部历史通知，已读/未读）。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>当前版本通知渠道为站内消息+实时弹窗；外部渠道（短信/语音）需配置对接后启用。</li>
+        <li>通知按角色与工单分派对象定向发送，未读消息在铃铛上有角标提醒。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f20">
+      <h3>F20 处置工单流转<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>每个风险事件自动生成一张处置工单，按"待处理 → 处理中 → 已闭环"状态机流转，支持分派处置人、处置时限（SLA）与超时提醒。</p>
+      <p class="lbl">核心价值</p>
+      <p>风险处置责任到人、进度可视、结果可查——积压了多少、超期了没有，管理者一目了然。</p>
+      <p class="lbl">操作流程</p>
+      <div class="flow">
+        <div class="step"><div class="t">建单</div><div class="d">风险事件产生时自动建单</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">分派</div><div class="d">指定处置人与时限</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">处置</div><div class="d">处理中可追加干预记录</div></div>
+        <div class="arrow">→</div>
+        <div class="step"><div class="t">闭环</div><div class="d">填写结论（已处置/误报等）关单</div></div>
+      </div>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>入口：实时监控 → 处置工单；也可从风险事件页的"处置"按钮直达。</li>
+        <li>闭环结论选"误报"的工单，其事件不计入驾驶评分，避免误伤司机。</li>
+        <li>超过时限未闭环的工单会被标记逾期，可在列表筛选跟进。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f21">
+      <h3>F21 坐席干预记录<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>在工单下追加干预动作留痕：电话提醒、安全教育、停运整改等。工单闭环时系统自动补记一条干预，保证"感知 → 预警 → 干预 → 闭环"漏斗不断链。</p>
+      <p class="lbl">核心价值</p>
+      <p>处置过程可复盘、可统计：干预率、闭环率成为衡量风控运营质量的硬指标。</p>
+      <p class="lbl">操作流程</p>
+      <p>处置工单 → 打开工单详情 → "干预记录"页签 → 添加干预（选择方式、填写说明）。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>干预记录只可追加、不可修改删除，确保留痕可信。</li>
+        <li>干预统计维度会汇入 F23 风险画像供管理层查看。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f22">
+      <h3>F22 驾驶行为评分<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>基于急加减速、超速、疲劳等风险事件与轨迹特征，每天为驾驶员计算 0~100 的安全分与风险等级（优/良/中/差），并给出扣分明细。</p>
+      <p class="lbl">核心价值</p>
+      <p>把安全表现量化成一个可比较的分数：评优、培训、保险定价（UBI）都有了数据依据。</p>
+      <p class="lbl">操作流程</p>
+      <p>侧边栏 风险画像 → 驾驶评分：按日期/驾驶员/车队筛选，点开某条查看当日扣分明细与关联事件。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>评分为每日批量计算，当日分数次日可见；数据越完整评分越准。</li>
+        <li>被工单判定为"误报"的事件不扣分——请及时处置工单，保障司机权益。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f23">
+      <h3>F23 风险趋势与画像<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>按车辆、驾驶员、企业三个维度查看风险趋势曲线与画像卡片：事件走势、等级构成、高频类型、干预与闭环情况，并支持黑点路段热力展示。</p>
+      <p class="lbl">核心价值</p>
+      <p>从"处理今天的事"升级到"看清长期的势"：重点人、重点车、重点路段浮出水面，管理动作有的放矢。</p>
+      <p class="lbl">操作流程</p>
+      <p>侧边栏 风险画像 → 风险趋势与画像：选择维度（车/司机/企业）与时间范围 → 查看趋势图与画像明细 → 下钻到具体事件。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>趋势结论依赖数据积累，上线初期样本较少，建议以周/月为单位观察。</li>
+        <li>画像只读，不修改任何底层数据。</li>
+      </ul>
+    </div>
+
+    <h2 id="s4">4. 主数据管理域</h2>
+    <p>车辆、终端、驾驶员、组织是所有业务功能的"地基"。建议维护顺序：<strong>组织架构 → 车辆/终端/驾驶员档案 → 绑定关系</strong>。</p>
+
+    <div class="feat" id="f28">
+      <h3>F28 车辆档案<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>车辆台账的增删改查：车牌、车型、运输性质、所属企业/车队、注册城市等基础信息集中维护。</p>
+      <p class="lbl">核心价值</p>
+      <p>监控、报警、工单、评分全部按"车"归集——档案不准，一切统计都失真。</p>
+      <p class="lbl">操作流程</p>
+      <p>主数据管理 → 车辆档案：新增/编辑填写信息保存；支持按车牌、所属组织筛选；不用的车辆置为"失效"而非删除。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>车牌号全局唯一，重复会被拒绝。</li>
+        <li>"失效"车辆不再参与在线率等统计，历史数据保留可查。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f29">
+      <h3>F29 终端档案<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>北斗终端设备台账：终端编号、设备型号、协议类型、SIM 卡、视频通道数与启用状态维护。</p>
+      <p class="lbl">核心价值</p>
+      <p>知道每辆车上装的是什么设备、状态如何，为后续指令下发与视频调阅打好数据基础。</p>
+      <p class="lbl">操作流程</p>
+      <p>主数据管理 → 终端档案：录入终端信息；通过绑定关系挂接到具体车辆（见 F31）。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>终端编号唯一；更换终端时先解绑旧终端再绑新终端，保留历史绑定记录。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f30">
+      <h3>F30 驾驶员档案<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>驾驶员信息管理：姓名、从业资格证、驾驶证类别、联系电话、状态维护。</p>
+      <p class="lbl">核心价值</p>
+      <p>风险要落到"人"才有管理抓手：评分、画像、干预通知都依赖准确的驾驶员档案。</p>
+      <p class="lbl">操作流程</p>
+      <p>主数据管理 → 驾驶员档案：新增/编辑驾驶员，绑定到车辆后即可参与评分与画像统计。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>手机号等联系方式仅平台授权人员可见，用于紧急联系。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f31">
+      <h3>F31 绑定关系管理<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>维护"车-终端""车-驾驶员"两类绑定：何时生效、何时解绑、历史换过哪些，全部留档可追溯。</p>
+      <p class="lbl">核心价值</p>
+      <p>报警和轨迹能准确归属到车与人；换车、换司机、换设备后统计口径不断档。</p>
+      <p class="lbl">操作流程</p>
+      <p>在车辆档案/终端档案/驾驶员档案页内的"绑定"入口操作：选择对象 → 绑定（设生效时间）/ 解绑（记录失效时间）。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>同一终端/驾驶员同一时间只能绑定一辆车，重复绑定会被拒绝。</li>
+        <li>解绑不影响历史数据归属——事件按发生当时的绑定关系归集。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f32">
+      <h3>F32 组织架构管理<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>运输企业/车队的多级组织树维护：新增、改名、调整层级、停用。</p>
+      <p class="lbl">核心价值</p>
+      <p>组织树是数据权限的骨架——"车队长只看本企业、坐席只看本部门"靠它实现。</p>
+      <p class="lbl">操作流程</p>
+      <p>主数据管理 → 组织架构：在树上选择节点新增下级；车辆档案中选择所属组织完成挂接。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>节点下仍有车辆或下级组织时不能删除，请先迁移。</li>
+        <li>调整组织层级会影响数据权限范围，建议由超级管理员操作。</li>
+      </ul>
+    </div>
+
+    <h2 id="s5">5. 系统管理域</h2>
+    <p>平台自身的"人、账、配置"三件事。</p>
+
+    <div class="feat" id="f33">
+      <h3>F33 用户与权限（IAM）<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>替代单一演示账号：用户管理（建号、停用、重置密码、分配角色）+ 角色管理（四个内置角色 + 自定义角色，勾选菜单/按钮权限与数据范围）。</p>
+      <p class="lbl">核心价值</p>
+      <p>每个人一把账号、一份权限：该看的看得到，不该看的进不去，操作可追责到人。</p>
+      <p class="lbl">操作流程</p>
+      <p>系统管理 → 用户管理：新建用户 → 设置初始密码 → 分配角色；系统管理 → 角色管理：调整角色的菜单权限与数据范围（全部/本企业/本部门及以下）。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>四个内置角色不可删除，可在其基础上新增自定义角色。</li>
+        <li>权限调整即时生效，用户下次操作即按新权限校验。</li>
+        <li>重置密码等敏感操作会写入审计日志。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f34">
+      <h3>F34 操作审计日志<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>登录登出、增删改等关键操作自动留痕：谁、什么时间、从哪里、做了什么、结果如何，可按人员/操作类型/时间范围检索。</p>
+      <p class="lbl">核心价值</p>
+      <p>事后定责与合规检查的第一手证据；异常操作可回溯。</p>
+      <p class="lbl">操作流程</p>
+      <p>系统管理 → 操作审计：设置筛选条件查询，点开记录查看操作详情。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>审计记录只读，任何人（含管理员）不可修改删除。</li>
+        <li>密码等敏感字段在记录中自动脱敏。</li>
+      </ul>
+    </div>
+
+    <div class="feat" id="f35">
+      <h3>F35 系统配置与通知中心<span class="tag">已上线</span></h3>
+      <p class="lbl">功能概述</p>
+      <p>三个页面管全局：数据字典（报警类型、风险等级等枚举）、系统参数（在线窗口、工单时限等可调项）、消息中心（站内通知统一查阅）。</p>
+      <p class="lbl">核心价值</p>
+      <p>业务口径不写死在代码里：管理员改个参数就能调整平台行为，无需发版。</p>
+      <p class="lbl">操作流程</p>
+      <p>系统管理 → 数据字典 / 系统参数：编辑取值保存即生效；顶栏铃铛 → 消息中心：查看与标记已读全部通知。</p>
+      <p class="lbl">注意事项</p>
+      <ul>
+        <li>内置字典项与系统参数不可删除，可修改取值。</li>
+        <li>参数修改立即影响后续统计口径（如在线窗口分钟数），请谨慎调整并知会相关岗位。</li>
+      </ul>
+    </div>
+
+    <h2 id="s6">6. 常见问题</h2>
+    <table>
+      <tr><th>问题</th><th>解答</th></tr>
+      <tr><td>页面顶栏显示"降级轮询"是什么意思？</td><td>实时推送通道暂时断开，页面自动改用 5 秒轮询，数据仍会更新；通道恢复后自动切回"实时推送"，无需刷新页面。</td></tr>
+      <tr><td>为什么我看不到某个菜单？</td><td>菜单按权限显示。请联系超级管理员在"角色管理"中为你的角色勾选对应菜单，或为你分配包含该权限的角色。</td></tr>
+      <tr><td>大屏上的数字多久变一次？</td><td>车辆位置每秒刷新；在线率、报警统计、工单积压等统计每 30 秒整批校正，新报警作为增量即时置顶。</td></tr>
+      <tr><td>报警处理时提示"状态已变化"？</td><td>说明另一位同事刚刚已确认或解除了该报警。刷新列表查看最新状态即可，避免重复处置。</td></tr>
+      <tr><td>车辆详情显示"未绑定"？</td><td>该车辆尚未关联终端或驾驶员。请到主数据管理完成绑定（F31），绑定后监控归属与统计立即生效。</td></tr>
+      <tr><td>今天的驾驶评分怎么还没有？</td><td>评分为每日批量计算，当日行为次日出分；若数据缺失，请检查该车当日是否有定位上报与有效绑定。</td></tr>
+      <tr><td>误报警会影响司机评分吗？</td><td>不会。将对应工单以"误报"结论闭环后，该事件不计入驾驶评分。</td></tr>
+      <tr><td>演示数据从哪里来？</td><td>当前环境数据由样例导入与轨迹模拟器产生，用于功能演示与验证；接入真实终端（JT/T 808）在第二波规划中。</td></tr>
+    </table>
+
+    <hr>
+    <p class="cover-meta">本手册与平台版本 v0.2.0 同步（2026-10-03）。功能行为以线上系统为准；如发现描述与实际不符，请反馈产品负责人更新本文档。</p>
+  </main>
+</div>
+</body>
+</html>

@@ -304,6 +304,14 @@ async function saveSla() {
 }
 
 onMounted(() => {
+  // 大屏钻取：从 route.query 恢复筛选条件（status/timeFlag）
+  const q = route.query
+  if (q.status === 'PENDING' || q.status === 'PROCESSING' || q.status === 'CLOSED') {
+    filters.status = q.status
+  }
+  if (q.timeFlag === 'due' || q.timeFlag === 'overdue' || q.timeFlag === 'escalated') {
+    filters.timeFlag = q.timeFlag
+  }
   Promise.all([loadPage(), loadStats(), loadUsers()]).then(() => {
     // F19 通知跳转：携带 openOrder=<工单id> 时自动打开详情抽屉
     const q = route.query.openOrder
