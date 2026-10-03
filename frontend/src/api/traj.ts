@@ -72,6 +72,22 @@ export function datasetStatus(): Promise<DatasetStatus> {
   return http.get('/api/ingest/dataset/status')
 }
 
+export interface SimVehicle {
+  identityCode: string
+  plateNo: string
+  mode: string
+  city?: string | null
+}
+
+export interface SimulatorStatus {
+  running: boolean
+  startedAt?: string | null
+  ticks: number
+  vehicleCount: number
+  demoEvents?: number
+  vehicles?: SimVehicle[]
+}
+
 export function simulatorStart(): Promise<any> {
   return http.post('/api/simulator/start')
 }
@@ -80,6 +96,6 @@ export function simulatorStop(): Promise<any> {
   return http.post('/api/simulator/stop')
 }
 
-export function simulatorStatus(): Promise<{ running: boolean; ticks: number; vehicleCount: number }> {
+export function simulatorStatus(): Promise<SimulatorStatus> {
   return http.get('/api/simulator/status')
 }
