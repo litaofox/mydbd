@@ -26,7 +26,7 @@ ON CONFLICT (dict_type_id, item_value) DO NOTHING;
 -- ============ §5.2 菜单与授权（RES-DBD-001 §3.2/§3.3 锁定值） ============
 INSERT INTO traj.sys_menu (id, parent_id, menu_name, menu_type, perm_code, path, icon, sort_no, visible, status)
 VALUES
-  (16, 10, '终端报警中心', 2, 'alarm:view',   '/alarms', 'Bell', 16, 1, 1),
+  (16, 10, '终端报警中心', 2, 'alarm:view',   '/alarms', 'Bell', 9, 1, 1),
   (926, 16, '报警处置',    3, 'alarm:handle', NULL, NULL, 1, 1, 1)
 ON CONFLICT (id) DO NOTHING;
 

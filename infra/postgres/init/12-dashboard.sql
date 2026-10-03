@@ -6,7 +6,7 @@
 -- ============================================================
 
 INSERT INTO traj.sys_menu (id, parent_id, menu_name, menu_type, perm_code, path, icon, sort_no, visible, status)
-VALUES (15, 10, '监控总览大屏', 2, 'monitor:dashboard:view', '/dashboard', 'DataBoard', 15, 1, 1)
+VALUES (15, 10, '监控总览大屏', 2, 'monitor:dashboard:view', '/dashboard', 'DataBoard', 8, 1, 1)
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval(pg_get_serial_sequence('traj.sys_menu', 'id'),
