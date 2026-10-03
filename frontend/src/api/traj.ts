@@ -48,6 +48,30 @@ export function loadSample(file = 'vehicle_gps_20260901.csv'): Promise<LoadSampl
   return http.post('/api/ingest/load-sample', { file })
 }
 
+// ===== 标准测试数据集（四省市 10 车队 500 车） =====
+export interface DatasetStatus {
+  running: boolean
+  mode: string | null
+  stage: string
+  percent: number
+  counts: { vehicles?: number; points?: number; events?: number; warns?: number; scores?: number }
+  error: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+}
+
+export function datasetLoad(mode: 'standard' | 'dense'): Promise<DatasetStatus> {
+  return http.post('/api/ingest/dataset/load', { mode })
+}
+
+export function datasetClear(): Promise<{ cleared: boolean }> {
+  return http.post('/api/ingest/dataset/clear')
+}
+
+export function datasetStatus(): Promise<DatasetStatus> {
+  return http.get('/api/ingest/dataset/status')
+}
+
 export function simulatorStart(): Promise<any> {
   return http.post('/api/simulator/start')
 }

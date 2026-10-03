@@ -166,6 +166,24 @@ def insert_risk_events(rows: list[dict]) -> int:
     return len(rows)
 
 
+def insert_warn_info(row: dict) -> None:
+    """写入一条终端报警（模拟器演示事件与 risk_event 成对产生）。"""
+    sql = """
+        INSERT INTO traj.traj_warn_info
+            (source_id, plate_no, identity_code, start_warn_time, end_warn_time,
+             start_gps_time, end_gps_time, start_lng, start_lat, end_lng, end_lat,
+             start_speed, end_speed, type_id, warn_continue_mark,
+             handle_status, creator)
+        VALUES (%(source_id)s, %(plate_no)s, %(identity_code)s, %(start_warn_time)s,
+                %(end_warn_time)s, %(start_gps_time)s, %(end_gps_time)s,
+                %(start_lng)s, %(start_lat)s, %(end_lng)s, %(end_lat)s,
+                %(start_speed)s, %(end_speed)s, %(type_id)s, 1, 0, 'simulator')
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, row)
+
+
 # =====================================================================
 # F18 CEP 引擎数据访问
 # =====================================================================

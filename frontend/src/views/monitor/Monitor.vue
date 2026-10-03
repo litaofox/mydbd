@@ -2,13 +2,25 @@
   <div class="page">
     <!-- 工具栏 -->
     <div class="toolbar">
-      <el-button type="primary" :loading="sampleLoading" @click="onLoadSample">
-        加载样例数据
+      <el-button type="primary" plain :loading="dsLoading"
+                 @click="onDatasetLoad('standard')">
+        加载标准测试集
       </el-button>
+      <el-button type="warning" plain :loading="dsLoading"
+                 @click="onDatasetLoad('dense')">
+        加载稠密测试集
+      </el-button>
+      <el-button type="danger" plain :disabled="dsLoading" @click="onDatasetClear">
+        清空业务数据
+      </el-button>
+      <el-divider direction="vertical" />
       <el-button type="success" @click="onSimStart">启动模拟器</el-button>
       <el-button type="danger" plain @click="onSimStop">停止模拟器</el-button>
       <el-tag v-if="sim" :type="sim.running ? 'success' : 'info'">
-        模拟器：{{ sim.running ? `运行中（${sim.ticks} ticks）` : '已停止' }}
+        模拟器：{{ sim.running ? `运行中（${sim.ticks} ticks，${sim.vehicleCount ?? 0} 辆）` : '已停止' }}
+      </el-tag>
+      <el-tag v-if="dsStage" :type="dsLoading ? 'warning' : dsError ? 'danger' : 'success'">
+        测试集：{{ dsStage }}<template v-if="dsLoading">（{{ dsPercent }}%）</template>
       </el-tag>
       <el-tag :type="connected ? 'success' : 'warning'" effect="plain">
         实时推送：{{ connected ? '已连接' : '降级轮询' }}
@@ -84,12 +96,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
+  datasetClear,
+  datasetLoad,
+  datasetStatus,
   getLatestPoints,
-  loadSample,
   simulatorStart,
   simulatorStatus,
   simulatorStop,
@@ -103,8 +117,91 @@ import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
 const mapRef = ref<HTMLDivElement>()
 const points = ref<GpsPoint[]>([])
 const overview = ref<Partial<Overview>>({})
-const sampleLoading = ref(false)
-const sim = ref<{ running: boolean; ticks: number }>()
+const sim = ref<{ running: boolean; ticks: number; vehicleCount?: number }>()
+
+// ===== 标准测试数据集 =====
+const dsLoading = ref(false)
+const dsStage = ref('')
+const dsPercent = ref(0)
+const dsError = ref('')
+let dsTimer: ReturnType<typeof setInterval> | null = null
+
+async function pollDataset() {
+  try {
+    const st = await datasetStatus()
+    dsStage.value = st.stage
+    dsPercent.value = st.percent
+    dsError.value = st.error ?? ''
+    if (!st.running) {
+      stopDsPolling()
+      dsLoading.value = false
+      if (!st.error && st.percent >= 100) {
+        const c = st.counts ?? {}
+        ElMessage.success(
+          `测试集加载完成：${c.vehicles ?? 0} 辆车、${c.points ?? 0} 个轨迹点、` +
+          `${c.events ?? 0} 个风险事件、${c.scores ?? 0} 条日评分`
+        )
+        // 重建车牌映射并刷新地图（覆盖四省市）
+        try {
+          const opts = await getVehicleOptions()
+          plateNoToId.clear()
+          for (const o of opts) plateNoToId.set(o.label, String(o.id))
+        } catch { /* ignore */ }
+        await refresh()
+      } else if (st.error) {
+        ElMessage.error(`测试集加载失败：${st.error}`)
+      }
+    }
+  } catch { /* 轮询失败下一轮重试 */ }
+}
+
+function startDsPolling() {
+  dsLoading.value = true
+  dsError.value = ''
+  pollDataset()
+  dsTimer = setInterval(pollDataset, 2000)
+}
+
+function stopDsPolling() {
+  if (dsTimer) {
+    clearInterval(dsTimer)
+    dsTimer = null
+  }
+}
+
+async function onDatasetLoad(mode: 'standard' | 'dense') {
+  try {
+    await ElMessageBox.confirm(
+      mode === 'dense'
+        ? '稠密版约 330 万轨迹点（15 秒一点，192 起风险事件），预计加载 12~15 分钟，确认开始？'
+        : '标准版约 115 万轨迹点（30 秒一点，96 起风险事件），预计 4~5 分钟，且会先清空现有演示数据，确认开始？',
+      '加载标准测试数据集',
+      { confirmButtonText: '开始加载', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  await datasetLoad(mode)
+  ElMessage.info('数据集开始后台生成，可在工具栏查看进度')
+  startDsPolling()
+}
+
+async function onDatasetClear() {
+  try {
+    await ElMessageBox.confirm(
+      '将清空全部车辆/终端/司机/轨迹/报警/风险/工单/评分数据（保留账号与菜单），确认？',
+      '清空业务数据',
+      { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  await datasetClear()
+  dsStage.value = '业务数据已清空'
+  dsPercent.value = 0
+  ElMessage.success('业务数据已清空，可重新加载测试集')
+  await refresh()
+}
 
 // ===== F16 车辆详情面板（MOD-MON-003 §6.4） =====
 const plateNoToId = new Map<string, string>()
@@ -200,19 +297,6 @@ const { connected } = useRealtime({
   onAlarm: handleAlarm
 })
 
-async function onLoadSample() {
-  sampleLoading.value = true
-  try {
-    const result = await loadSample()
-    ElMessage.success(
-      `导入完成：${result.insertedPoints} 个轨迹点，${result.insertedEvents} 个风险事件`
-    )
-    await refresh()
-  } finally {
-    sampleLoading.value = false
-  }
-}
-
 async function onSimStart() {
   await simulatorStart()
   ElMessage.success('模拟器已启动')
@@ -245,9 +329,17 @@ onMounted(async () => {
 
   // useRealtime 已在 onMounted 内首屏拉取一次数据 + 建立 WS
   await refreshSimStatus()
+
+  // 页面打开时若已有数据集任务在跑，自动接续进度
+  try {
+    const st = await datasetStatus()
+    if (st.running) startDsPolling()
+    else if (st.percent >= 100 && st.finishedAt) dsStage.value = '最近一次加载已完成'
+  } catch { /* ignore */ }
 })
 
 onBeforeUnmount(() => {
+  stopDsPolling()
   if (map) map.remove()
 })
 </script>
