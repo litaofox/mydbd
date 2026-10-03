@@ -22,6 +22,13 @@
         <module>platform-common</module>
         <module>module-trajectory</module>
         <module>module-monitor</module>
+        <module>module-mdm</module>
+        <module>module-audit</module>
+        <module>module-iam</module>
+        <module>module-risk</module>
+        <module>module-system</module>
+        <module>module-notify</module>
+        <module>module-analysis</module>
         <module>platform-boot</module>
     </modules>
 
@@ -67,6 +74,41 @@
             <dependency>
                 <groupId>com.mydbd</groupId>
                 <artifactId>module-monitor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-mdm</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-audit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-iam</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-risk</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-system</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-notify</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mydbd</groupId>
+                <artifactId>module-analysis</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

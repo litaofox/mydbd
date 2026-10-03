@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>风控规则引擎（CEP） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;vertical-align:middle;}
+.badge.blue{background:var(--accent-bg);color:var(--primary);}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+.rel-map{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;margin:24px 0;}
+.rel-node{border:2px solid var(--primary);background:var(--accent-bg);border-radius:10px;
+  padding:14px 18px;text-align:center;min-width:120px;}
+.rel-node .n-title{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.rel-node .n-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.rel-node.core{background:var(--primary);border-color:var(--primary-dark);}
+.rel-node.core .n-title{color:#fff;}
+.rel-node.core .n-sub{color:#cfe0ff;}
+.rel-link{padding:0 10px;color:var(--muted);font-size:13px;text-align:center;line-height:1.35;}
+.rel-link b{color:var(--primary-dark);}
+.flow{counter-reset:step;display:flex;gap:0;margin:22px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;position:relative;background:#f7f9fd;
+  border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px 46px;margin-right:14px;}
+.flow .step:last-child{margin-right:0;}
+.flow .step::before{counter-increment:step;content:counter(step);
+  position:absolute;left:12px;top:14px;width:24px;height:24px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.flow .step .s-title{font-weight:700;font-size:14.5px;color:#16345f;}
+.flow .step .s-desc{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6;}
+.wire{border:1.5px dashed #b8c4d8;border-radius:10px;padding:14px;margin:16px 0;background:#fbfcfe;}
+.wire .w-top{background:#e8eef8;border-radius:6px;padding:8px 12px;font-size:13px;color:#3d4a5c;margin-bottom:10px;}
+.wire .w-body{display:flex;gap:10px;}
+.wire .w-side{width:32%;background:#eef2f8;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-main{flex:1;background:#fff;border:1px solid #e3e8f0;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-line{height:9px;background:#dbe3f0;border-radius:4px;margin:7px 0;}
+.wire .w-line.w70{width:70%;}.wire .w-line.w50{width:50%;}.wire .w-line.w90{width:90%;}
+.wire .w-btn{display:inline-block;background:var(--primary);color:#fff;border-radius:4px;padding:3px 10px;font-size:12px;margin:3px 4px 3px 0;}
+.wire .w-btn.ghost{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+.scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0;}
+.scene{border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff;
+  box-shadow:0 1px 3px rgba(16,42,90,.06);}
+.scene .sc-role{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;}
+.scene .sc-name{font-size:15px;font-weight:700;color:#16345f;margin-bottom:6px;}
+.scene .sc-text{font-size:13.5px;color:var(--muted);line-height:1.7;}
+.fmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0;}
+.fmap .fm{border:1px solid var(--border);border-radius:10px;padding:14px;background:linear-gradient(180deg,#fff,#f8fafd);}
+.fmap .fm h4{margin:0 0 8px;font-size:15px;color:var(--primary-dark);}
+.fmap .fm ul{margin:0;padding-left:18px;font-size:13.5px;color:#44506a;}
+.fmap .fm li{margin:3px 0;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
+.stat{border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fff;text-align:center;}
+.stat .num{font-size:26px;font-weight:700;color:var(--primary-dark);}
+.stat .num.red{color:var(--red);}
+.stat .lbl{font-size:13px;color:var(--muted);margin-top:2px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+  .wire .w-body{flex-direction:column;}
+  .wire .w-side{width:100%;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  table,blockquote,.wire,.scene,.flow{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="toc-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰ 目录</button>
+  <span class="title">mydbd 北斗导航数据业务平台 · 风控规则引擎（CEP）产品设计（业务说明）</span>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+    <ul>
+      <li><a href="#cover">文档说明</a></li>
+      <li><a href="#why">一、为什么做</a>
+        <ul>
+          <li><a href="#why-bg">1.1 业务背景</a></li>
+          <li><a href="#why-pain">1.2 现在的问题</a></li>
+          <li><a href="#why-value">1.3 做成后的价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#roles">二、谁在用、什么场景用</a></li>
+      <li><a href="#concepts">三、核心概念：信号、规则、事件</a></li>
+      <li><a href="#features">四、功能总览</a></li>
+      <li><a href="#rule-mgr">五、风控规则管理</a></li>
+      <li><a href="#fence-mgr">六、电子围栏管理</a></li>
+      <li><a href="#signal">七、终端预警信号分级</a></li>
+      <li><a href="#event">八、风险事件长什么样</a></li>
+      <li><a href="#pages">九、页面与操作原型</a></li>
+      <li><a href="#rules">十、业务规则汇总</a></li>
+      <li><a href="#scope">十一、本期做与不做</a></li>
+      <li><a href="#accept">十二、业务验收标准</a></li>
+      <li><a href="#decision">十三、待确认事项</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+
+    <h1 id="cover">风控规则引擎（CEP） · 产品设计说明书</h1>
+    <p class="cover-meta">功能编号：F18（风险预警闭环域）｜文档版本：v1.0｜编写日期：2026-10-02｜配套技术文档：MOD-RISK-001</p>
+    <blockquote>
+      <p><strong>一句话说明：</strong>让平台 7×24 小时自动盯住每辆车的<strong>北斗定位</strong>和车载终端上报的<strong>DSM/ADAS 预警信号</strong>，按安全管理员<strong>可配置的规则</strong>（超速、疲劳驾驶、围栏进出、信号分级、组合事件）实时识别风险，产出<strong>分级风险事件</strong>，供后续弹窗通知（F19）和处置工单（F20）使用。</p>
+    </blockquote>
+
+    <h2 id="why">一、为什么做</h2>
+
+    <h3 id="why-bg">1.1 业务背景</h3>
+    <p>道路运输事故的主要诱因是<strong>超速、疲劳驾驶、偏离路线/闯入禁区</strong>等危险行为，以及驾驶员的<strong>生理异常</strong>（打瞌睡、分心、接打电话）。平台已经能持续接收两类数据：</p>
+    <ul>
+      <li><strong>北斗定位数据</strong>：每 2 秒一批的位置、速度、方向（真实终端经接入网关推送，演示期由模拟器产生）；</li>
+      <li><strong>车载终端 DSM/ADAS 预警信号</strong>：按既定的"<strong>边缘识别 + 按需调阅</strong>"原则，视频画面的危险动作识别在终端侧完成，终端只把<strong>预警信号和抓拍截图</strong>发给平台，平台<strong>不做全量视频分析</strong>。</li>
+    </ul>
+    <p>但"收到数据"不等于"管住风险"。原始定位点每秒上百条、预警信号类型各异，人工不可能逐条盯守，必须由一个<strong>规则引擎</strong>把数据流自动翻译成业务人员看得懂、能处置的<strong>风险事件</strong>：什么车、什么时间、在哪、发生了什么、多严重。</p>
+
+    <h3 id="why-pain">1.2 现在的问题</h3>
+    <table>
+      <tr><th style="width:150px">痛点</th><th>具体表现</th><th style="width:200px">后果</th></tr>
+      <tr><td>有数据、无识别</td><td>北斗点持续入库，平台不判断"这条点已经超速了""这辆车连续开了 5 小时"</td><td>超速、疲劳全靠事后抽查，事前无感知</td></tr>
+      <tr><td>信号写死、不可配</td><td>现有演示链路中，DSM/ADAS 信号的风险等级写在代码里，是否产生事件也无法开关</td><td>不同企业的管理尺度无法落地；误报信号无法屏蔽</td></tr>
+      <tr><td>没有围栏概念</td><td>"车不能离开运营区域""不能进禁行区"这类最常见的管理要求无处配置</td><td>偏离路线只能在地图上肉眼发现</td></tr>
+      <tr><td>事件会"刷屏"</td><td>一辆持续超速的车每秒上报一次，若没有冷却去重机制，同一风险会刷出成百上千条事件</td><td>坐席被淹没，真正的风险被淹没</td></tr>
+      <tr><td>事件无业务名称</td><td>列表里只有 DSM_FATIGUE 这类技术代码，处置人员还要猜含义</td><td>培训成本高、易误判</td></tr>
+      <tr><td>风险不可运营</td><td>规则改一个阈值要改代码、发版本</td><td>安全管理员无法根据事故复盘快速调整策略</td></tr>
+    </table>
+
+    <h3 id="why-value">1.3 做成后的价值</h3>
+    <div class="fmap">
+      <div class="fm"><h4>对运输安全</h4><ul>
+        <li>超速、疲劳、越界发生即发现，秒级出事件</li>
+        <li>高/中/低分级，坐席精力先保高危</li>
+        <li>组合事件抓住"疲劳还超速"的最危险场景</li>
+      </ul></div>
+      <div class="fm"><h4>对安全管理员</h4><ul>
+        <li>阈值、等级、冷却时间页面可调，不改代码</li>
+        <li>误报规则可临时停用，复盘后再调整</li>
+        <li>围栏在地图上直接画，业务人员可自助操作</li>
+      </ul></div>
+      <div class="fm"><h4>对坐席处置</h4><ul>
+        <li>事件有中文名称、车牌、位置、快照值</li>
+        <li>同因事件被冷却合并，列表不被刷屏</li>
+        <li>为 F19 弹窗、F20 工单提供标准化输入</li>
+      </ul></div>
+      <div class="fm"><h4>对平台运营</h4><ul>
+        <li>规则配置即数据，多企业可沉淀不同策略模板</li>
+        <li>引擎独立工作、故障不影响轨迹入库</li>
+        <li>为 F22 驾驶评分、F23 风险画像积累事件资产</li>
+      </ul></div>
+    </div>
+
+    <h2 id="roles">二、谁在用、什么场景用</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员（规则的主人）</div>
+        <div class="sc-name">配置和调优风控策略</div>
+        <div class="sc-text">月初按公司安全制度把超速阈值设为 100km/h、连续驾驶上限 4 小时；画出各分公司的运营区域围栏；事故复盘后把某条误报较多的信号降级或临时停用；月底看各规则的触发分布评估策略有效性。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员（事件的第一接收人）</div>
+        <div class="sc-name">盯盘、签收高危事件</div>
+        <div class="sc-text">在风险预警分析页看到"京B56789 严重超速（126km/h）"高风险事件，查看位置与抓拍，电话提醒司机；本功能负责把事件准确、及时地送到列表，弹窗与工单在 F19/F20 承接。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业车队长（管理对象的负责人）</div>
+        <div class="sc-name">查看本企业车辆风险</div>
+        <div class="sc-text">只关心自己车队的车出了什么事。规则与围栏由平台/安全岗统一配置，车队长主要消费事件（配合 F33 数据权限，仅看本企业及以下）。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">系统自身（无人值守消费者）</div>
+        <div class="sc-name">规则引擎 7×24 自动运行</div>
+        <div class="sc-text">每一批北斗点到达、每一条终端预警信号到达，引擎都即时比对启用中的规则，命中即落事件。无需人工点击、不依赖页面打开。</div>
+      </div>
+    </div>
+
+    <h2 id="concepts">三、核心概念：信号、规则、事件</h2>
+    <p>理解本功能只需要分清三个概念：</p>
+    <div class="rel-map">
+      <div class="rel-node">
+        <div class="n-title">原始输入</div>
+        <div class="n-sub">北斗点 / 终端预警信号</div>
+      </div>
+      <div class="rel-link"><b>实时比对</b><br>逐条 / 逐窗</div>
+      <div class="rel-node core">
+        <div class="n-title">风控规则</div>
+        <div class="n-sub">阈值 · 围栏 · 等级 · 冷却<br>安全管理员可配置</div>
+      </div>
+      <div class="rel-link"><b>命中产出</b><br>去重后</div>
+      <div class="rel-node">
+        <div class="n-title">风险事件</div>
+        <div class="n-sub">车/时间/位置/类型/等级<br>进入处置闭环</div>
+      </div>
+    </div>
+    <table>
+      <tr><th>概念</th><th>是什么</th><th>谁产生 / 谁维护</th><th>例子</th></tr>
+      <tr><td><strong>北斗定位点</strong></td><td>每 2 秒一批的位置、速度、方向原始数据</td><td>车载终端 → 接入服务</td><td>京B56789，10:21:03，(116.49,39.94)，126km/h</td></tr>
+      <tr><td><strong>预警信号</strong></td><td>终端边缘视觉模型识别到危险动作后上报的信号（含抓拍图），平台不分析视频</td><td>车载 DSM/ADAS 终端</td><td>DSM_FATIGUE（疲劳）、ADAS_FCW（前向碰撞风险）</td></tr>
+      <tr><td><strong>风控规则</strong></td><td>"什么情况算风险、算几级、多久内不重复报"的配置，含围栏对象</td><td>安全管理员页面配置</td><td>"速度&gt;120 为高风险，3 分钟内不重复"</td></tr>
+      <tr><td><strong>风险事件</strong></td><td>规则命中后生成的一条业务记录，是通知和处置的对象</td><td>规则引擎自动生成</td><td>10:21，京B56789，严重超速，高风险，待处置</td></tr>
+    </table>
+    <blockquote class="warn">
+      <p><strong>边界原则（已确认，不做全量视频分析）：</strong>疲劳/分心/碰撞等<strong>画面识别在终端侧完成</strong>；平台规则引擎只接收信号、按规则分级与去重、落事件、按需留截图地址。本期信号链路为占位模拟（由视频分析演示接口产生），真实 JT/T 1078 终端接入后替换信号来源，<strong>规则配置与事件结构不变</strong>。</p>
+    </blockquote>
+
+    <h2 id="features">四、功能总览</h2>
+    <div class="fmap">
+      <div class="fm"><h4>① 风控规则管理</h4><ul>
+        <li>5 类规则：超速 / 疲劳 / 围栏 / 信号分级 / 组合事件</li>
+        <li>参数表单化、风险三级、冷却去重、一键启停</li>
+        <li>8 条内置规则开箱即用，内置规则不可删</li>
+      </ul></div>
+      <div class="fm"><h4>② 电子围栏管理</h4><ul>
+        <li>地图上画圆形 / 多边形围栏</li>
+        <li>进入报警、离开报警、进出都报可选</li>
+        <li>围栏自带等级与冷却，可独立启停</li>
+      </ul></div>
+      <div class="fm"><h4>③ 实时引擎（无页面）</h4><ul>
+        <li>随数据流自动运行，秒级出事件</li>
+        <li>同因事件冷却合并</li>
+        <li>引擎异常不阻断轨迹入库</li>
+      </ul></div>
+      <div class="fm"><h4>④ 风险事件页增强</h4><ul>
+        <li>事件显示中文名称与命中规则</li>
+        <li>可按规则筛选</li>
+        <li>位置/速度/等级字段齐备</li>
+      </ul></div>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="s-title">数据到达</div><div class="s-desc">北斗点批量入库，或终端预警信号到达</div></div>
+      <div class="step"><div class="s-title">规则比对</div><div class="s-desc">内存中比对启用规则：阈值/围栏/信号码/组合窗</div></div>
+      <div class="step"><div class="s-title">冷却判定</div><div class="s-desc">同车同因在冷却窗口内只保留一条，不刷屏</div></div>
+      <div class="step"><div class="s-title">生成事件</div><div class="s-desc">写风险事件：名称、车牌、位置、快照值、等级</div></div>
+      <div class="step"><div class="s-title">进入闭环</div><div class="s-desc">供 F19 通知、F20 工单、F22/F23 分析使用</div></div>
+    </div>
+
+    <h2 id="rule-mgr">五、风控规则管理</h2>
+
+    <h3>5.1 规则的五个要素</h3>
+    <p>每条规则回答五个问题：</p>
+    <ol>
+      <li><strong>看什么数据</strong>——规则类型（北斗速度类 / 连续驾驶类 / 终端信号类 / 组合类）；</li>
+      <li><strong>满足什么条件</strong>——类型专属参数（阈值、时长、信号码、时间窗）；</li>
+      <li><strong>算几级风险</strong>——高 / 中 / 低（对应坐席处置优先级）；</li>
+      <li><strong>多久内不重复报</strong>——冷却时间（秒）：同一辆车同一原因在冷却窗口内只产生一条事件；</li>
+      <li><strong>现在是否生效</strong>——启用开关：停用后引擎立即不再比对该规则（最长 30 秒生效延迟）。</li>
+    </ol>
+
+    <h3>5.2 五类规则说明</h3>
+    <table>
+      <tr><th style="width:110px">规则类型</th><th>判定逻辑（业务语言）</th><th>可配参数</th><th style="width:90px">数据来源</th></tr>
+      <tr>
+        <td><span class="badge red">超速</span></td>
+        <td>车辆当前速度<strong>达到或超过阈值</strong>即命中。一批点中持续超速时只报一次（取最严重的点）。</td>
+        <td>速度阈值 km/h；冷却秒数；风险等级</td>
+        <td>北斗点</td>
+      </tr>
+      <tr>
+        <td><span class="badge red">疲劳驾驶</span></td>
+        <td>车辆持续行驶（相邻定位间隔不超过"中断间隔"，默认 10 分钟视为连续）的时长<strong>达到连续驾驶上限</strong>即命中。停车、长时间无点会中断连续计时。</td>
+        <td>连续驾驶上限（分钟，合规值 240）；中断间隔（分钟）；冷却秒数；等级</td>
+        <td>北斗点（时间窗回溯）</td>
+      </tr>
+      <tr>
+        <td><span class="badge amber">围栏进出</span></td>
+        <td>车辆位置相对电子围栏发生<strong>越界状态变化</strong>（进入/离开，按围栏配置）时命中。围栏内持续行驶、围栏外持续行驶都不重复报；首次见到某车时只记录初始状态、不产生事件。</td>
+        <td>围栏图形与触发方向在围栏页配置；规则侧固定使用围栏自带的等级与冷却</td>
+        <td>北斗点 + 围栏</td>
+      </tr>
+      <tr>
+        <td><span class="badge amber">信号分级</span></td>
+        <td>终端 DSM/ADAS 上报的预警信号，<strong>信号码与启用规则匹配</strong>时按该规则配置的等级产生事件；没有启用规则匹配的信号直接忽略（不落事件）。</td>
+        <td>信号码（内置四类）；风险等级；冷却秒数；启停</td>
+        <td>终端预警信号</td>
+      </tr>
+      <tr>
+        <td><span class="badge red">组合事件</span></td>
+        <td>在时间窗内<strong>先有一类风险、当前又发生另一类</strong>时升级命中。第一波支持"疲劳驾驶 + 超速"：窗口内已有疲劳事件且当前超速，产出高等级组合事件，独立冷却。</td>
+        <td>组合窗口（分钟）；冷却秒数；等级（默认高）</td>
+        <td>已生成事件 + 北斗点</td>
+      </tr>
+    </table>
+
+    <h3>5.3 风险分级建议（可在页面调整）</h3>
+    <table>
+      <tr><th>等级</th><th>业务含义</th><th>典型规则</th><th>处置期待（F19/F20 落地）</th></tr>
+      <tr><td><span class="badge red">高风险</span></td><td>事故概率极高，需立即干预</td><td>严重超速（&gt;120）、疲劳驾驶、前向碰撞、疲劳+超速组合</td><td>立即弹窗 + 电话干预 + 工单</td></tr>
+      <tr><td><span class="badge amber">中风险</span></td><td>明显违规，需尽快提醒</td><td>一般超速（&gt;100）、分心驾驶、车道偏离、离开运营区</td><td>弹窗/消息提醒 + 工单</td></tr>
+      <tr><td><span class="badge blue">低风险</span></td><td>关注与教育类</td><td>短暂进入提示围栏、低置信度信号</td><td>列表留痕，统计分析</td></tr>
+    </table>
+
+    <h3>5.4 冷却去重：为什么必须有</h3>
+    <p>车辆超速往往持续几分钟、定位每 2 秒一条，没有冷却机制就会产生上百条重复事件。规则按"<strong>同一辆车 + 同一规则（围栏类再细分到同一围栏）</strong>"做冷却：冷却窗口内已产生过事件，新的命中只做内部记录、不再落事件。冷却结束后若违法行为仍在持续，允许再次产生一条事件，形成"持续违法"的时间证据链。</p>
+    <blockquote class="tip"><p><strong>推荐值：</strong>超速类 3~5 分钟、严重超速 3 分钟、疲劳类 30 分钟（疲劳事件代表一个驾驶时段）、信号类 5~10 分钟、围栏类 10 分钟。管理员可按管理尺度调整。</p></blockquote>
+
+    <h3>5.5 内置规则（开箱即用）</h3>
+    <table>
+      <tr><th>规则编码</th><th>名称</th><th>类型</th><th>默认参数</th><th>等级</th><th>冷却</th></tr>
+      <tr><td>SPEED_GENERAL</td><td>一般超速</td><td>超速</td><td>速度 ≥ 100 km/h</td><td><span class="badge amber">中</span></td><td>300 秒</td></tr>
+      <tr><td>SPEED_SEVERE</td><td>严重超速</td><td>超速</td><td>速度 ≥ 120 km/h</td><td><span class="badge red">高</span></td><td>180 秒</td></tr>
+      <tr><td>FATIGUE_DRIVE</td><td>疲劳驾驶</td><td>疲劳</td><td>连续驾驶 ≥ 240 分钟；中断间隔 10 分钟</td><td><span class="badge red">高</span></td><td>1800 秒</td></tr>
+      <tr><td>DSM_FATIGUE</td><td>终端信号·疲劳</td><td>信号分级</td><td>信号码 DSM_FATIGUE</td><td><span class="badge red">高</span></td><td>600 秒</td></tr>
+      <tr><td>DSM_DISTRACTION</td><td>终端信号·分心</td><td>信号分级</td><td>信号码 DSM_DISTRACTION</td><td><span class="badge amber">中</span></td><td>600 秒</td></tr>
+      <tr><td>ADAS_FCW</td><td>终端信号·前向碰撞风险</td><td>信号分级</td><td>信号码 ADAS_FCW</td><td><span class="badge red">高</span></td><td>300 秒</td></tr>
+      <tr><td>ADAS_LDW</td><td>终端信号·车道偏离</td><td>信号分级</td><td>信号码 ADAS_LDW</td><td><span class="badge amber">中</span></td><td>300 秒</td></tr>
+      <tr><td>COMBO_FATIGUE_SPEED</td><td>疲劳叠加超速</td><td>组合事件</td><td>30 分钟窗内有疲劳事件且当前超速（≥100）</td><td><span class="badge red">高</span></td><td>1800 秒</td></tr>
+    </table>
+    <p>内置规则<strong>不可删除</strong>，但参数、等级、冷却、启停均可调整；停用内置规则后可随时重新启用。自定义规则可自由增删。</p>
+
+    <h2 id="fence-mgr">六、电子围栏管理</h2>
+    <p>围栏是画在地图上的"管理区域"，回答两类管理要求：<strong>"这些车不能出去"</strong>（运营区域，离开报警）和<strong>"这些车不能进来"</strong>（禁行/敏感区域，进入报警）。</p>
+    <h3>6.1 围栏要素</h3>
+    <ul>
+      <li><strong>围栏名称</strong>：如"北京配送中心运营区""长安街禁行区"；</li>
+      <li><strong>形状</strong>：圆形（中心点 + 半径米数，适合配送半径、站点周边）或多边形（沿道路/行政边界逐点绘制，适合不规则区域）；</li>
+      <li><strong>触发方向</strong>：进入报警 / 离开报警 / 进出都报；</li>
+      <li><strong>风险等级与冷却</strong>：围栏自带，默认中风险、600 秒；</li>
+      <li><strong>启停</strong>：停用围栏引擎立即不再判定（最长 30 秒延迟）。</li>
+    </ul>
+    <h3>6.2 进出判定的业务语义</h3>
+    <table>
+      <tr><th>场景</th><th>是否产生事件</th></tr>
+      <tr><td>车辆一直在围栏内行驶</td><td>不产生（状态未变化）</td></tr>
+      <tr><td>车辆从围栏外驶入（外→内）</td><td>触发方向含"进入"时产生 1 条</td></tr>
+      <tr><td>车辆从围栏内驶出（内→外）</td><td>触发方向含"离开"时产生 1 条</td></tr>
+      <tr><td>车辆首次被引擎看到、当前已在围栏内</td><td>不产生（只初始化状态，避免给历史在区内车辆刷事件）</td></tr>
+      <tr><td>刚报过一次越界、冷却期内反复横跳</td><td>不重复产生</td></tr>
+      <tr><td>围栏被停用后再启用</td><td>重新按"首次见到"处理，避免停用积压一次性爆发</td></tr>
+    </table>
+    <p>系统内置 1 条<strong>演示围栏</strong>（国贸附近圆形区域，进出都报，可编辑、可删除），用于上线演示与引擎验证。</p>
+
+    <h2 id="signal">七、终端预警信号分级</h2>
+    <p>本期承接四类终端信号（与现有演示链路一致）：</p>
+    <table>
+      <tr><th>信号码</th><th>通道</th><th>含义（终端侧已完成画面识别）</th><th>默认等级</th></tr>
+      <tr><td>DSM_FATIGUE</td><td>DSM 驾驶员监控</td><td>疲劳（闭眼/打哈欠/长时驾驶）</td><td><span class="badge red">高</span></td></tr>
+      <tr><td>DSM_DISTRACTION</td><td>DSM</td><td>分心（左顾右盼/低头/接打电话/抽烟等）</td><td><span class="badge amber">中</span></td></tr>
+      <tr><td>ADAS_FCW</td><td>ADAS 高级辅助驾驶</td><td>前向碰撞风险</td><td><span class="badge red">高</span></td></tr>
+      <tr><td>ADAS_LDW</td><td>ADAS</td><td>车道偏离</td><td><span class="badge amber">中</span></td></tr>
+    </table>
+    <p><strong>分级逻辑从代码搬到配置：</strong>信号到达后，引擎查该信号码对应的启用规则——有则按规则等级落事件并执行冷却；没有或被停用则<strong>忽略该信号</strong>。事件保留信号携带的抓拍图地址（media_url）与置信度（confidence），供坐席按需调阅（完整视频调阅在第三波 F25）。</p>
+
+    <h2 id="event">八、风险事件长什么样</h2>
+    <p>引擎产出的每条事件包含：</p>
+    <table>
+      <tr><th style="width:120px">字段</th><th>说明</th><th>示例</th></tr>
+      <tr><td>事件名称</td><td>命中规则/围栏的中文名快照（规则以后改名不影响历史事件）</td><td>严重超速、疲劳驾驶、离开围栏·北京运营区</td></tr>
+      <tr><td>事件编码</td><td>规则编码；围栏事件为 GEO_ENTER / GEO_EXIT</td><td>SPEED_SEVERE、GEO_EXIT</td></tr>
+      <tr><td>来源</td><td>北斗 / DSM / ADAS</td><td>北斗</td></tr>
+      <tr><td>车牌 / 终端</td><td>事件主体</td><td>京B56789 / SIM_005</td></tr>
+      <tr><td>发生时间</td><td>取触发命中的那一个定位点/信号时间</td><td>2026-10-02 10:21:03</td></tr>
+      <tr><td>位置与速度</td><td>经纬度、瞬时速度（信号事件可能无速度）</td><td>116.49,39.94；126 km/h</td></tr>
+      <tr><td>风险等级</td><td>高/中/低，取自命中规则</td><td>高</td></tr>
+      <tr><td>置信度</td><td>信号类为终端识别置信度；北斗规则类为 100%</td><td>0.91 / 1.00</td></tr>
+      <tr><td>关联规则/围栏</td><td>内部 id，便于按规则统计与筛选</td><td>rule_id=2、fence_id=1</td></tr>
+      <tr><td>处置状态</td><td>本期全部为"待处置"；处置闭环由 F20 承接（现有页面的简单处置备注保留）</td><td>待处置</td></tr>
+    </table>
+
+    <h2 id="pages">九、页面与操作原型</h2>
+
+    <h3>9.1 风控规则列表（系统管理 → 风控规则）</h3>
+    <div class="wire">
+      <div class="w-top">风控规则：规则名称/编码/类型/等级/参数摘要/状态/最近触发 — 新建规则</div>
+      <div class="w-body">
+        <div class="w-side">
+          筛选：类型 ▾ ｜ 状态 ▾<br><br>
+          <span class="w-btn">查询</span>
+          <span class="w-btn ghost">重置</span>
+        </div>
+        <div class="w-main">
+          <div class="w-line w90"></div>
+          <div class="w-line w70"></div>
+          <div class="w-line w90"></div>
+          <div class="w-line w50"></div>
+          <div style="margin-top:8px">
+            <span class="w-btn">启用/停用</span>
+            <span class="w-btn ghost">编辑</span>
+            <span class="w-btn ghost" style="background:#fef2f2;color:#b91c1c;border-color:#b91c1c">删除</span>
+            <span style="font-size:12px;color:#667085">（内置规则无"删除"）</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p>列表要点：<strong>"参数摘要"</strong>用人话展示（如"速度 ≥ 120 km/h · 冷却 180 秒"）；停用规则行置灰；"最近触发时间"帮助判断规则是否在工作。</p>
+
+    <h3>9.2 规则编辑对话框（参数随类型变化）</h3>
+    <div class="wire">
+      <div class="w-top">编辑规则：严重超速</div>
+      <div class="w-body">
+        <div class="w-side" style="width:38%">
+          类型：超速 ▾<br><br>
+          速度阈值：[ 120 ] km/h<br><br>
+          风险等级：高 ▾<br><br>
+          冷却时间：[ 180 ] 秒<br><br>
+          状态：● 启用
+        </div>
+        <div class="w-main">
+          <strong>参数表单随类型切换：</strong><br>
+          · 超速 → 速度阈值<br>
+          · 疲劳 → 连续驾驶上限、中断间隔<br>
+          · 信号分级 → 信号码（四类下拉）<br>
+          · 组合 → 组合窗口分钟数<br><br>
+          <span class="w-btn">保存</span>
+          <span class="w-btn ghost">取消</span>
+        </div>
+      </div>
+    </div>
+    <p>校验规则：必填项不能为空；阈值必须是合理正数（速度 1~220、时长 1~1440 分钟、冷却 0~86400 秒）；<strong>同类型自定义规则的编码不能重复</strong>；信号码规则一个信号码只允许一条有效规则（防止两条规则给同一信号定不同等级）。</p>
+
+    <h3>9.3 电子围栏列表与绘制</h3>
+    <div class="wire">
+      <div class="w-top">电子围栏：名称/形状/触发方向/等级/状态 — 新建围栏</div>
+      <div class="w-body">
+        <div class="w-side" style="width:38%">
+          新建对话框：<br>
+          名称：[ 北京运营区 ]<br>
+          形状：● 圆形 ○ 多边形<br>
+          半径：[ 3000 ] 米<br>
+          触发：离开报警 ▾<br>
+          等级：中 ▾<br>
+          <span class="w-btn">在地图点击选中心</span>
+        </div>
+        <div class="w-main" style="position:relative">
+          <strong>地图绘制区（Leaflet）</strong><br>
+          · 圆形：点击地图确定中心，输入半径即时预览圆圈<br>
+          · 多边形：逐点点击添加顶点，双击或"完成绘制"闭合<br>
+          · 编辑时回显已有图形；可拖动微调<br>
+          · 保存前必须已在地图上画出有效图形
+        </div>
+      </div>
+    </div>
+
+    <h3>9.4 风险预警分析页增强（既有页面）</h3>
+    <ul>
+      <li>事件列表增加"<strong>事件名称</strong>"列（中文），技术编码作为副文本；</li>
+      <li>筛选区增加"<strong>规则</strong>"下拉（拉取全部规则，含停用项用于历史筛选）；</li>
+      <li>高风险行保持红色标识；其余筛选、分页、处置备注交互不变；</li>
+      <li>实时自动刷新（与 F14 WebSocket 联动）在 F14 上线时替换轮询，本期保持手动/刷新加载。</li>
+    </ul>
+
+    <h3>9.5 权限与菜单（衔接 F33）</h3>
+    <table>
+      <tr><th>角色</th><th>风控规则</th><th>电子围栏</th><th>风险事件</th></tr>
+      <tr><td>超级管理员</td><td>全部权限</td><td>全部权限</td><td>全部数据</td></tr>
+      <tr><td>安全管理员</td><td>查看 + 维护（新增授权）</td><td>查看 + 维护（新增授权）</td><td>查看</td></tr>
+      <tr><td>调度监控员</td><td>不可见菜单</td><td>不可见菜单</td><td>查看（数据范围后续波次接入）</td></tr>
+      <tr><td>企业车队长</td><td>不可见菜单</td><td>不可见菜单</td><td>查看</td></tr>
+    </table>
+
+    <h2 id="rules">十、业务规则汇总</h2>
+    <ol>
+      <li>引擎只处理<strong>实时数据流</strong>：终端推送的北斗点、实时预警信号；历史样例 CSV 导入不回灌引擎。</li>
+      <li>停用规则/围栏最长 30 秒内对所有车辆生效；不重启任何服务。</li>
+      <li>同一车辆同一规则（围栏含围栏维度）在冷却窗口内只产生一条事件。</li>
+      <li>围栏事件只在<strong>内外状态发生变化</strong>时产生；首次见到车辆只初始化、不补报。</li>
+      <li>信号分级：无启用规则匹配的信号不落事件；信号的等级一律以规则配置为准。</li>
+      <li>内置规则不可删除，可改参数/等级/冷却/启停；自定义规则可删（删除后历史事件保留）。</li>
+      <li>围栏必须有有效图形才能启用；同一名称的有效围栏不可重复。</li>
+      <li>规则配置、围栏配置的增删改全部进入 F34 操作审计。</li>
+      <li>规则评估出现任何技术异常，只记录服务日志、<strong>不得影响北斗轨迹正常入库</strong>和信号接口响应。</li>
+      <li>事件的中文名称在生成时快照保存；规则事后改名不改历史事件名称。</li>
+    </ol>
+
+    <h2 id="scope">十一、本期做与不做</h2>
+    <table>
+      <tr><th style="width:80px">分类</th><th>内容</th></tr>
+      <tr><td><span class="badge green">本期做</span></td><td>
+        ① 规则/围栏配置表与管理页面（8 条内置规则 + 1 条演示围栏）；② Python 侧实时 CEP 引擎：超速、疲劳、围栏进出状态机、信号分级、疲劳+超速组合；③ 冷却去重；④ 规则 30 秒内存缓存热加载；⑤ risk_event 增加事件名称/规则/围栏字段并在事件页展示与筛选；⑥ 规则配置接入 F33 权限点与 F34 审计；⑦ 接口自测 + 模拟器驱动的端到端验证。
+      </td></tr>
+      <tr><td><span class="badge amber">本期不做</span></td><td>
+        ① 弹窗/短信/语音等通知动作（F19）；② 工单状态机与超时升级（F20）；③ 引擎规则的"试跑/回放命中预览"界面（本期直接用模拟器验证）；④ 按车型/企业/车组差异化适用规则（第一波规则对全部车辆生效；多租户策略模板后续）；⑤ 道路限速等级路网匹配（本期超速为统一绝对阈值）；⑥ 急加速/急刹车/急转弯等九轴行为事件（随 F22 评分模型建设）；⑦ 真实 JT/T 808/1078 协议网关（信号来源替换，引擎接口不变）；⑧ 风险事件按部门的数据权限过滤（沿用 F33 既定节奏，在监控域统一接入）。
+      </td></tr>
+    </table>
+
+    <h2 id="accept">十二、业务验收标准</h2>
+    <ol>
+      <li>用 admin/安全管理员登录，"系统管理"下可见<strong>风控规则、电子围栏</strong>两个菜单；调度员账号不可见，直接访问 URL 被弹回。</li>
+      <li>规则列表开箱可见 8 条内置规则，参数摘要、等级、状态正确；内置规则无删除按钮或删除被明确拒绝。</li>
+      <li>能新建一条"测试超速"规则，阈值设为 60 km/h，启用后启动模拟器：<strong>1 分钟内</strong>风险事件列表出现名称为"测试超速"的事件，车牌为模拟车辆，速度 ≥ 60，来源"北斗"，等级与配置一致；连续超速期间事件受冷却约束不刷屏；停用规则后 30 秒内不再产生新事件；删除测试规则不影响历史事件查看。</li>
+      <li>把疲劳规则临时调为 1 分钟连续驾驶上限，模拟器持续运行后产生疲劳事件；恢复 240 分钟默认值。</li>
+      <li>演示围栏：模拟车辆驶出/驶入圆形围栏时分别产生离开/进入事件（按触发方向），事件名称含围栏名；车辆在区外持续行驶不重复产生。</li>
+      <li>调用视频分析演示接口：对应信号规则启用时产生带中文名称、等级、置信度、抓拍地址的事件；停用该信号规则后再次调用，<strong>不产生</strong>事件。</li>
+      <li>事件页"规则"下拉可筛选；事件行展示中文名；技术编码可见但不抢眼。</li>
+      <li>规则/围栏的增、改、启停、删在操作审计页可查到操作人与前后内容。</li>
+      <li>引擎验证期间，轨迹监控页车辆点持续正常刷新（证明引擎故障不影响主链路）。</li>
+    </ol>
+
+    <h2 id="decision">十三、待确认事项</h2>
+    <ol>
+      <li>超速内置阈值采用一般 100 / 严重 120 km/h（高速公路常见客货车限速管理口径），疲劳采用连续 240 分钟（《道路交通安全法实施条例》口径），均页面可调——建议认可。</li>
+      <li>第一波规则对<strong>全部车辆</strong>生效，暂不支持按企业/车组差异化；多企业策略模板随运营增强期建设——建议认可。</li>
+      <li>组合事件第一波只实现"疲劳 + 超速"一种，组合框架（任意 A+ B）后续扩展——建议认可。</li>
+      <li>围栏绘制基于现有 Leaflet 自建极简绘制（点选/双击闭合），不引入新的地图绘制依赖——建议认可。</li>
+      <li>规则配置缓存采用 30 秒 TTL（非实时生效），换取引擎零外部依赖、不增加每次评估的数据库压力——建议认可。</li>
+    </ol>
+
+  </main>
+</div>
+</body>
+</html>

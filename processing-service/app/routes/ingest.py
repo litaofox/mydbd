@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import db
 from app.config import settings
 from app.security import verify_service_token
+from app.services import cep_engine
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -38,6 +39,11 @@ def ingest_traj(batch: dict):
     inserted = 0
     for i in range(0, len(rows), INSERT_CHUNK):
         inserted += db.insert_gps_points(rows[i:i + INSERT_CHUNK])
+    # F18 CEP 旁路评估：引擎异常不阻断轨迹入库
+    try:
+        cep_engine.evaluate_points(rows)
+    except Exception as exc:
+        print(f"[cep] evaluate error: {exc}")
     return {"inserted": inserted}
 
 

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用户与权限（IAM） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;vertical-align:middle;}
+.badge.blue{background:var(--accent-bg);color:var(--primary);}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+.rel-map{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;margin:24px 0;}
+.rel-node{border:2px solid var(--primary);background:var(--accent-bg);border-radius:10px;
+  padding:14px 18px;text-align:center;min-width:120px;}
+.rel-node .n-title{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.rel-node .n-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.rel-node.core{background:var(--primary);border-color:var(--primary-dark);}
+.rel-node.core .n-title{color:#fff;}
+.rel-node.core .n-sub{color:#cfe0ff;}
+.rel-link{padding:0 10px;color:var(--muted);font-size:13px;text-align:center;line-height:1.35;}
+.rel-link b{color:var(--primary-dark);}
+.flow{counter-reset:step;display:flex;gap:0;margin:22px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;position:relative;background:#f7f9fd;
+  border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px 46px;margin-right:14px;}
+.flow .step:last-child{margin-right:0;}
+.flow .step::before{counter-increment:step;content:counter(step);
+  position:absolute;left:12px;top:14px;width:24px;height:24px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.flow .step .s-title{font-weight:700;font-size:14.5px;color:#16345f;}
+.flow .step .s-desc{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6;}
+.wire{border:1.5px dashed #b8c4d8;border-radius:10px;padding:14px;margin:16px 0;background:#fbfcfe;}
+.wire .w-top{background:#e8eef8;border-radius:6px;padding:8px 12px;font-size:13px;color:#3d4a5c;margin-bottom:10px;}
+.wire .w-body{display:flex;gap:10px;}
+.wire .w-side{width:32%;background:#eef2f8;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-main{flex:1;background:#fff;border:1px solid #e3e8f0;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-line{height:9px;background:#dbe3f0;border-radius:4px;margin:7px 0;}
+.wire .w-line.w70{width:70%;}.wire .w-line.w50{width:50%;}.wire .w-line.w90{width:90%;}
+.wire .w-btn{display:inline-block;background:var(--primary);color:#fff;border-radius:4px;padding:3px 10px;font-size:12px;margin:3px 4px 3px 0;}
+.wire .w-btn.ghost{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+.scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0;}
+.scene{border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff;
+  box-shadow:0 1px 3px rgba(16,42,90,.06);}
+.scene .sc-role{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;}
+.scene .sc-name{font-size:15px;font-weight:700;color:#16345f;margin-bottom:6px;}
+.scene .sc-text{font-size:13.5px;color:var(--muted);line-height:1.7;}
+.fmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0;}
+.fmap .fm{border:1px solid var(--border);border-radius:10px;padding:14px;background:linear-gradient(180deg,#fff,#f8fafd);}
+.fmap .fm h4{margin:0 0 8px;font-size:15px;color:var(--primary-dark);}
+.fmap .fm ul{margin:0;padding-left:18px;font-size:13.5px;color:#44506a;}
+.fmap .fm li{margin:3px 0;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
+.stat{border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fff;text-align:center;}
+.stat .num{font-size:26px;font-weight:700;color:var(--primary-dark);}
+.stat .num.red{color:var(--red);}
+.stat .lbl{font-size:13px;color:var(--muted);margin-top:2px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+  .wire .w-body{flex-direction:column;}
+  .wire .w-side{width:100%;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  table,blockquote,.wire,.scene,.flow{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="toc-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰ 目录</button>
+  <span class="title">mydbd 北斗导航数据业务平台 · 用户与权限（IAM）产品设计（业务说明）</span>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+    <ul>
+      <li><a href="#cover">文档说明</a></li>
+      <li><a href="#why">一、为什么做</a>
+        <ul>
+          <li><a href="#why-bg">1.1 业务背景</a></li>
+          <li><a href="#why-pain">1.2 现在的问题</a></li>
+          <li><a href="#why-value">1.3 做成后的价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#roles">二、谁在用、什么场景用</a></li>
+      <li><a href="#model">三、账号、角色与权限怎么配合</a></li>
+      <li><a href="#features">四、功能总览</a></li>
+      <li><a href="#user-mgr">五、用户管理：给人开号</a></li>
+      <li><a href="#role-mgr">六、角色管理：把权限打包</a></li>
+      <li><a href="#data-scope">七、数据权限：只看本企业的车</a></li>
+      <li><a href="#login">八、登录安全与二次验证</a></li>
+      <li><a href="#experience">九、菜单与按钮：所见即所能</a></li>
+      <li><a href="#profile">十、个人中心</a></li>
+      <li><a href="#rules">十一、业务规则汇总</a></li>
+      <li><a href="#scope">十二、本期做与不做</a></li>
+      <li><a href="#accept">十三、业务验收标准</a></li>
+      <li><a href="#decision">十四、待确认事项</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+
+    <h1 id="cover">用户与权限（IAM） · 产品设计说明书</h1>
+    <p class="cover-meta">功能编号：F33（系统管理域）｜文档版本：v1.0｜编写日期：2026-10-02｜配套技术文档：MOD-IAM-001</p>
+    <blockquote>
+      <p><strong>一句话说明：</strong>让平台上的每个工作人员都用<strong>自己的账号</strong>登录，按<strong>岗位角色</strong>获得菜单和操作权限，并且<strong>只能看到自己企业/车队的数据</strong>；敏感岗位可开启手机验证器动态口令作为第二道登录保障。</p>
+    </blockquote>
+
+    <h2 id="why">一、为什么做</h2>
+
+    <h3 id="why-bg">1.1 业务背景</h3>
+    <p>平台即将从"单人演示"走向"多人真实运营"：运输企业的车队长、排班的调度员、集团的安全管理员、平台运维人员都会使用系统。这些岗位<strong>该看什么、能改什么、能看哪些企业的数据</strong>天然不同。与此同时，F34 操作审计已经上线——审计要能追溯到"具体的人"，前提就是人人有独立账号，而不是共用一个 admin。</p>
+    <p>道路运输动态监管与网络安全等级保护也要求：账号实名可辨、权限最小化分配、重要岗位具备更强的身份验证手段、离职/调岗能及时收回权限。</p>
+
+    <h3 id="why-pain">1.2 现在的问题</h3>
+    <table>
+      <tr><th style="width:150px">痛点</th><th>具体表现</th><th style="width:200px">后果</th></tr>
+      <tr><td>共用演示账号</td><td>所有人都知道 admin/admin123，菜单和数据全开放</td><td>误操作、越权查看无法区分到人；密码一旦扩散无法收回</td></tr>
+      <tr><td>没有岗位概念</td><td>想让一个调度员"只看监控、不能改车辆档案"，做不到</td><td>只能给全套权限，违背最小权限原则</td></tr>
+      <tr><td>数据无边界</td><td>A 运输企业的账号能看到 B 企业的车辆与运行情况</td><td>商业数据互相可见，客户无法接受</td></tr>
+      <tr><td>密码防护弱</td><td>密码明文写死、输错无数次也能一直试</td><td>弱口令与暴力破解风险</td></tr>
+      <tr><td>无第二验证手段</td><td>安全管理员等高权限账号仅靠密码保护</td><td>密码泄露即账号失守</td></tr>
+      <tr><td>人员流动无抓手</td><td>人员离职/调岗后，无法快速停用账号、调整权限</td><td>"僵尸账号"长期保留访问能力</td></tr>
+    </table>
+
+    <h3 id="why-value">1.3 做成后的价值</h3>
+    <div class="fmap">
+      <div class="fm"><h4>对企业客户</h4><ul>
+        <li>自己的车只有自己人看得到</li><li>车队长、调度员各用各的号</li><li>人员变动当天即可收权</li>
+      </ul></div>
+      <div class="fm"><h4>对安全管理</h4><ul>
+        <li>操作可精确追溯到人（衔接 F34 审计）</li><li>高权限账号二次验证</li><li>登录异常自动锁定</li>
+      </ul></div>
+      <div class="fm"><h4>对平台运营</h4><ul>
+        <li>角色一次配置、多人复用</li><li>新员工开号 1 分钟完成</li><li>权限模型支撑后续多企业规模化运营</li>
+      </ul></div>
+      <div class="fm"><h4>对合规审计</h4><ul>
+        <li>账号实名、授权有记录</li><li>最小权限可证明</li><li>满足等保基本身份鉴别要求</li>
+      </ul></div>
+    </div>
+
+    <h2 id="roles">二、谁在用、什么场景用</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">平台超级管理员（admin）</div>
+        <div class="sc-name">系统的"root"</div>
+        <div class="sc-text">拥有全部菜单与全部数据权限，负责开号、配角色、应急解锁。系统内置、不可删除、不可停用，避免把所有人锁在门外。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">管账号、查审计</div>
+        <div class="sc-text">创建/停用用户、分配角色、重置密码、解锁账号、查阅操作审计；不参与日常车辆业务操作。建议开启二次验证。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">只看不动</div>
+        <div class="sc-text">值守实时监控、回放轨迹、跟踪风险预警，可查看本部门车辆与主数据，但<strong>不能新增、修改、删除</strong>任何档案。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业车队长</div>
+        <div class="sc-name">管自己车队</div>
+        <div class="sc-text">维护本企业的车辆、终端、驾驶员档案，查看本企业监控与风险；看不到其他企业，也管不了账号和审计。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">普通工作人员（每位登录者）</div>
+        <div class="sc-name">管理自己的账号安全</div>
+        <div class="sc-text">维护本人联系方式、修改密码、自助绑定/关闭手机动态口令；无需麻烦管理员。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">离职/调岗人员（被管理对象）</div>
+        <div class="sc-name">权限及时收回</div>
+        <div class="sc-text">离职：停用账号，立即无法登录；调岗：调整角色，菜单与数据范围随之改变；历史操作仍在审计中可查。</div>
+      </div>
+    </div>
+
+    <h2 id="model">三、账号、角色与权限怎么配合</h2>
+    <p>采用业内成熟的<strong>"用户—角色—权限"模型（RBAC）</strong>，管理员日常只需要做一个动作：<strong>给用户勾选角色</strong>。权限与数据范围都挂在角色上，岗位相同的人共用一个角色，调岗时换角色即可，不用逐项点权限。</p>
+    <div class="rel-map">
+      <div class="rel-node"><div class="n-title">用户</div><div class="n-sub">张三、李四…<br>归属一个部门</div></div>
+      <div class="rel-link"><b>分配</b><br>1 人可兼<br>多个角色</div>
+      <div class="rel-node core"><div class="n-title">角色</div><div class="n-sub">如：车队长<br>= 功能权限 + 数据范围</div></div>
+      <div class="rel-link"><b>打包</b><br>菜单/按钮<br>+ 可见部门</div>
+      <div class="rel-node"><div class="n-title">权限点</div><div class="n-sub">看哪个菜单<br>能点哪个按钮<br>看哪些部门数据</div></div>
+    </div>
+    <blockquote class="tip">
+      <p><strong>举例：</strong>新建账号「王车队」→ 归属部门"北京物流公司"→ 勾选角色「企业车队长」。他登录后：菜单只有监控、风险、主数据；能编辑车辆档案；车辆列表里只出现北京物流公司及其下属车队的车。</p>
+    </blockquote>
+
+    <h2 id="features">四、功能总览</h2>
+    <div class="fmap">
+      <div class="fm"><h4>① 用户管理</h4><ul>
+        <li>新建/编辑/停用/删除账号</li><li>分配角色、归属部门</li><li>重置密码、手动解锁</li><li>查看最近登录、MFA 状态</li>
+      </ul></div>
+      <div class="fm"><h4>② 角色管理</h4><ul>
+        <li>角色增删改查</li><li>勾选菜单与按钮权限</li><li>设置数据范围 5 档</li><li>自定义可见部门集合</li>
+      </ul></div>
+      <div class="fm"><h4>③ 登录安全</h4><ul>
+        <li>密码加盐哈希存储</li><li>连错 5 次锁定 15 分钟</li><li>TOTP 动态口令二次验证</li><li>停用账号即时失效</li>
+      </ul></div>
+      <div class="fm"><h4>④ 个人中心</h4><ul>
+        <li>查看个人资料</li><li>自助修改密码</li><li>自助绑定/关闭动态口令</li><li>查看本人角色</li>
+      </ul></div>
+      <div class="fm"><h4>⑤ 菜单动态化</h4><ul>
+        <li>按权限渲染左侧菜单</li><li>无权限路由不可进入</li><li>按钮按权限显示/隐藏</li><li>操作审计纳入权限控制</li>
+      </ul></div>
+      <div class="fm"><h4>⑥ 数据权限（首落点）</h4><ul>
+        <li>车辆档案按部门过滤</li><li>组织树按范围裁剪</li><li>其他模块后续波次接入</li><li>规则统一，复用一致</li>
+      </ul></div>
+    </div>
+
+    <h2 id="user-mgr">五、用户管理：给人开号</h2>
+    <p>入口：<strong>系统管理 → 用户管理</strong>（需「用户管理」菜单权限；新增/修改/删除等操作需「用户维护」按钮权限）。</p>
+
+    <h3>5.1 用户列表</h3>
+    <p>列表展示：用户名、姓名、归属部门、角色（可多个标签）、状态（启用/停用）、动态口令（已开/未开）、最近登录时间、锁定状态；支持按用户名/姓名/状态/部门筛选与分页。</p>
+    <div class="wire">
+      <div class="w-top">线框：用户管理页</div>
+      <div class="w-body">
+        <div class="w-side">筛选区：用户名 / 姓名 / 状态 / 部门 / 【查询】【重置】<br><br><span class="w-btn">＋ 新建用户</span></div>
+        <div class="w-main">
+          <div class="w-table">
+            <div class="head"><span>用户名</span><span>姓名/部门</span><span>角色</span><span>状态</span><span>操作</span></div>
+            <div><span>admin</span><span>超级管理员 / —</span><span>超级管理员</span><span>启用</span><span>—（保护）</span></div>
+            <div><span>wangcd</span><span>王车队 / 北京物流</span><span>企业车队长</span><span>启用·口令已开</span><span>编辑 重置密码 删除</span></div>
+            <div><span>zhaodd</span><span>赵调度 / 一队</span><span>调度监控员</span><span style="color:#b45309">锁定中</span><span>编辑 解锁 停用</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>5.2 新建用户</h3>
+    <ol>
+      <li><strong>登录名</strong>：4~20 位字母/数字/下划线，创建后不可修改、全站唯一；</li>
+      <li><strong>姓名</strong>必填；<strong>初始密码</strong>必填（8~20 位，含字母和数字），由管理员当面或通过安全渠道告知本人；</li>
+      <li><strong>归属部门</strong>：从组织架构树选择，决定其数据权限的计算锚点；</li>
+      <li><strong>角色</strong>：可多选，取并集（一个人既当车队长又当安全员时，两个角色的权限和数据范围合并，从宽生效）；</li>
+      <li>手机、邮箱、备注选填。提交后即可登录。</li>
+    </ol>
+
+    <h3>5.3 日常管理动作</h3>
+    <table>
+      <tr><th>动作</th><th>说明</th><th>规则与提示</th></tr>
+      <tr><td>编辑</td><td>改姓名、部门、手机邮箱、角色、状态</td><td>登录名不可改；改角色/部门后权限立即生效</td></tr>
+      <tr><td>重置密码</td><td>管理员直接设置新密码</td><td>同时解除其锁定状态；操作有审计留痕</td></tr>
+      <tr><td>解锁</td><td>清除失败计数与锁定标记</td><td>仅锁定中用户需要；本人连错导致锁定时的应急手段</td></tr>
+      <tr><td>启用/停用</td><td>开关式切换</td><td>停用后<strong>立即无法继续访问</strong>（不用等其 token 过期）</td></tr>
+      <tr><td>删除</td><td>二次确认后软删除</td><td>账号从列表移除、无法再登录；历史审计记录保留；同名可重新开号</td></tr>
+    </table>
+    <blockquote class="warn">
+      <p><strong>防自锁保护：</strong>admin 账号不可停用、删除或移除超级管理员角色；任何人不能停用/删除<strong>自己</strong>、不能摘掉自己的全部角色——避免"把自己锁在门外"。这些不是前端隐藏，而是后端硬规则。</p>
+    </blockquote>
+
+    <h2 id="role-mgr">六、角色管理：把权限打包</h2>
+    <p>入口：<strong>系统管理 → 角色管理</strong>。一个角色由两部分组成：<strong>能做什么（功能权限）</strong> + <strong>能看哪里的数据（数据范围）</strong>。</p>
+
+    <h3>6.1 角色编辑三分区</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">基本信息</div><div class="s-desc">角色编码（创建后不可改）、名称、状态、备注</div></div>
+      <div class="step"><div class="s-title">数据范围</div><div class="s-desc">5 档单选；选"自定义"时再勾选具体部门</div></div>
+      <div class="step"><div class="s-title">功能权限</div><div class="s-desc">在菜单树中勾选可见菜单与可用按钮</div></div>
+    </div>
+
+    <h3>6.2 功能权限树怎么勾</h3>
+    <p>权限按<strong>目录 → 菜单 → 按钮</strong>三级展示，与左侧导航完全对应：</p>
+    <ul>
+      <li>勾选"菜单"= 该用户能看到这个菜单、进入这个页面；</li>
+      <li>勾选"按钮"= 页面上的新建/编辑/删除等操作按钮可用；<strong>只勾菜单不勾按钮 = 只读用户</strong>（如调度监控员）；</li>
+      <li>父子联动：勾子项自动带上父目录可见性，避免出现"有权限但菜单无处可点"。</li>
+    </ul>
+    <table>
+      <tr><th>目录</th><th>菜单（页面权限）</th><th>按钮（操作权限）</th></tr>
+      <tr><td rowspan="3">实时监控</td><td>实时导航监控 monitor:view</td><td>—</td></tr>
+      <tr><td>历史轨迹回放 playback:view</td><td>—</td></tr>
+      <tr><td>风险预警分析 risk:view</td><td>—</td></tr>
+      <tr><td rowspan="4">主数据管理</td><td>组织架构 mdm:org:view</td><td>组织维护 mdm:org:edit</td></tr>
+      <tr><td>车辆档案 mdm:vehicle:view</td><td>车辆维护 mdm:vehicle:edit</td></tr>
+      <tr><td>终端档案 mdm:terminal:view</td><td>终端维护 mdm:terminal:edit</td></tr>
+      <tr><td>驾驶员档案 mdm:driver:view</td><td>驾驶员维护 mdm:driver:edit</td></tr>
+      <tr><td rowspan="3">系统管理</td><td>用户管理 iam:user:view</td><td>用户维护 iam:user:edit</td></tr>
+      <tr><td>角色管理 iam:role:view</td><td>角色维护 iam:role:edit</td></tr>
+      <tr><td>操作审计 audit:view</td><td>—</td></tr>
+    </table>
+
+    <h3>6.3 内置角色与删除规则</h3>
+    <ul>
+      <li>系统内置 4 个角色：超级管理员、安全管理员、调度监控员、企业车队长（权限模板可复制思路，角色本身可在其基础上新建）；内置角色不可删除，编码与数据范围不可修改，名称与权限勾选可调整。</li>
+      <li>删除自定义角色时，若仍有用户在用，系统拒绝并提示「该角色已分配给 N 个用户，请先解除」，防止误删导致用户裸奔。</li>
+    </ul>
+
+    <h2 id="data-scope">七、数据权限：只看本企业的车</h2>
+    <p>功能权限管"能不能进这个页面"，数据权限管"进去以后<strong>列表里出现谁的数据</strong>"。每个角色选择一个数据范围档位：</p>
+    <table>
+      <tr><th style="width:130px">档位</th><th>含义</th><th>典型角色</th></tr>
+      <tr><td>全部数据</td><td>不受部门限制，跨企业可见</td><td>超级管理员、安全管理员</td></tr>
+      <tr><td>本企业及以下</td><td>以用户所属企业（组织树中的企业节点）为根，含企业本部与下属全部车队</td><td>企业车队长</td></tr>
+      <tr><td>本部门及以下</td><td>仅用户所属部门及其下级部门</td><td>区域主管、调度班长</td></tr>
+      <tr><td>仅本部门</td><td>只看所属部门自身，不含下级</td><td>一线调度员</td></tr>
+      <tr><td>自定义</td><td>在组织树中勾选任意部门集合（可跨层级）</td><td>分管多个车队的专项岗位</td></tr>
+    </ul>
+    <blockquote>
+      <p><strong>多角色从宽：</strong>一个用户有多个角色时，可见数据取并集——任一角色是"全部"即全部可见，避免兼岗反而看不到数据。</p>
+    </blockquote>
+    <h4>本期生效范围（务实落地）</h4>
+    <p>当前平台中<strong>车辆是唯一带"所属部门"属性的业务对象</strong>，因此本期数据权限在两处生效：<strong>①车辆档案列表过滤；②组织架构树按范围裁剪</strong>。终端、驾驶员、实时监控、轨迹回放、风险预警将在各自后续功能波次中按<strong>同一套规则</strong>接入，用户与角色配置届时自动生效，无需重新授权。</p>
+    <blockquote class="warn">
+      <p><strong>边界说明：</strong>未挂归属部门的车辆，对受限角色不可见（仅"全部数据"可见）；本期不做跨部门越权写入的逐条拦截（无编辑权限的角色已被功能权限挡住入口），后续迭代补齐。</p>
+    </blockquote>
+
+    <h2 id="login">八、登录安全与二次验证</h2>
+
+    <h3>8.1 登录流程</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">输入账号密码</div><div class="s-desc">用户名+密码；系统统一提示"用户名或密码错误"，不暴露账号是否存在</div></div>
+      <div class="step"><div class="s-title">判断是否需要口令</div><div class="s-desc">未开通：直接进入系统；已开通：进入 6 位动态验证码步骤</div></div>
+      <div class="step"><div class="s-title">进入工作台</div><div class="s-desc">按角色加载菜单与数据；连续输错有锁定保护</div></div>
+    </div>
+
+    <h3>8.2 失败锁定</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="num red">5 次</div><div class="lbl">连续输错密码即锁定</div></div>
+      <div class="stat"><div class="num">15 分钟</div><div class="lbl">自动解锁时间，或找管理员手动解锁</div></div>
+      <div class="stat"><div class="num">8~20 位</div><div class="lbl">密码长度，须同时含字母与数字</div></div>
+    </div>
+    <p>锁定期间即使输入正确密码也不能登录，页面提示剩余锁定时间。登录成功一次即把错误计数清零。密码在数据库中以<strong>加盐哈希</strong>存储，任何页面与接口都无法看到任何人（含管理员）的原密码，管理员只能"重置"为新密码。</p>
+
+    <h3>8.3 二次验证（TOTP 动态口令）</h3>
+    <p>面向高权限岗位（建议安全管理员、车队长开通）的可选增强能力，使用微信/支付宝/Google Authenticator 等<strong>标准验证器 App</strong>，无需平台发短信：</p>
+    <ol>
+      <li><strong>绑定</strong>：个人中心 → 动态口令 → 展示二维码（同时提供手动输入密钥，兼容无法扫码的场景）→ 用验证器扫码 → 输入 App 上当前显示的 6 位数字确认，绑定才生效；</li>
+      <li><strong>登录</strong>：密码校验通过后，增加一步 6 位验证码；验证码每 30 秒变化，新旧各容忍一个周期，防止时钟微小偏差；</li>
+      <li><strong>关闭</strong>：需再次验证登录密码（加当前验证码），防止他人趁已登录状态偷偷关闭；</li>
+      <li><strong>兜底</strong>：手机丢失等情况由<strong>安全管理员处理（重置密码不能解 MFA）</strong>——本期提供管理员侧关闭指定用户动态口令的能力。</li>
+    </ol>
+
+    <h2 id="experience">九、菜单与按钮：所见即所能</h2>
+    <ul>
+      <li><strong>左侧菜单按角色生成</strong>：登录后系统根据角色权限渲染导航，没有权限的菜单<strong>根本不出现</strong>，不是"点了再报错"；</li>
+      <li><strong>直接输入网址也被拦截</strong>：手敲无权限页面的 URL，会被拦下并提示无权限；后端接口同样有独立校验，绕过前端也调不通；</li>
+      <li><strong>按钮级隐藏</strong>：只读角色进入车辆档案时，"新增/编辑/删除"按钮不渲染；</li>
+      <li><strong>权限调整即时生效</strong>：管理员改完角色，目标用户下次加载即按新权限工作，不用重启系统；</li>
+      <li><strong>操作审计收口</strong>：F34 审计页面现按 audit:view 权限控制，仅安全管理员/超管可见。</li>
+    </ul>
+
+    <h2 id="profile">十、个人中心</h2>
+    <p>点击右上角用户名下拉进入，包含三块：</p>
+    <table>
+      <tr><th style="width:130px">分区</th><th>可做的事</th></tr>
+      <tr><td>基本资料</td><td>查看用户名/姓名/部门/角色；自助修改手机、邮箱（归属部门与角色需管理员调整）</td></tr>
+      <tr><td>修改密码</td><td>输入旧密码 + 新密码（符合复杂度）；忘记旧密码走管理员重置</td></tr>
+      <tr><td>动态口令</td><td>查看开通状态；自助绑定（二维码+确认码）或关闭（密码+验证码）</td></tr>
+    </table>
+    <p>退出登录：清除本地登录态并留下登出审计记录。</p>
+
+    <h2 id="rules">十一、业务规则汇总</h2>
+    <table>
+      <tr><th>主题</th><th>规则</th></tr>
+      <tr><td>账号唯一性</td><td>用户名有效账号内唯一；删除后同名可重新注册</td></tr>
+      <tr><td>多角色</td><td>一个用户可持多个角色；功能权限取并集、数据范围取并集（从宽）</td></tr>
+      <tr><td>最小权限</td><td>新用户无任何角色时只能登录看到空工作台；必须显式授予角色</td></tr>
+      <tr><td>超管保护</td><td>admin 不可删/停/降级；内置角色不可删；自己不能停自己</td></tr>
+      <tr><td>密码存储</td><td>PBKDF2 加盐哈希（每用户独立盐，12 万次迭代），全系统无人可见明文</td></tr>
+      <tr><td>失败锁定</td><td>同账号连续失败 5 次锁定 15 分钟；成功登录清零；管理员可提前解锁</td></tr>
+      <tr><td>动态口令</td><td>TOTP 标准，30 秒/6 位；绑定需确认、关闭需强校验；管理员可代关</td></tr>
+      <tr><td>停用即收权</td><td>停用/删除/改角色后，目标用户权限立即失效（无需等令牌过期）</td></tr>
+      <tr><td>数据范围锚点</td><td>以用户归属部门为准；未分配部门且角色限定部门范围时，看不到部门数据</td></tr>
+      <tr><td>操作留痕</td><td>登录、用户/角色管理、重置密码、解锁、启停等全部进入 F34 审计，密码/口令/验证码不入日志明文</td></tr>
+    </table>
+
+    <h2 id="scope">十二、本期做与不做</h2>
+    <table>
+      <tr><th>本期交付（F33 第一波）</th><th>明确不做（后续迭代）</th></tr>
+      <tr>
+        <td>
+          用户/角色/权限点全套 RBAC；菜单动态渲染、路由守卫、按钮指令<br>
+          5 档数据范围 + 车辆档案/组织树两处落地<br>
+          PBKDF2 密码、失败锁定、启停/解锁/重置、自助改密<br>
+          TOTP 动态口令绑定/二步登录/关闭/管理员代关<br>
+          个人中心、4 个内置角色、权限点种子与审计衔接
+        </td>
+        <td>
+          菜单/权限点的页面化增删（本期随版本种子维护）<br>
+          短信/邮件/硬件 Key/企业微信钉钉等验证通道；SSO、LDAP、OAuth 单点登录<br>
+          密码历史、首次登录强制改密、复杂度与锁定策略可配置（随 F35）<br>
+          忘记密码自助找回、账号注册审批流、一人多部门兼任<br>
+          在线用户列表、强制下线、Token 黑名单<br>
+          终端/司机/监控/轨迹/风险页面的数据权限（同机制后续波次接入）<br>
+          字段级权限、跨部门越权写入拦截
+        </td>
+      </tr>
+    </table>
+
+    <h2 id="accept">十三、业务验收标准</h2>
+    <ol>
+      <li><strong>开号与授权</strong>：管理员可新建用户并勾选角色；该用户登录后菜单与按钮严格等于角色授权集合，不多不少。</li>
+      <li><strong>只读角色</strong>：调度监控员可见全部监控类与主数据菜单，但页面无任何新增/编辑/删除按钮，直接调写接口返回无权限。</li>
+      <li><strong>数据隔离</strong>：车队长账号的车辆列表只出现其企业子树车辆；组织树只出现其企业；超管可见全部。</li>
+      <li><strong>自定义范围</strong>：配置一个只含指定部门的角色，对应用户车辆列表与该集合严格一致。</li>
+      <li><strong>锁定与解锁</strong>：连错 5 次出现锁定提示，正确密码也无法登录；管理员解锁后立即恢复。</li>
+      <li><strong>动态口令</strong>：绑定后登录必须通过二步验证码，错误码不放行、正确码放行；关闭后恢复单步登录。</li>
+      <li><strong>即时收权</strong>：停用用户后，该用户刷新/继续操作立即被要求重新登录且无法登录；调整角色后菜单立刻按新角色呈现。</li>
+      <li><strong>防自锁</strong>：界面与接口层面均无法停用/删除 admin、内置角色或当前登录的自己。</li>
+      <li><strong>删除保护</strong>：删除占用中的角色被拒绝并提示用户数；解除后可删。</li>
+      <li><strong>个人中心</strong>：用户可改手机邮箱、可凭旧密码改密码、可自助绑定/关闭动态口令。</li>
+      <li><strong>审计衔接</strong>：登录成功/失败、用户与角色管理动作在操作审计中可查到人，且日志中不出现密码、口令密钥、验证码明文。</li>
+      <li><strong>无回归</strong>：超管账号下监控、回放、风险、主数据、审计等既有功能全部正常。</li>
+    </ol>
+
+    <h2 id="decision">十四、待确认事项</h2>
+    <table>
+      <tr><th style="width:40px">#</th><th>事项</th><th>建议</th></tr>
+      <tr><td>1</td><td>密码复杂度（8~20 位含字母数字）与锁定策略（5 次/15 分钟）本期写死</td><td>认可，后续随 F35 系统参数中心配置化</td></tr>
+      <tr><td>2</td><td>二次验证只支持 TOTP 验证器，不做短信/邮件</td><td>认可：零通道成本、等保认可、客户端兼容性好；短信通道后续按需补</td></tr>
+      <tr><td>3</td><td>数据权限本期仅车辆档案、组织树两处落地</td><td>认可：其余业务对象部门归属在后续波次补齐后即时接入</td></tr>
+      <tr><td>4</td><td>菜单/权限点不提供页面化增删，由版本种子维护</td><td>认可：一期权限点稳定，避免配出"无页面承载"的脏权限</td></tr>
+      <tr><td>5</td><td>是否预置非超管演示账号（如 safeadmin/monitor01）用于验收演示</td><td>不写入生产种子；验收期间由管理员通过页面创建，验收后停用或保留由用户决定</td></tr>
+      <tr><td>6</td><td>admin 初始密码默认仍为 admin123（可经环境变量覆盖）</td><td>建议部署文档明确生产必须改密；首登强制改密列入后续</td></tr>
+    </table>
+
+  </main>
+</div>
+</body>
+</html>

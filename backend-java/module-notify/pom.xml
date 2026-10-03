@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.mydbd</groupId>
+        <artifactId>backend-java</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <artifactId>module-notify</artifactId>
+    <name>module-notify</name>
+    <description>通知域：F19 报警分级与多渠道通知（站内消息 + 实时推送 + 外部渠道预留）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>platform-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

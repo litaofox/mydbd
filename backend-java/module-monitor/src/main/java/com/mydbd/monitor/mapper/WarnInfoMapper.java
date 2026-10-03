@@ -1,8 +1,16 @@
 package com.mydbd.monitor.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mydbd.monitor.entity.WarnInfo;
+import com.mydbd.monitor.vo.AlarmVO;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
 
@@ -13,4 +21,156 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
     /** 有轨迹的在途车辆数（监控域直接读取 traj schema，避免跨模块依赖） */
     @Select("SELECT count(DISTINCT identity_code) FROM traj.traj_gps_point")
     long countActiveVehicles();
+
+    /**
+     * F17 分页列表（MOD-MON-004 §4.1）：LEFT JOIN base_warn_type 取名称/等级，
+     * 动态条件；排序 start_warn_time DESC, id DESC。
+     * handleStatus 用 COALESCE 归一（历史 NULL 视为 0）。
+     */
+    @Select("""
+            <script>
+            SELECT w.id, w.plate_no AS "plateNo", w.identity_code AS "identityCode",
+                   w.type_id AS "typeId",
+                   COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
+                   t.grade_level AS "gradeLevel",
+                   w.start_warn_time AS "startWarnTime", w.end_warn_time AS "endWarnTime",
+                   w.start_lng AS "startLng", w.start_lat AS "startLat",
+                   w.end_lng AS "endLng", w.end_lat AS "endLat",
+                   w.start_speed AS "startSpeed", w.end_speed AS "endSpeed",
+                   w.warn_continue_mark AS "warnContinueMark",
+                   COALESCE(w.handle_status, 0) AS "handleStatus",
+                   w.handle_result_code AS "handleResultCode",
+                   w.handle_result_msg AS "handleResultMsg",
+                   w.handler, w.update_date AS "updateDate"
+              FROM traj.traj_warn_info w
+              LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
+             <where>
+               <if test="plateNo != null and plateNo != ''">
+                 AND w.plate_no LIKE '%' || #{plateNo} || '%'
+               </if>
+               <if test="typeId != null">
+                 AND w.type_id = #{typeId}
+               </if>
+               <if test="handleStatus != null">
+                 AND COALESCE(w.handle_status, 0) = #{handleStatus}
+               </if>
+               <if test="beginTime != null">
+                 AND w.start_warn_time &gt;= #{beginTime}
+               </if>
+               <if test="endTime != null">
+                 AND w.start_warn_time &lt; #{endTime}
+               </if>
+             </where>
+             ORDER BY w.start_warn_time DESC NULLS LAST, w.id DESC
+            </script>
+            """)
+    Page<AlarmVO> pageAlarms(Page<AlarmVO> page,
+                             @Param("plateNo") String plateNo,
+                             @Param("typeId") Integer typeId,
+                             @Param("handleStatus") Integer handleStatus,
+                             @Param("beginTime") LocalDateTime beginTime,
+                             @Param("endTime") LocalDateTime endTime);
+
+    /** F17 大屏/面板待处理滚动（§4.2）：只取 handle_status=0（COALESCE 归一） */
+    @Select("""
+            SELECT w.id, w.plate_no AS "plateNo", w.identity_code AS "identityCode",
+                   w.type_id AS "typeId",
+                   COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
+                   t.grade_level AS "gradeLevel",
+                   w.start_warn_time AS "startWarnTime", w.end_warn_time AS "endWarnTime",
+                   w.start_lng AS "startLng", w.start_lat AS "startLat",
+                   w.end_lng AS "endLng", w.end_lat AS "endLat",
+                   w.start_speed AS "startSpeed", w.end_speed AS "endSpeed",
+                   w.warn_continue_mark AS "warnContinueMark",
+                   COALESCE(w.handle_status, 0) AS "handleStatus",
+                   w.handle_result_code AS "handleResultCode",
+                   w.handle_result_msg AS "handleResultMsg",
+                   w.handler, w.update_date AS "updateDate"
+              FROM traj.traj_warn_info w
+              LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
+             WHERE COALESCE(w.handle_status, 0) = 0
+             ORDER BY w.start_warn_time DESC NULLS LAST, w.id DESC
+             LIMIT #{limit}
+            """)
+    List<AlarmVO> selectLatestPending(@Param("limit") int limit);
+
+    /** 详情单条（§4.5）：含 source_id、rule_id、create_date 等展示列，不存在返回 null */
+    @Select("""
+            SELECT w.id, w.plate_no AS "plateNo", w.identity_code AS "identityCode",
+                   w.type_id AS "typeId",
+                   COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
+                   t.grade_level AS "gradeLevel",
+                   w.start_warn_time AS "startWarnTime", w.end_warn_time AS "endWarnTime",
+                   w.start_lng AS "startLng", w.start_lat AS "startLat",
+                   w.end_lng AS "endLng", w.end_lat AS "endLat",
+                   w.start_speed AS "startSpeed", w.end_speed AS "endSpeed",
+                   w.warn_continue_mark AS "warnContinueMark",
+                   COALESCE(w.handle_status, 0) AS "handleStatus",
+                   w.handle_result_code AS "handleResultCode",
+                   w.handle_result_msg AS "handleResultMsg",
+                   w.handler, w.update_date AS "updateDate"
+              FROM traj.traj_warn_info w
+              LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
+             WHERE w.id = #{id}
+            """)
+    AlarmVO selectDetail(@Param("id") Long id);
+
+    /** 按类型统计（§4.3）：时间窗口 [begin,end)，JOIN 名称/等级 */
+    @Select("""
+            SELECT w.type_id AS "typeId",
+                   COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
+                   t.grade_level AS "gradeLevel",
+                   count(*) AS "count"
+              FROM traj.traj_warn_info w
+              LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
+             WHERE w.start_warn_time >= #{begin} AND w.start_warn_time < #{end}
+             GROUP BY w.type_id, t.name, t.grade_level
+             ORDER BY count(*) DESC
+            """)
+    List<Map<String, Object>> countByType(@Param("begin") LocalDateTime begin,
+                                          @Param("end") LocalDateTime end);
+
+    /** 按状态统计（§4.3）：COALESCE 归一 */
+    @Select("""
+            SELECT COALESCE(w.handle_status, 0) AS "handleStatus", count(*) AS "count"
+              FROM traj.traj_warn_info w
+             WHERE w.start_warn_time >= #{begin} AND w.start_warn_time < #{end}
+             GROUP BY COALESCE(w.handle_status, 0)
+             ORDER BY 1
+            """)
+    List<Map<String, Object>> countByStatus(@Param("begin") LocalDateTime begin,
+                                            @Param("end") LocalDateTime end);
+
+    /** 窗口内总数（§4.3） */
+    @Select("SELECT count(*) FROM traj.traj_warn_info WHERE start_warn_time >= #{begin} AND start_warn_time < #{end}")
+    long countInRange(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end);
+
+    /** 报警类型下拉（§4.5）：base_warn_type 有效行 */
+    @Select("""
+            SELECT id AS "typeId", name AS "typeName", grade_level AS "gradeLevel"
+              FROM traj.base_warn_type
+             WHERE valid_mark = 1
+             ORDER BY id
+            """)
+    List<Map<String, Object>> selectAlarmTypes();
+
+    /** 确认（§3.2）：0→1 条件更新，返回影响行数（0=冲突） */
+    @Update("""
+            UPDATE traj.traj_warn_info
+               SET handle_status = 1, handler = #{name},
+                   updater = #{name}, update_date = now()
+             WHERE id = #{id} AND COALESCE(handle_status, 0) = 0
+            """)
+    int markConfirmed(@Param("id") Long id, @Param("name") String name);
+
+    /** 解除（§3.2）：0/1→2 条件更新，返回影响行数（0=冲突） */
+    @Update("""
+            UPDATE traj.traj_warn_info
+               SET handle_status = 2, handler = #{name},
+                   handle_result_code = #{code}, handle_result_msg = #{msg},
+                   updater = #{name}, update_date = now()
+             WHERE id = #{id} AND COALESCE(handle_status, 0) IN (0, 1)
+            """)
+    int markResolved(@Param("id") Long id, @Param("name") String name,
+                     @Param("code") String code, @Param("msg") String msg);
 }

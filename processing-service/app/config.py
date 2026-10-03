@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # 存储与联动
     storage_root: str = "/data"
 
+    # F18 CEP 引擎：规则/围栏配置缓存秒数（配置改动最坏延迟）
+    risk_cache_sec: int = 30
+
     @property
     def samples_dir(self) -> str:
         return f"{self.storage_root}/samples"

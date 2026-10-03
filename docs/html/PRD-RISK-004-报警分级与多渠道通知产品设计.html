@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>报警分级与多渠道通知（F19） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.matrix{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;}
+.matrix .lvl{flex:1;min-width:220px;border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fbfcfe;}
+.matrix .lvl h4{margin:0 0 10px;font-size:16px;}
+.matrix .lvl.high{border-top:4px solid var(--red);}
+.matrix .lvl.mid{border-top:4px solid var(--amber);}
+.matrix .lvl.low{border-top:4px solid var(--green);}
+.matrix .lvl ul{margin:6px 0 0;padding-left:20px;font-size:14px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">报警分级与多渠道通知（F19） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <div class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 通知触发场景</a></li>
+      <li><a href="#s3">3. 分级通知策略矩阵</a></li>
+      <li><a href="#s4">4. 通知渠道与本期落地</a></li>
+      <li><a href="#s5">5. 站内消息中心</a></li>
+      <li><a href="#s6">6. 页面与交互</a></li>
+      <li><a href="#s7">7. 权限与配置</a></li>
+      <li><a href="#s8">8. 验收标准</a></li>
+    </ul>
+  </div></div>
+  <div class="content">
+    <h1>报警分级与多渠道通知（F19）</h1>
+    <p class="cover-meta">文档编号：PRD-RISK-004　|　所属功能：F19（第一波）　|　版本：v1.0　|　日期：2026-10-03</p>
+    <p class="cover-meta">上游依赖：F18 风控规则引擎（风险事件）、F20 处置工单流转（工单状态机）、F14 WebSocket 实时推送、F35 系统参数　|　下游：F21 坐席干预记录（通知后处置）</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>F18 产出分级风险事件、F20 将其流转为工单，但目前<strong>风险从"产生"到"被人知晓"之间没有主动触达</strong>：坐席必须盯着页面刷新才能发现新事件；高风险事件超时升级后，安全主管也无从得知。通知缺位会让前面所有识别与流转能力打折。</p>
+    <blockquote><p><strong>目标</strong>：按风险等级与事件紧急程度，将通知<strong>分级、定向</strong>地触达正确的人；高风险事件即时弹窗提醒坐席，超时升级通知主管；所有通知留痕可查（站内消息中心），并为短信/语音/App 推送等外部渠道预留统一扩展接口。</p></blockquote>
+
+    <h2 id="s2">2. 通知触发场景</h2>
+    <p>本期接入四类业务触发点，均由后端在状态变更的同一事务后异步派发，不阻塞主流程：</p>
+    <table>
+      <thead><tr><th>场景</th><th>触发时机</th><th>接收人</th><th>级别</th></tr></thead>
+      <tbody>
+        <tr><td><code>ORDER_CREATE</code></td><td>风险事件生成工单（Python 同事务建单 / 坐席"去处理"补建）</td><td>全体在线坐席（持工单处置权限的用户）</td><td>按工单风险等级</td></tr>
+        <tr><td><code>ORDER_ASSIGN</code></td><td>工单分派/转派给某坐席</td><td>目标坐席本人</td><td>按工单风险等级</td></tr>
+        <tr><td><code>ORDER_ESCALATE</code></td><td>超时扫描发现工单超过"时限+宽限"，自动升级督办</td><td>负责人 + 全体安全主管（持分派权限）</td><td>强制高</td></tr>
+        <tr><td><code>ORDER_CLOSE</code></td><td>工单闭环</td><td>（可选）分派人/主管</td><td>低</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn"><p>同一工单的升级通知<strong>只发一次</strong>（升级后 escalated=1 不再重复触发）；工单重开（REOPEN）不重复发创建通知，避免打扰。</p></blockquote>
+
+    <h2 id="s3">3. 分级通知策略矩阵</h2>
+    <p>通知级别 = 事件风险等级（低1/中2/高3），升级督办强制按高级处理。不同级别决定"用哪些渠道、弹不弹窗、响不响铃"：</p>
+    <div class="matrix">
+      <div class="lvl low"><h4><span class="badge green">低风险</span></h4>
+        <ul><li>站内消息：✔ 写入消息中心</li><li>实时推送：✔ 角标 +1，不弹窗</li><li>短信/语音：✘</li></ul></div>
+      <div class="lvl mid"><h4><span class="badge amber">中风险</span></h4>
+        <ul><li>站内消息：✔</li><li>实时推送：✔ 角标 +1，桌面通知（浏览器 Notification）</li><li>短信/语音：✘</li></ul></div>
+      <div class="lvl high"><h4><span class="badge red">高风险 / 升级督办</span></h4>
+        <ul><li>站内消息：✔</li><li>实时推送：✔ 页面右上角弹窗 + 提示音</li><li>短信/语音：接口预留（对接厂商后开启）</li></ul></div>
+    </div>
+    <blockquote class="tip"><p>弹窗与提示音仅对<strong>高风险</strong>生效，防止通知风暴；中低风险靠消息中心角标与列表承接。</p></blockquote>
+
+    <h2 id="s4">4. 通知渠道与本期落地</h2>
+    <p>渠道抽象为统一接口 <code>NotifyChannel</code>（send(接收人, 标题, 内容, 级别)），按策略矩阵组合调用：</p>
+    <table>
+      <thead><tr><th>渠道</th><th>本期状态</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>站内消息（INBOX）</td><td><span class="badge green">本期实现</span></td><td>写 <code>traj.sys_message</code>，消息中心可查、未读角标、已读标记</td></tr>
+        <tr><td>坐席弹窗/桌面通知（WEBSOCKET）</td><td><span class="badge green">本期实现</span></td><td>复用 F14 WebSocket 通道，新增 <code>NOTIFY</code> 消息类型定向推给在线接收人；前端按级别弹窗/响铃/角标</td></tr>
+        <tr><td>短信（SMS）</td><td><span class="badge amber">接口预留</span></td><td>定义渠道接口与配置键（<code>notify.sms.enabled</code> 等），未对接厂商前不发送</td></tr>
+        <tr><td>语音外呼（VOICE）</td><td><span class="badge amber">接口预留</span></td><td>同上，<code>notify.voice.enabled</code> 默认关闭</td></tr>
+        <tr><td>App 推送（PUSH）</td><td><span class="badge amber">接口预留</span></td><td>面向司机端/车队长 App，<code>notify.push.enabled</code> 默认关闭</td></tr>
+      </tbody>
+    </table>
+    <blockquote><p>外部渠道本期以"可插拔 + 配置开关 + 发送日志"方式预留：渠道未启用时仅记录<strong>发送意图</strong>日志，接入厂商后打开开关即可生效，业务代码不再改动。</p></blockquote>
+
+    <h2 id="s5">5. 站内消息中心</h2>
+    <ul>
+      <li><strong>消息模型</strong>：接收人、标题、内容、类型（工单通知/系统通知）、业务关联（工单 id，点击直达详情）、级别（低/中/高）、已读状态、时间。</li>
+      <li><strong>未读角标</strong>：顶栏铃铛显示未读数（≥100 显示 99+），新消息到达实时 +1。</li>
+      <li><strong>已读机制</strong>：单条点击标记已读；"全部已读"一键清空未读。</li>
+      <li><strong>直达跳转</strong>：工单类消息点击后打开对应工单详情抽屉。</li>
+      <li><strong>保留策略</strong>：本期不做自动清理；后续按配置参数保留天数归档。</li>
+    </ul>
+
+    <h2 id="s6">6. 页面与交互</h2>
+    <div class="flow">
+      <div class="step"><div class="t">状态变更</div><div class="d">建单/分派/升级/闭环</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">通知服务</div><div class="d">解析接收人 + 级别策略</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">渠道派发</div><div class="d">站内消息落库 + WS 定向推送</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">坐席端</div><div class="d">角标/弹窗/提示音/消息中心</div></div>
+    </div>
+    <h3>6.1 坐席工作台（全局）</h3>
+    <ul>
+      <li>顶栏铃铛：未读数角标；点击展开最近消息下拉（前 10 条），底部"查看全部"进入消息中心页。</li>
+      <li>高风险消息：右上角弹出卡片（标题+车牌+事件名+工单号，"去处理"按钮直达），伴随提示音（浏览器音频，用户首次交互后播放）；可手动关闭，不自动消失。</li>
+      <li>中风险：浏览器桌面通知（用户授权后），不弹页面卡片。</li>
+    </ul>
+    <h3>6.2 消息中心页（/system/messages）</h3>
+    <ul>
+      <li>列表：级别标签、标题、内容摘要、时间、已读状态；筛选：全部/未读。</li>
+      <li>操作：点击行标记已读并跳转业务对象；"全部已读"按钮。</li>
+    </ul>
+
+    <h2 id="s7">7. 权限与配置</h2>
+    <ul>
+      <li><strong>查看范围</strong>：用户只能查看/接收<strong>自己的</strong>站内消息（user_id 隔离），无越权查询接口。</li>
+      <li><strong>接收人解析</strong>：坐席=持 <code>risk:order:handle</code> 权限的启用用户；主管=持 <code>risk:order:assign</code> 权限的启用用户；超级管理员默认两者皆是。</li>
+      <li><strong>系统参数</strong>（F35）：<code>notify.popup.min_level</code>（弹窗最低级别，默认 3）、<code>notify.sound.enabled</code>（提示音开关，默认 true）、<code>notify.sms.enabled</code> / <code>notify.voice.enabled</code> / <code>notify.push.enabled</code>（外部渠道开关，默认 false）。</li>
+      <li><strong>审计</strong>：通知发送为系统行为，不写操作审计；外部渠道发送意图记入应用日志。</li>
+    </ul>
+
+    <h2 id="s8">8. 验收标准</h2>
+    <ol>
+      <li>新事件建单后，在线坐席端 1 秒内收到 NOTIFY 推送：高风险弹窗+角标+提示音，中风险角标，低风险仅消息中心可见。</li>
+      <li>工单分派/转派后，目标坐席收到定向站内消息，点击直达工单详情。</li>
+      <li>工单超时升级后，负责人与主管收到"升级督办"消息（高级，弹窗），且同一工单不重复通知。</li>
+      <li>消息中心：未读角标数字与列表未读条数一致；标记已读/全部已读后角标实时归零。</li>
+      <li>用户 A 不能看到用户 B 的消息（接口按当前登录人过滤）。</li>
+      <li>外部渠道开关关闭时不发送、不报错；打开后走渠道接口（本期以日志验证派发路径）。</li>
+      <li>通知派发失败（如 WS 会话断开）不影响工单主流程事务。</li>
+    </ol>
+    <hr>
+    <p class="cover-meta">本文档为业务设计说明；技术实现见 docs/design/mod/MOD-RISK-004-报警分级与多渠道通知模块设计.md。</p>
+  </div>
+</div>
+</body>
+</html>

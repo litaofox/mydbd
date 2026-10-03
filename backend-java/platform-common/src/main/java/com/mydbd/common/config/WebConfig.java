@@ -1,7 +1,10 @@
 package com.mydbd.common.config;
 
+import com.mydbd.common.security.AuthRealm;
 import com.mydbd.common.security.JwtAuthFilter;
 import com.mydbd.common.security.JwtUtil;
+import com.mydbd.common.security.PermissionCache;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,8 +28,12 @@ public class WebConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public FilterRegistrationBean<JwtAuthFilter> jwtFilterRegistration(JwtUtil jwtUtil) {
-        FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(new JwtAuthFilter(jwtUtil));
+    public FilterRegistrationBean<JwtAuthFilter> jwtFilterRegistration(
+            JwtUtil jwtUtil, ObjectProvider<AuthRealm> authRealmProvider,
+            PermissionCache permissionCache) {
+        AuthRealm authRealm = authRealmProvider.getIfAvailable();
+        FilterRegistrationBean<JwtAuthFilter> registration =
+                new FilterRegistrationBean<>(new JwtAuthFilter(jwtUtil, authRealm, permissionCache));
         registration.addUrlPatterns("/api/*");
         registration.setName("jwtAuthFilter");
         registration.setOrder(1);

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>车辆详情聚合面板（F16） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">车辆详情聚合面板（F16） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <nav class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 怎么用：点选车辆看详情</a></li>
+      <li><a href="#s3">3. 面板里有什么</a></li>
+      <li><a href="#s4">4. 实时位置刷新</a></li>
+      <li><a href="#s5">5. 数据口径与边界</a></li>
+      <li><a href="#s6">6. 角色与权限</a></li>
+      <li><a href="#s7">7. 与其他功能的关系</a></li>
+      <li><a href="#s8">8. 边界与后续演进</a></li>
+    </ul>
+  </div></nav>
+  <main class="content">
+    <h1>车辆详情聚合面板（F16）</h1>
+    <p class="cover-meta">功能编号 F16 · 实时监控域 · 第一波 · 关联文档 MOD-MON-003（模块技术设计） · 状态：已上线</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>调度坐席在实时监控地图上看车时，经常需要"盯某一辆车看仔细"：这辆车是谁的、装了什么终端、今天跑过哪些路线、最近有没有报警。过去这些信息分散在<strong>主数据档案页、轨迹查询页、报警列表页</strong>三个地方，来回切换、反复输车牌，效率很低。</p>
+    <p>F16 把它收拢成<strong>一屏</strong>：在地图上点一下车辆图标，右侧滑出详情抽屉，车辆档案、终端与司机、实时位置、当日轨迹缩略图、最新报警和今日计数一次呈现，并提供跳转到档案/报警/回放页面的入口。</p>
+    <blockquote class="tip"><p>一句话定位：F16 是"围绕一辆车的只读信息聚合视图"，不做任何编辑和处置——编辑回 MDM 档案页，处置去 F17 报警中心。</p></blockquote>
+
+    <h2 id="s2">2. 怎么用：点选车辆看详情</h2>
+    <div class="flow">
+      <div class="step"><div class="t">点车辆图标</div><div class="d">实时监控地图上的任意车</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">抽屉滑出</div><div class="d">骨架屏短暂加载后完整渲染</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">看 / 跳转</div><div class="d">就地查看，或点链接去对应页面</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">关闭</div><div class="d">地图恢复全览，继续观察态势</div></div>
+    </div>
+    <ul>
+      <li>面板是<strong>共享组件</strong>：实时监控页（F16 本次接入）与 F15 监控大屏点选车辆时弹出的是同一个面板，体验一致。</li>
+      <li>面板宽度桌面 560px；窄屏（如小窗口、平板竖屏）自动变为全屏抽屉，保证内容始终完整可见。</li>
+      <li>再次点击其他车辆，面板内容直接切换；重复点击同一辆车不会重复加载。</li>
+      <li>底部提供「刷新」按钮：面板停留期间报警计数不自动累加（避免与报警弹窗重复打扰），想看最新数字点一下刷新即可。</li>
+    </ul>
+
+    <h2 id="s3">3. 面板里有什么</h2>
+    <table>
+      <tr><th>区块</th><th>内容</th><th>说明</th></tr>
+      <tr><td>头部</td><td>车牌 + 号牌颜色 + 在线状态 + 实时位置卡（速度/方向/定位时间）</td><td>位置卡随实时推送每秒刷新</td></tr>
+      <tr><td>车辆档案</td><td>车型、品牌、VIN、运营类型、所属组织、车主、联系电话、道路运输证号、备注</td><td>只读；右上"前往车辆档案"可跳转编辑</td></tr>
+      <tr><td>终端与司机</td><td>当前绑定终端（识别码/型号/SIM/协议/视频通道数）；主班 + 副班司机（姓名/性别/电话/准驾车型）</td><td>只展示"当前有效"的绑定</td></tr>
+      <tr><td>当日轨迹</td><td>小地图上的当日轨迹线（起点绿、终点红、当前位置蓝点）+ 里程点数统计</td><td>当日最多抽稀展示 500 个点，原始点数如实标注</td></tr>
+      <tr><td>最新报警</td><td>最近 5 条终端报警（类型/时间/处理状态）+ 今日报警数、今日风险事件数两张计数卡</td><td>"查看全部报警"跳转 F17 报警中心并按车牌过滤</td></tr>
+      <tr><td>底部操作</td><td>「轨迹回放」跳转回放页；「视频调阅」本期为占位按钮</td><td>视频调阅点击提示"建设中，将随 F25（第三波）上线"</td></tr>
+    </table>
+    <blockquote><p>无终端绑定的车辆：档案照常显示，位置与轨迹区显示"未绑定终端，暂无定位数据"占位，不报错。</p></blockquote>
+
+    <h2 id="s4">4. 实时位置刷新</h2>
+    <ul>
+      <li>面板打开时先显示服务端快照位置；此后只要实时推送通道存活，位置卡<strong>每秒</strong>跟随最新定位刷新（速度、方向、定位时间、小地图蓝点同步移动）。</li>
+      <li>推送断线时自动降级为 5 秒轮询，刷新频率变慢但不中断；网络恢复后自动回到每秒。</li>
+      <li>"在线"判定口径与大屏一致：最近一次定位在 5 分钟以内。</li>
+    </ul>
+
+    <h2 id="s5">5. 数据口径与边界</h2>
+    <ul>
+      <li><strong>当日</strong> = 服务器本地自然日 00:00 至当前时刻；轨迹与报警/风险计数都按这个窗口。</li>
+      <li>轨迹与最新位置按<strong>终端识别码</strong>查定位表；报警按<strong>车牌</strong>查终端报警表；风险计数按车牌查当日风险事件。</li>
+      <li>一次点选只发<strong>一个</strong>聚合请求即返回全部区块（数据量小、无多次加载闪烁），点选到出图目标 300 毫秒内。</li>
+      <li>面板为纯只读：不修改任何档案、不确认/解除报警、不发起视频请求。</li>
+    </ul>
+
+    <h2 id="s6">6. 角色与权限</h2>
+    <table>
+      <tr><th>角色</th><th>能否查看某辆车的面板</th></tr>
+      <tr><td>系统管理员</td><td>✔ 全部车辆</td></tr>
+      <tr><td>安全管理员 / 调度坐席 / 车队队长</td><td>✔ 数据范围内的车辆（与实时监控页可见车辆一致）</td></tr>
+      <tr><td>无 monitor:view 权限的账号</td><td>✘ 看不到实时监控页，也就没有面板入口</td></tr>
+    </table>
+    <p>数据范围沿用平台"部门数据范围"规则：车辆属于哪个组织，就只对管理该组织的账号可见。点选越权车辆时前端直接提示"无权查看该车辆或车辆未建档"；即便绕过界面直接调接口，服务端同样拒绝（403）。</p>
+
+    <h2 id="s7">7. 与其他功能的关系</h2>
+    <ul>
+      <li><strong>F14 实时推送</strong>：面板位置刷新复用其全量点位消息，零改动、不新增订阅。</li>
+      <li><strong>F15 监控大屏</strong>：同一面板组件，大屏侧接入属其自身范围。</li>
+      <li><strong>F17 报警中心</strong>："查看全部报警"跳转其页面并自动按车牌过滤；面板内嵌的最近 5 条与 F17 列表字段口径一致。</li>
+      <li><strong>F11 轨迹回放</strong>："轨迹回放"按钮携带终端识别码跳转回放页。</li>
+      <li><strong>MDM 主数据</strong>："前往车辆档案"跳转档案页并带入车牌关键词；面板只读，编辑仍在档案页完成。</li>
+      <li><strong>F25 视频调阅（第三波）</strong>：本期仅保留入口按钮，届时接入实时视频与审批流。</li>
+    </ul>
+
+    <h2 id="s8">8. 边界与后续演进</h2>
+    <ul>
+      <li>本期<strong>不做</strong>：视频实时调阅（占位）、单车定向推送订阅、面板内报警处置、轨迹完整交互回放、历史多日轨迹对比。</li>
+      <li>演进方向：F25 上线后"视频调阅"按钮变为真实入口（有视频通道的终端可用）；如坐席反馈需要面板内快速确认报警，再评审与 F17 处置契约的复用方式。</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

@@ -26,8 +26,40 @@
             <artifactId>module-monitor</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-mdm</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-audit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-iam</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-risk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-notify</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-analysis</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

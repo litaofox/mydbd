@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>主数据管理模块 · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;vertical-align:middle;}
+.badge.blue{background:var(--accent-bg);color:var(--primary);}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+
+/* 业务对象关系图 */
+.rel-map{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;margin:24px 0;}
+.rel-node{border:2px solid var(--primary);background:var(--accent-bg);border-radius:10px;
+  padding:14px 18px;text-align:center;min-width:120px;}
+.rel-node .n-title{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.rel-node .n-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.rel-node.core{background:var(--primary);border-color:var(--primary-dark);}
+.rel-node.core .n-title{color:#fff;}
+.rel-node.core .n-sub{color:#cfe0ff;}
+.rel-link{padding:0 10px;color:var(--muted);font-size:13px;text-align:center;line-height:1.35;}
+.rel-link b{color:var(--primary-dark);}
+
+/* 步骤条 */
+.flow{counter-reset:step;display:flex;gap:0;margin:22px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;position:relative;background:#f7f9fd;
+  border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px 46px;margin-right:14px;}
+.flow .step:last-child{margin-right:0;}
+.flow .step::before{counter-increment:step;content:counter(step);
+  position:absolute;left:12px;top:14px;width:24px;height:24px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.flow .step .s-title{font-weight:700;font-size:14.5px;color:#16345f;}
+.flow .step .s-desc{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6;}
+
+/* 页面线框 */
+.wire{border:1.5px dashed #b8c4d8;border-radius:10px;padding:14px;margin:16px 0;background:#fbfcfe;}
+.wire .w-top{background:#e8eef8;border-radius:6px;padding:8px 12px;font-size:13px;color:#3d4a5c;margin-bottom:10px;}
+.wire .w-body{display:flex;gap:10px;}
+.wire .w-side{width:32%;background:#eef2f8;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-main{flex:1;background:#fff;border:1px solid #e3e8f0;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-line{height:9px;background:#dbe3f0;border-radius:4px;margin:7px 0;}
+.wire .w-line.w70{width:70%;}.wire .w-line.w50{width:50%;}.wire .w-line.w90{width:90%;}
+.wire .w-btn{display:inline-block;background:var(--primary);color:#fff;border-radius:4px;padding:3px 10px;font-size:12px;margin:3px 4px 3px 0;}
+.wire .w-btn.ghost{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+.wire .w-table{margin-top:8px;}
+.wire .w-table div{display:flex;border-bottom:1px solid #e8edf5;}
+.wire .w-table span{flex:1;padding:4px 6px;font-size:11.5px;color:#8893a7;}
+.wire .w-table .head span{background:#f0f4fb;color:#3d4a5c;font-weight:600;}
+
+/* 场景卡片 */
+.scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0;}
+.scene{border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff;
+  box-shadow:0 1px 3px rgba(16,42,90,.06);}
+.scene .sc-role{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;}
+.scene .sc-name{font-size:15px;font-weight:700;color:#16345f;margin-bottom:6px;}
+.scene .sc-text{font-size:13.5px;color:var(--muted);line-height:1.7;}
+
+/* 功能地图 */
+.fmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0;}
+.fmap .fm{border:1px solid var(--border);border-radius:10px;padding:14px;background:linear-gradient(180deg,#fff,#f8fafd);}
+.fmap .fm h4{margin:0 0 8px;font-size:15px;color:var(--primary-dark);}
+.fmap .fm ul{margin:0;padding-left:18px;font-size:13.5px;color:#44506a;}
+.fmap .fm li{margin:3px 0;}
+
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+  .wire .w-body{flex-direction:column;}
+  .wire .w-side{width:100%;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  table,blockquote,.wire,.scene,.flow{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="toc-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰ 目录</button>
+  <span class="title">mydbd 北斗导航数据业务平台 · 主数据管理模块产品设计（业务说明）</span>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+    <ul>
+      <li><a href="#cover">文档说明</a></li>
+      <li><a href="#why">一、为什么做</a>
+        <ul>
+          <li><a href="#why-bg">1.1 业务背景</a></li>
+          <li><a href="#why-pain">1.2 现在的问题</a></li>
+          <li><a href="#why-value">1.3 做成后的价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#map">二、业务全景</a></li>
+      <li><a href="#roles">三、谁在用、什么场景用</a></li>
+      <li><a href="#features">四、功能总览</a></li>
+      <li><a href="#org">五、组织架构管理</a></li>
+      <li><a href="#vehicle">六、车辆档案管理</a></li>
+      <li><a href="#terminal">七、终端档案管理</a></li>
+      <li><a href="#driver">八、驾驶员档案管理</a></li>
+      <li><a href="#binding">九、绑定关系管理（核心）</a></li>
+      <li><a href="#flows">十、四个典型业务流程</a></li>
+      <li><a href="#rules">十一、业务规则汇总</a></li>
+      <li><a href="#pages">十二、页面长什么样</a></li>
+      <li><a href="#updown">十三、数据的上下游</a></li>
+      <li><a href="#scope">十四、本期做与不做</a></li>
+      <li><a href="#accept">十五、业务验收标准</a></li>
+      <li><a href="#decision">十六、待确认事项</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+
+    <h1 id="cover">主数据管理模块 · 产品设计</h1>
+    <p class="cover-meta">文档编号：PRD-MDM-001 ｜ 版本：v0.1（评审稿）｜ 日期：2026-10-02</p>
+    <p class="cover-meta">读者：业务负责人、车队长/运营人员、产品、设计、开发、测试</p>
+    <p class="cover-meta">配套技术文档：MOD-MDM-001《主数据管理模块设计》（数据库、接口、工程结构见该文档）</p>
+
+    <blockquote>
+      <p><strong>一句话说明：</strong>本模块用来管理平台里最基础的四本"台账"——<strong>哪些单位、哪些车、哪些设备、哪些司机</strong>，以及"车装了哪台设备、谁在开"的对应关系。它不产生报警、不做监控，但监控、回放、预警、未来接入真实北斗设备，全都要以它为准。</p>
+    </blockquote>
+
+    <hr>
+
+    <h2 id="why">一、为什么要做主数据管理</h2>
+
+    <h3 id="why-bg">1.1 业务背景</h3>
+    <p>平台当前可以演示车辆监控、轨迹回放和风险预警，但车辆、终端、司机数据是数据库里预置的 5 条示例，业务人员<strong>没有任何页面可以自己登记和维护</strong>。一旦投入真实使用，新购车辆、新装北斗终端、新入职司机、人员换班、设备换装、车辆报废等每天都在发生，没有台账管理功能，平台数据很快就会与实际情况脱节。</p>
+    <p>同时，系统规划下一步要接入真实的北斗车载终端（JT/T 808）。终端上报数据时只带"终端编号"，平台必须查"这台终端装在哪台车上、车牌是什么"，才能把轨迹挂到正确的车辆上——<strong>绑定关系是未来设备接入的前提</strong>。</p>
+
+    <h3 id="why-pain">1.2 现在的问题</h3>
+    <table>
+      <thead><tr><th style="width:150px">问题</th><th>具体表现</th><th style="width:200px">导致的业务后果</th></tr></thead>
+      <tbody>
+        <tr><td>台账没法维护</td><td>车辆、终端、司机只能看不能改，新增一辆车必须找技术人员直接操作数据库</td><td>业务无法自助开展，上线即停摆</td></tr>
+        <tr><td>没有单位概念</td><td>车辆表预留了"所属单位"字段，但系统里没有单位台账，示例数据里的单位只是数字编号</td><td>无法按公司/车队筛选车辆，未来"企业只能看自己的车"也无据可依</td></tr>
+        <tr><td>绑定关系不可管</td><td>车装了哪台终端、当前谁在开，页面上查不到、也不能换绑</td><td>设备换装、司机换班后，监控里车牌与司机会对不上</td></tr>
+        <tr><td>重复与错误无约束</td><td>没有录入校验的话，同一台车可能被登记两次、一台终端可能同时绑两台车</td><td>轨迹错乱、统计失真、责任无法追溯</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="why-value">1.3 做成后的价值</h3>
+    <ul>
+      <li><strong>业务自助：</strong>车队长/运营人员在页面上即可完成全部档案登记与变更，无需技术介入。</li>
+      <li><strong>数据可信：</strong>车牌、终端号、驾驶证号唯一性校验，绑定互斥规则保证"一车一机、人车对应"。</li>
+      <li><strong>全程留痕：</strong>谁在什么时候登记、修改、解绑都有记录；绑定历史可追溯，事故追责时能查到"事发时谁在开车、装的哪台设备"。</li>
+      <li><strong>为接入铺路：</strong>真实北斗终端接入后，上报数据可自动解析到正确车辆；按组织做数据隔离也有了组织基础。</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="map">二、业务全景：四本台账 + 两类关系</h2>
+    <p>主数据管理的业务对象及其关系如下（虚线表示"归属"，实线表示"绑定"）：</p>
+
+    <div class="rel-map">
+      <div class="rel-node"><div class="n-title">企业/车队</div><div class="n-sub">组织台账</div></div>
+      <div class="rel-link">车辆<br><b>归属</b></div>
+      <div class="rel-node core"><div class="n-title">车辆</div><div class="n-sub">中心档案</div></div>
+      <div class="rel-link"><b>一对一<br>安装</b></div>
+      <div class="rel-node"><div class="n-title">北斗终端</div><div class="n-sub">设备台账</div></div>
+    </div>
+    <div class="rel-map">
+      <div class="rel-node" style="visibility:hidden"><div class="n-title">占位</div></div>
+      <div class="rel-link">司机<br><b>驾驶</b></div>
+      <div class="rel-node core"><div class="n-title">车辆</div><div class="n-sub">1 名主班 + 多名副班</div></div>
+      <div class="rel-link">主班一对一<br>副班一对多</div>
+      <div class="rel-node"><div class="n-title">驾驶员</div><div class="n-sub">人员台账</div></div>
+    </div>
+
+    <table>
+      <thead><tr><th style="width:130px">业务对象</th><th>通俗解释</th><th>关键识别信息</th></tr></thead>
+      <tbody>
+        <tr><td><strong>企业/车队</strong></td><td>车辆所属的单位，支持多级（公司→分公司→车队）</td><td>单位名称、单位编码</td></tr>
+        <tr><td><strong>车辆</strong></td><td>被监控的核心对象，所有业务围绕车辆展开</td><td>车牌号 + 车牌颜色</td></tr>
+        <tr><td><strong>北斗终端</strong></td><td>装在车上的定位/视频设备，上报数据的"源头"</td><td>终端编号（设备唯一身份）</td></tr>
+        <tr><td><strong>驾驶员</strong></td><td>开车的人，疲劳、分心等风险事件的责任人</td><td>驾驶证号</td></tr>
+        <tr><td><strong>绑定关系</strong></td><td>车↔终端、车↔司机的对应关系，带生效与失效时间，历史不删除</td><td>绑定时间、解绑时间</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="roles">三、谁在用、什么场景用</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">平台/企业管理员</div>
+        <div class="sc-name">建档与维护</div>
+        <div class="sc-text">录入单位、新购车辆、新到终端、入职司机；处理车辆报废、设备停用、司机离岗等变更。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">车队长 / 调度</div>
+        <div class="sc-name">排班与换班</div>
+        <div class="sc-text">查看每台车当前装的设备和当班司机；安排主副班、办理司机换车、车辆临时换装设备。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">监控坐席</div>
+        <div class="sc-name">接警核实</div>
+        <div class="sc-text">收到报警时，需要确认"车牌对不对、事发时谁在开车"，再进行电话干预与处置记录。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">系统自身（下游业务）</div>
+        <div class="sc-name">数据解析与展示</div>
+        <div class="sc-text">监控页显示车牌、回放页选择车辆、风险事件关联司机；未来 808 终端数据按绑定关系解析车牌。</div>
+      </div>
+    </div>
+
+    <hr>
+
+    <h2 id="features">四、功能总览</h2>
+    <div class="fmap">
+      <div class="fm">
+        <h4>① 组织架构</h4>
+        <ul>
+          <li>多级单位树浏览</li>
+          <li>单位新增/编辑/停用</li>
+          <li>查看单位下车辆</li>
+          <li>删除前占用校验</li>
+        </ul>
+      </div>
+      <div class="fm">
+        <h4>② 车辆档案</h4>
+        <ul>
+          <li>车辆分页查询/筛选</li>
+          <li>车辆登记/编辑/停用</li>
+          <li>车辆详情（含当前设备与司机）</li>
+          <li>绑定管理入口</li>
+        </ul>
+      </div>
+      <div class="fm">
+        <h4>③ 终端档案</h4>
+        <ul>
+          <li>终端分页查询/筛选</li>
+          <li>终端登记/编辑</li>
+          <li>设备状态管理（正常/维修/报废）</li>
+          <li>查看绑定车辆</li>
+        </ul>
+      </div>
+      <div class="fm">
+        <h4>④ 驾驶员档案</h4>
+        <ul>
+          <li>司机分页查询/筛选</li>
+          <li>司机登记/编辑</li>
+          <li>在岗/离岗状态管理</li>
+          <li>查看当前所驾车辆</li>
+        </ul>
+      </div>
+      <div class="fm">
+        <h4>⑤ 绑定关系</h4>
+        <ul>
+          <li>车-终端绑定/换绑/解绑</li>
+          <li>车-司机绑定/解绑（主/副班）</li>
+          <li>互斥规则自动拦截</li>
+          <li>绑定历史时间线</li>
+        </ul>
+      </div>
+      <div class="fm">
+        <h4>⑥ 通用能力</h4>
+        <ul>
+          <li>统一分页、关键字筛选</li>
+          <li>操作人/操作时间自动留痕</li>
+          <li>删除二次确认、错误原因提示</li>
+          <li>为后续权限控制预留按钮权限</li>
+        </ul>
+      </div>
+    </div>
+
+    <hr>
+
+    <h2 id="org">五、组织架构管理</h2>
+
+    <h3>5.1 管理什么</h3>
+    <p>维护运输企业及其下属车队/部门的树形结构，最多支持 <strong>5 级</strong>（例如：集团公司 → 区域分公司 → 运输车队 → 班组）。车辆登记时必须选择所属单位。</p>
+
+    <h3>5.2 档案信息项</h3>
+    <table>
+      <thead><tr><th style="width:140px">信息项</th><th>说明</th><th style="width:110px">是否必填</th></tr></thead>
+      <tbody>
+        <tr><td>上级单位</td><td>树中选择；顶级单位不选</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>单位名称</td><td>同一上级下不可重名</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>单位类型</td><td>运输企业 / 车队·部门</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>单位编码</td><td>企业内部编码，启用后全平台唯一</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>联系人/联系电话</td><td>单位日常对接人</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>所在地区/详细地址</td><td>省、市、区 + 详细地址</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>排序号</td><td>控制同级单位显示先后</td><td><span class="badge green">选填</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>5.3 业务规则</h3>
+    <ul>
+      <li>单位下还有<strong>未删除的下级单位</strong>或<strong>有效车辆</strong>时，不允许删除，系统会明确提示原因（如"该单位下还有 3 台有效车辆"）。</li>
+      <li>删除采用"停用/失效"方式，历史数据和统计中仍然保留该单位名称，保证可追溯。</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="vehicle">六、车辆档案管理</h2>
+
+    <h3>6.1 档案信息项</h3>
+    <table>
+      <thead><tr><th style="width:150px">信息项</th><th>说明</th><th style="width:110px">是否必填</th></tr></thead>
+      <tbody>
+        <tr><td>车牌号</td><td>与车牌颜色组合后全平台唯一，如"京A12345+蓝色"</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>车牌颜色</td><td>蓝/黄/绿/白/黑（新能源货车多为绿色）</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>所属单位</td><td>从组织树选择</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>车辆类型</td><td>重型货车、中型货车、轻型货车、冷链车等</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>运营类型</td><td>货运 / 客运 / 危化品 / 其他（危化品车辆后续适用更严的风控规则）</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>车身颜色、品牌</td><td>辅助辨识</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>VIN 车架号</td><td>17 位，录入时做格式校验</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>道路运输证号</td><td>营运资质信息</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>所属行业</td><td>如普货、冷链、渣土等</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>车主名称/联系电话</td><td>登记车主信息；电话做格式校验</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>所在地区、备注</td><td>补充说明</td><td><span class="badge green">选填</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>6.2 可以做什么</h3>
+    <ol>
+      <li><strong>查：</strong>按车牌号/VIN 关键字、所属单位（含其下级）、车牌颜色、运营类型组合筛选，分页浏览。</li>
+      <li><strong>看详情：</strong>一辆车的完整档案 + 当前安装的终端 + 当前主/副班司机，一页看清。</li>
+      <li><strong>增/改：</strong>登记表单分组填写，必填与格式不合格当场提示。</li>
+      <li><strong>删（停用）：</strong>车上还装着终端或还有在班司机时禁止删除，必须先解绑；防止误删导致轨迹成"无主数据"。</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="terminal">七、终端档案管理</h2>
+
+    <h3>7.1 档案信息项</h3>
+    <table>
+      <thead><tr><th style="width:150px">信息项</th><th>说明</th><th style="width:110px">是否必填</th></tr></thead>
+      <tbody>
+        <tr><td>终端编号</td><td>设备出厂/入网唯一身份，真实终端上报数据即以此识别，全平台唯一</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>设备厂商、型号</td><td>如 GT06N；用于设备质量追踪</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>设备 MAC 地址</td><td>硬件标识</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>SIM 卡号/账号</td><td>设备流量卡信息，欠费排查时使用</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>通信协议</td><td>JT808 / JT1078 / 其他</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>设备类型</td><td>一体机 / 分体机 / 视频智能终端</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>视频通道数</td><td>0 表示纯定位设备； DSM/ADAS 设备通常 2~4 路</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>设备状态</td><td>正常 / 维修停用 / 报废</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>备注</td><td>如返修记录</td><td><span class="badge green">选填</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>7.2 业务规则</h3>
+    <ul>
+      <li>终端编号不可重复登记。</li>
+      <li>只有<strong>"正常"</strong>状态的终端才能被绑定到车辆；维修停用、报废状态不可绑定。</li>
+      <li>终端已装车时不允许停用或删除，需先从车上解绑。</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="driver">八、驾驶员档案管理</h2>
+
+    <h3>8.1 档案信息项</h3>
+    <table>
+      <thead><tr><th style="width:150px">信息项</th><th>说明</th><th style="width:110px">是否必填</th></tr></thead>
+      <tbody>
+        <tr><td>姓名</td><td>司机真实姓名</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>驾驶证号</td><td>全平台唯一，是司机的业务身份</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>性别</td><td>男/女</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>联系电话</td><td>坐席干预、应急联系使用；格式校验</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>准驾车型</td><td>如 A2、B2、C1，应与所驾车型匹配（本期提示不强制）</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>身份证号、司机照片</td><td>本期支持身份证号文本录入；照片仅登记地址，上传功能后续随文件服务建设</td><td><span class="badge green">选填</span></td></tr>
+        <tr><td>在职状态</td><td>在岗 / 离岗 / 停用</td><td><span class="badge red">必填</span></td></tr>
+        <tr><td>备注</td><td>如安全培训记录</td><td><span class="badge green">选填</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3>8.2 业务规则</h3>
+    <ul>
+      <li>驾驶证号不可重复登记。</li>
+      <li>只有<strong>"在岗"</strong>司机可以被绑定到车辆。</li>
+      <li>司机仍在某台车上当班时不可停用/删除，需先解绑。</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="binding">九、绑定关系管理（本模块的核心）</h2>
+    <p>档案回答"有什么"，绑定关系回答"<strong>现在是谁和谁在一起</strong>"。平台所有实时数据都依赖绑定关系才能挂到正确的业务对象上。</p>
+
+    <h3>9.1 两类绑定关系的业务口径</h3>
+    <table>
+      <thead><tr><th style="width:130px">关系</th><th style="width:150px">数量口径</th><th>业务含义</th></tr></thead>
+      <tbody>
+        <tr><td>车 ↔ 终端</td><td>严格一对一</td><td>一台车同一时刻只装一台终端，一台终端同一时刻只能装在一台车上；换装时"先卸旧机、再装新机"。</td></tr>
+        <tr><td>车 → 主班司机</td><td>一车一名主班</td><td>车辆的第一责任人，风险统计、考核默认归属主班。</td></tr>
+        <tr><td>车 → 副班司机</td><td>一车可多名副班</td><td>双驾长途等场景的轮换司机。</td></tr>
+        <tr><td>司机 → 车</td><td>一人同时只在一台车上</td><td>无论主班副班，一名司机同一时刻只能有一条有效绑定，换车前先解绑。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>9.2 绑定时需要记录的信息</h3>
+    <ul>
+      <li><strong>车-终端：</strong>绑定类型（正式安装/临时换装）、安装时间、安装人、备注；解绑时记录解绑时间与备注。</li>
+      <li><strong>车-司机：</strong>司机角色（主班/副班）、绑定时间、备注；解绑时记录解绑时间。</li>
+    </ul>
+
+    <h3>9.3 系统会自动拦截的错误操作</h3>
+    <table>
+      <thead><tr><th style="width:260px">操作场景</th><th>系统反应</th></tr></thead>
+      <tbody>
+        <tr><td>把已装在 B 车上的终端绑给 A 车</td><td>拦截并提示"该终端已绑定车辆 京Bxxxx，请先解绑"</td></tr>
+        <tr><td>给已有终端的车再装一台终端</td><td>提示先解绑旧终端；也可直接使用<strong>"换绑"</strong>，系统自动一步完成旧机解绑+新机绑定</td></tr>
+        <tr><td>给一台车安排第二名主班司机</td><td>拦截，提示一车仅一名主班（可先把原主班改为解绑或设为副班）</td></tr>
+        <tr><td>把已在别的车上当班的司机绑到本车</td><td>拦截，提示该司机当前绑定车辆</td></tr>
+        <tr><td>绑定"维修/报废"终端或"离岗"司机</td><td>拦截，提示对象状态不可绑定</td></tr>
+        <tr><td>两人同时操作同一台车的绑定</td><td>系统保证最终只生效一条，不会出现一车两机</td></tr>
+      </tbody>
+    </table>
+
+    <h3>9.4 历史记录怎么保留</h3>
+    <blockquote class="tip">
+      <p><strong>只追加、不抹除：</strong>解绑不会删除旧关系，而是在记录上写明解绑时间。车辆详情页以"时间线"展示全部历史——例如可查到 2026 年 3 月前装的是旧终端、3 月换装新终端；某事故时段的当班司机是谁。重新绑定会生成一条新记录，旧记录不可"复活"。</p>
+    </blockquote>
+
+    <hr>
+
+    <h2 id="flows">十、四个典型业务流程</h2>
+
+    <h3>流程一：新车入网</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">登记车辆</div><div class="s-desc">填写车牌、车型、所属单位等信息</div></div>
+      <div class="step"><div class="s-title">登记终端</div><div class="s-desc">若设备未入库，先建终端档案</div></div>
+      <div class="step"><div class="s-title">车装终端</div><div class="s-desc">车辆详情页绑定终端，记录安装人与时间</div></div>
+      <div class="step"><div class="s-title">安排司机</div><div class="s-desc">绑定主班司机（必要时加副班）</div></div>
+      <div class="step"><div class="s-title">上线可见</div><div class="s-desc">设备开始上报后，监控页出现该车</div></div>
+    </div>
+
+    <h3>流程二：终端故障换装</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">故障登记</div><div class="s-desc">旧终端状态改为"维修停用"</div></div>
+      <div class="step"><div class="s-title">执行换绑</div><div class="s-desc">车辆详情页选择备用终端做"换绑"，系统自动解绑旧机、绑定新机</div></div>
+      <div class="step"><div class="s-title">数据不断档</div><div class="s-desc">新终端上报即挂到同一车牌，历史轨迹仍可按时间回放</div></div>
+    </div>
+
+    <h3>流程三：司机换班/换车</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">解绑原司机</div><div class="s-desc">在原车辆上解绑（记录解绑时间）</div></div>
+      <div class="step"><div class="s-title">绑定新司机</div><div class="s-desc">绑定到新车辆并指定主班/副班</div></div>
+      <div class="step"><div class="s-title">责任清晰</div><div class="s-desc">报警与风险按事发时间的当班司机归属</div></div>
+    </div>
+
+    <h3>流程四：车辆报废退出</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">解绑终端</div><div class="s-desc">拆除设备，终端可回收再利用</div></div>
+      <div class="step"><div class="s-title">解绑司机</div><div class="s-desc">司机转为可派往其他车辆</div></div>
+      <div class="step"><div class="s-title">停用车辆</div><div class="s-desc">车辆档案失效，不再出现在监控与新增业务中，历史记录保留</div></div>
+    </div>
+
+    <hr>
+
+    <h2 id="rules">十一、业务规则汇总</h2>
+    <table>
+      <thead><tr><th style="width:90px">类别</th><th>规则</th><th style="width:150px">不满足时的提示口径</th></tr></thead>
+      <tbody>
+        <tr><td>唯一性</td><td>车牌号+车牌颜色唯一；终端编号唯一；驾驶证号唯一；同级单位名称不重复</td><td>提示具体重复对象</td></tr>
+        <tr><td>录入校验</td><td>必填项完整；手机号、VIN、驾驶证号格式合法</td><td>在对应字段下方提示</td></tr>
+        <tr><td>绑定互斥</td><td>一车一终端、一终端一车；一车一主班；一司机同时一台车</td><td>提示冲突对象当前归属</td></tr>
+        <tr><td>状态前置</td><td>只能绑定"正常"终端与"在岗"司机；有有效绑定的档案不可停用/删除</td><td>提示先完成解绑</td></tr>
+        <tr><td>组织删除</td><td>存在下级单位或有效车辆时不可删除</td><td>提示占用数量</td></tr>
+        <tr><td>留痕</td><td>所有登记/修改/绑定/解绑自动记录操作人与时间；解绑历史永久保留</td><td>—（系统自动）</td></tr>
+        <tr><td>删除方式</td><td>全部为失效式"软删除"，不提供物理删除入口</td><td>—（系统自动）</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="pages">十二、页面长什么样（线框示意）</h2>
+    <p>整体延续平台现有简洁商务风格，在左侧菜单新增"基础资料"菜单组，包含四个页面。以下为布局示意，非最终视觉稿。</p>
+
+    <h3>12.1 组织架构页：左树右详情</h3>
+    <div class="wire">
+      <div class="w-top">页面标题：组织架构　<span class="w-btn">+ 新增根单位</span></div>
+      <div class="w-body">
+        <div class="w-side">
+          <strong>单位树</strong><br>
+          ▼ 北京物流公司<br>　└ 北京配送中心<br>　└ 朝阳车队<br>
+          ▷ 上海分公司<br>
+          <span style="color:#1f5fbf">（节点悬停：新增下级 / 编辑 / 删除）</span>
+        </div>
+        <div class="w-main">
+          <strong>单位详情：北京物流公司</strong>
+          <div class="w-line w50"></div><div class="w-line w70"></div>
+          <span class="w-btn ghost">编辑</span><span class="w-btn ghost">新增下级</span>
+          <div style="margin-top:8px"><strong>该单位车辆（5）</strong></div>
+          <div class="w-table"><div class="head"><span>车牌</span><span>车型</span><span>主班司机</span></div>
+          <div><span>京A12345</span><span>重型货车</span><span>张伟</span></div>
+          <div><span>京A23456</span><span>中型货车</span><span>李强</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>12.2 车辆档案页：筛选 + 列表 + 抽屉表单 + 绑定弹层</h3>
+    <div class="wire">
+      <div class="w-top">
+        关键字（车牌/VIN）[____] 所属单位 [树选▾] 车牌颜色[▾] 运营类型[▾]
+        <span class="w-btn">查询</span><span class="w-btn ghost">重置</span><span class="w-btn">+ 登记车辆</span>
+      </div>
+      <div class="w-main" style="min-height:150px">
+        <div class="w-table">
+          <div class="head"><span>车牌</span><span>所属单位</span><span>车型/品牌</span><span>当前终端</span><span>主班司机</span><span>操作</span></div>
+          <div><span>京A12345</span><span>北京物流公司</span><span>重货/解放</span><span>TERM_001</span><span>张伟</span><span style="color:#1f5fbf">编辑｜绑定管理｜删除</span></div>
+          <div><span>京B45678</span><span>北京配送中心</span><span>轻货/福田</span><span>TERM_004</span><span>刘洋</span><span style="color:#1f5fbf">编辑｜绑定管理｜删除</span></div>
+        </div>
+        <div style="text-align:right;color:#8893a7;font-size:11.5px;margin-top:6px">共 5 条　上一页 1 下一页</div>
+      </div>
+    </div>
+    <p><strong>车辆"绑定管理"弹层</strong>是最高频的操作区，分为三块：</p>
+    <div class="wire">
+      <div class="w-body">
+        <div class="w-side"><strong>① 当前终端</strong><br>TERM_001 / GT06N<br>SIM：138****0001<br>安装：2026-09-01 张三<br><span class="w-btn">换绑</span><span class="w-btn ghost">解绑</span></div>
+        <div class="w-side"><strong>② 在班司机</strong><br>主班：张伟 138****0001<br>副班：（暂无）<br><span class="w-btn">+ 绑定司机</span><span class="w-btn ghost">解绑</span></div>
+        <div class="w-side"><strong>③ 历史记录</strong><br>2026-03 换绑：旧机 TERM_000→TERM_001<br>2026-02 司机王磊解绑<br>（只读时间线）</div>
+      </div>
+    </div>
+
+    <h3>12.3 终端 / 驾驶员档案页</h3>
+    <p>结构与车辆页一致（筛选区 + 列表 + 弹窗表单）：终端列表多"状态"列（正常/维修停用/报废标签）和"绑定车辆"列；司机列表多"在岗状态"列和"当前车辆"列。列表行操作统一为：编辑、删除（有绑定关系时删除按钮点击后给出业务原因提示，而非静默失败）。</p>
+
+    <hr>
+
+    <h2 id="updown">十三、数据从哪来、被谁用</h2>
+    <table>
+      <thead><tr><th style="width:160px">环节</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>数据来源</td><td>业务人员手工登记与维护；现有 5 车/5 终端/5 司机示例数据作为初始台账保留</td></tr>
+        <tr><td>实时监控页</td><td>在途列表、车辆 tooltip 显示车牌；后续可进一步显示所属单位与当班司机</td></tr>
+        <tr><td>轨迹回放页</td><td>车辆下拉来自车辆档案，选择的是"在册车辆"而非"随便出现过的编号"</td></tr>
+        <tr><td>风险预警页</td><td>风险事件可关联到车辆所属单位与当班司机，支持按单位统计与考核</td></tr>
+        <tr><td>未来 808 接入</td><td>终端上报 → 按终端编号查绑定关系 → 自动解析出车牌；设备未建档/未绑定时数据进入"待认领"状态（后续迭代）</td></tr>
+        <tr><td>未来权限体系</td><td>组织树是"企业用户只能看本单位车辆"数据隔离规则的基础</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="scope">十四、本期做与不做</h2>
+    <table>
+      <thead><tr><th style="width:120px">范围</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">本期做</span></td><td>组织树、车辆/终端/司机三本档案的单条增删改查、状态管理、绑定/换绑/解绑与历史、业务规则校验、操作留痕</td></tr>
+        <tr><td><span class="badge amber">本期不做</span></td><td>Excel 批量导入导出（档案量小时单条维护即可，后续按需补）</td></tr>
+        <tr><td><span class="badge amber">本期不做</span></td><td>司机照片/证件附件上传（依赖文件存储服务，后续随系统配置模块建设）</td></tr>
+        <tr><td><span class="badge amber">本期不做</span></td><td>用户账号、角色、菜单权限的真实拦截（仅预留权限标识，随 IAM 权限模块落地）</td></tr>
+        <tr><td><span class="badge amber">本期不做</span></td><td>按单位强制数据隔离（组织树与筛选先就位，隔离规则随权限模块启用）</td></tr>
+        <tr><td><span class="badge red">不改动</span></td><td>现有监控、回放、风险预警、模拟器、样例导入等已上线功能保持不变</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2 id="accept">十五、业务验收标准</h2>
+    <p>上线后由业务人员按以下口径逐条验收（全部通过方可交付）：</p>
+    <ol>
+      <li>能新建"公司→车队"两级单位，并能在车辆登记时选到；单位下有车时删除会被拒绝并看到原因。</li>
+      <li>能完成一辆新车从登记车辆、登记/绑定终端、绑定主班司机到在监控相关列表中可查的全过程。</li>
+      <li>同一车牌+颜色、同一终端编号、同一驾驶证号重复登记时均被拒绝。</li>
+      <li>一台终端绑给第二辆车、一辆车安排两名主班、一名司机同时绑两台车，均被拦截且提示清晰。</li>
+      <li>"换绑"操作一步完成：旧关系带解绑时间、新关系生效，全程不出现一车两机。</li>
+      <li>车辆详情能看清当前终端、在班司机和完整绑定历史时间线。</li>
+      <li>有绑定关系的车辆/终端/司机不能直接删除，解绑后可以停用；停用后历史轨迹与风险记录仍可查。</li>
+      <li>每条新增/修改/绑定记录都能查到操作人与操作时间。</li>
+      <li>原有监控、轨迹回放、风险预警、模拟器演示流程不受任何影响。</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="decision">十六、待业务方确认的事项</h2>
+    <table>
+      <thead><tr><th style="width:60px">#</th><th>待确认问题</th><th style="width:280px">产品侧建议默认值</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>车与终端是否严格一对一？是否存在挂车双终端、备机轮换场景？</td><td>严格一对一；临时换装走"换绑"留痕</td></tr>
+        <tr><td>2</td><td>一名司机能否同时挂多台车的副班？</td><td>不能，一人同时仅一条有效绑定（主/副班都算）</td></tr>
+        <tr><td>3</td><td>单位层级最多几级？</td><td>5 级，满足集团→车队→班组</td></tr>
+        <tr><td>4</td><td>准驾车型与车辆类型不符时是"强拦截"还是"仅提示"？</td><td>本期仅提示，运营成熟后再改为强校验</td></tr>
+        <tr><td>5</td><td>档案删除是否需要审批流？</td><td>本期不需要，二次确认 + 软删除留痕即可；审批随权限体系建设</td></tr>
+        <tr><td>6</td><td>本期是否需要 Excel 批量导入（初次建档车辆较多时常用）？</td><td>默认不做，可按实际建档量评审是否提前</td></tr>
+      </tbody>
+    </table>
+
+    <blockquote class="warn">
+      <p><strong>下一步：</strong>本文档为业务/产品视角说明，评审确认后与技术设计（MOD-MDM-001）一并作为开发依据。按既定协作约定，<strong>编码工作将在您明确批准后启动</strong>。</p>
+    </blockquote>
+
+  </main>
+</div>
+</body>
+</html>

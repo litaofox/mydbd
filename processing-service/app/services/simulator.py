@@ -9,6 +9,7 @@ import random
 from datetime import datetime
 
 from app.db import insert_gps_points
+from app.services import cep_engine
 
 CENTER_LNG, CENTER_LAT = 116.404, 39.912
 
@@ -98,6 +99,11 @@ class SimulatorService:
                 "mileage": round(self._mileage[code], 2),
             })
         insert_gps_points(rows)
+        # F18 CEP 旁路评估（异常由 evaluate_points 内外兜底，不影响下一 tick）
+        try:
+            cep_engine.evaluate_points(rows)
+        except Exception as exc:
+            print(f"[cep] evaluate error: {exc}")
         self._ticks += 1
 
 

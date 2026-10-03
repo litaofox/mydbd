@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>监控总览大屏（F15） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a94; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">监控总览大屏（F15） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <nav class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 怎么用：进入与退出大屏</a></li>
+      <li><a href="#s3">3. 大屏上有什么</a></li>
+      <li><a href="#s4">4. 实时与刷新的节奏</a></li>
+      <li><a href="#s5">5. 指标口径说明</a></li>
+      <li><a href="#s6">6. 角色与权限</a></li>
+      <li><a href="#s7">7. 与其他功能的关系</a></li>
+      <li><a href="#s8">8. 边界与后续演进</a></li>
+    </ul>
+  </div></nav>
+  <main class="content">
+    <h1>监控总览大屏（F15）</h1>
+    <p class="cover-meta">功能编号 F15 · 实时监控域 · 第一波 · 关联文档 MOD-MON-002（模块技术设计） · 状态：已上线</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>安全值守岗位需要一块"挂在墙上"的<strong>驾驶舱大屏</strong>：不用登录多个页面、不用逐条翻列表，抬眼就能看到全网车队此刻的状态——多少车在线、今天跑了多少里程、报警多不多、工单积压没有、风险集中在哪些区域。</p>
+    <p>F15 提供一块 <strong>1920/4K 自适应的全屏监控总览大屏</strong>（独立页面 <code>/dashboard</code>，不带常规侧边栏框架），中央是实时车辆地图与风险热力，四周环绕在线率、今日里程、报警态势、最新报警滚动、工单积压、车队/区域分布等统计分区。</p>
+    <blockquote class="tip"><p>一句话定位：F15 是"纯展示"的态势驾驶舱——秒级看位置、半分钟看统计；一切处置操作仍回到对应业务页面完成。</p></blockquote>
+
+    <h2 id="s2">2. 怎么用：进入与退出大屏</h2>
+    <div class="flow">
+      <div class="step"><div class="t">侧边栏进入</div><div class="d">实时监控 → 监控总览大屏</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">全屏驾驶舱</div><div class="d">五大分区 + 中央地图自动刷新</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">点选车辆</div><div class="d">地图车辆图标点开详情抽屉</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">退出</div><div class="d">右上"退出大屏"回实时监控页</div></div>
+    </div>
+    <ul>
+      <li>大屏为独立全屏页面，与旧的"实时导航监控"页并存，互不影响。</li>
+      <li>顶栏实时显示当前时间（每秒）与推送通道状态（"实时推送"或"降级轮询"）。</li>
+      <li>支持浏览器全屏按钮（F11 形态），与页面本身的全屏布局相互独立。</li>
+      <li>1920×1080 与 3840×2160（4K）等比自适应，无需缩放页面即可投墙。</li>
+    </ul>
+
+    <h2 id="s3">3. 大屏上有什么</h2>
+    <table>
+      <tr><th>分区</th><th>内容</th><th>刷新节奏</th></tr>
+      <tr><td>① 在线率卡</td><td>在线车辆数 / 有效车辆总数 + 环形进度</td><td>每 30 秒</td></tr>
+      <tr><td>② 中央地图</td><td>在线车辆点位（方向箭头、报警标红）+ 近 24 小时风险热力圆（红/橙/黄按最高等级）</td><td>点位每秒；热力每 30 秒校正</td></tr>
+      <tr><td>②b 今日里程卡</td><td>今日全网里程合计（里程表差值近似）</td><td>每 30 秒</td></tr>
+      <tr><td>③ 报警态势卡</td><td>今日报警总数 + 按高/中/低等级分布环图 + 待处理数</td><td>每 30 秒 + 增量即时 +1</td></tr>
+      <tr><td>④ 最新报警滚动</td><td>最新未处理报警列表（车牌/类型/时间），新报警置顶</td><td>进入加载 20 条 + 推送置顶</td></tr>
+      <tr><td>⑤ 工单积压卡</td><td>待处理 / 处理中 / 逾期数量 + 近 7 日闭环率</td><td>每 30 秒</td></tr>
+      <tr><td>⑥ 车队分布</td><td>各车队（部门）车辆数与在线数横向条形，按在线数 TOP 8</td><td>每 30 秒</td></tr>
+      <tr><td>⑦ 区域分布</td><td>按车辆注册城市分组：车辆数与风险事件数 TOP 8</td><td>每 30 秒</td></tr>
+    </table>
+    <blockquote><p>点击地图上的车辆图标会弹出与实时监控页相同的<strong>车辆详情抽屉（F16）</strong>：档案、终端司机、当日轨迹、最新报警就地可看。</p></blockquote>
+
+    <h2 id="s4">4. 实时与刷新的节奏</h2>
+    <ul>
+      <li><strong>秒级只给位置</strong>：车辆点位走实时推送通道，每秒刷新；新风险/新报警作为增量事件即时置顶滚动列表、点亮热力。</li>
+      <li><strong>半分钟给统计</strong>：在线率、里程、工单、车队/区域等统计卡每 30 秒整批校正一次，一次请求返回全部六块数据。</li>
+      <li><strong>断线不慌</strong>：推送通道断开时自动降级为 5 秒轮询，顶栏标签变为"降级轮询"；网络恢复自动重连，统计卡不受影响。</li>
+      <li>地图相机首帧自动定位到车辆密集区，之后由值守人员自由拖动缩放，每秒更新只移动车辆图标、不打扰视角。</li>
+    </ul>
+
+    <h2 id="s5">5. 指标口径说明</h2>
+    <table>
+      <tr><th>指标</th><th>口径</th></tr>
+      <tr><td>在线车辆</td><td>有效车辆中，最近一次定位时间落在 <strong>5 分钟</strong>内的车辆数。窗口可在"系统参数"中调整（键 <code>monitor.online.window.minutes</code>，改后下一轮刷新即生效）。</td></tr>
+      <tr><td>今日里程</td><td>每辆车当日里程表最大值减最小值之和（里程表差值近似口径，非逐点精确轨迹里程）。</td></tr>
+      <tr><td>报警等级</td><td>按报警类型的等级（高/中/低）分组统计当日终端报警；与 F17 报警中心同一数据源、同一口径。</td></tr>
+      <tr><td>工单积压 / 闭环率</td><td>积压=待处理+处理中，逾期单列；闭环率=近 7 日已闭环工单 ÷ 近 7 日新建工单，分母为 0 显示"—"。</td></tr>
+      <tr><td>车队分布</td><td>按组织架构中的车队/部门统计车辆数与在线数，取在线数前 8 名。</td></tr>
+      <tr><td>区域分布</td><td>按车辆<strong>注册地城市</strong>（非实时所在区）统计车辆数与关联风险事件数，城市缺失归"未知"。</td></tr>
+      <tr><td>风险热力</td><td>近 24 小时风险事件按 0.02°×0.02° 网格聚合（最多 500 格），颜色取格内最高风险等级。</td></tr>
+    </table>
+
+    <h2 id="s6">6. 角色与权限</h2>
+    <table>
+      <tr><th>角色</th><th>大屏可见性</th></tr>
+      <tr><td>系统管理员 / 安全管理员 / 调度坐席 / 车队队长</td><td>✔ 侧边栏可见"监控总览大屏"并可进入（四个内置角色全员授权）</td></tr>
+      <tr><td>无 <code>monitor:dashboard:view</code> 权限的账号</td><td>✘ 菜单不可见；直接访问地址被路由守卫拦回；直接调接口返回 403 语义</td></tr>
+    </table>
+    <p>与 F14 实时推送口径一致：大屏统计为<strong>全局聚合</strong>（演示环境所有登录用户看到同一份总览），不做用户级数据范围裁剪；但点选车辆弹出的详情抽屉仍按车辆数据范围校验，越权车辆会被拒绝。</p>
+
+    <h2 id="s7">7. 与其他功能的关系</h2>
+    <ul>
+      <li><strong>F14 实时推送</strong>：大屏完全复用其 WebSocket 通道（点位全量 + 风险/报警增量）与断线降级逻辑，零改动。</li>
+      <li><strong>F16 车辆详情面板</strong>：点选车辆弹出同一共享抽屉组件。</li>
+      <li><strong>F17 终端报警中心</strong>：报警态势卡与最新报警滚动只读引用其统计/最新接口；点击滚动条目可跳报警中心处置。</li>
+      <li><strong>F20 处置工单</strong>：工单积压卡数据来自工单表聚合，处置操作在工单页完成。</li>
+      <li><strong>F18 风控引擎</strong>：热力与风险计数的事件源即 CEP 产出的风险事件。</li>
+      <li><strong>F35 系统参数</strong>：在线窗口分钟数可通过系统参数页调整。</li>
+    </ul>
+
+    <h2 id="s8">8. 边界与后续演进</h2>
+    <ul>
+      <li>本期<strong>不做</strong>：大屏内直接处置报警/工单（纯展示）、用户级数据范围过滤、行政区划实时归属（按注册地口径）、逐点精确里程（待 F12 地图匹配）、行政区域热力图（待风险数据上量）。</li>
+      <li>演进方向：接入真实车队规模后统计接口可加短时缓存；行政区域归属与精确里程能力随第二波 F10/F12 上线后升级区域分布与里程卡口径。</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

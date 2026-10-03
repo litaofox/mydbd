@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>操作审计日志 · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;vertical-align:middle;}
+.badge.blue{background:var(--accent-bg);color:var(--primary);}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+.rel-map{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;margin:24px 0;}
+.rel-node{border:2px solid var(--primary);background:var(--accent-bg);border-radius:10px;
+  padding:14px 18px;text-align:center;min-width:120px;}
+.rel-node .n-title{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.rel-node .n-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.rel-node.core{background:var(--primary);border-color:var(--primary-dark);}
+.rel-node.core .n-title{color:#fff;}
+.rel-node.core .n-sub{color:#cfe0ff;}
+.rel-link{padding:0 10px;color:var(--muted);font-size:13px;text-align:center;line-height:1.35;}
+.rel-link b{color:var(--primary-dark);}
+.flow{counter-reset:step;display:flex;gap:0;margin:22px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;position:relative;background:#f7f9fd;
+  border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px 46px;margin-right:14px;}
+.flow .step:last-child{margin-right:0;}
+.flow .step::before{counter-increment:step;content:counter(step);
+  position:absolute;left:12px;top:14px;width:24px;height:24px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.flow .step .s-title{font-weight:700;font-size:14.5px;color:#16345f;}
+.flow .step .s-desc{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6;}
+.wire{border:1.5px dashed #b8c4d8;border-radius:10px;padding:14px;margin:16px 0;background:#fbfcfe;}
+.wire .w-top{background:#e8eef8;border-radius:6px;padding:8px 12px;font-size:13px;color:#3d4a5c;margin-bottom:10px;}
+.wire .w-body{display:flex;gap:10px;}
+.wire .w-side{width:32%;background:#eef2f8;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-main{flex:1;background:#fff;border:1px solid #e3e8f0;border-radius:6px;padding:10px;font-size:12.5px;color:#5b6b84;min-height:120px;}
+.wire .w-line{height:9px;background:#dbe3f0;border-radius:4px;margin:7px 0;}
+.wire .w-line.w70{width:70%;}.wire .w-line.w50{width:50%;}.wire .w-line.w90{width:90%;}
+.wire .w-btn{display:inline-block;background:var(--primary);color:#fff;border-radius:4px;padding:3px 10px;font-size:12px;margin:3px 4px 3px 0;}
+.wire .w-btn.ghost{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+.wire .w-table{margin-top:8px;}
+.wire .w-table div{display:flex;border-bottom:1px solid #e8edf5;}
+.wire .w-table span{flex:1;padding:4px 6px;font-size:11.5px;color:#8893a7;}
+.wire .w-table .head span{background:#f0f4fb;color:#3d4a5c;font-weight:600;}
+.scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0;}
+.scene{border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff;
+  box-shadow:0 1px 3px rgba(16,42,90,.06);}
+.scene .sc-role{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;}
+.scene .sc-name{font-size:15px;font-weight:700;color:#16345f;margin-bottom:6px;}
+.scene .sc-text{font-size:13.5px;color:var(--muted);line-height:1.7;}
+.fmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0;}
+.fmap .fm{border:1px solid var(--border);border-radius:10px;padding:14px;background:linear-gradient(180deg,#fff,#f8fafd);}
+.fmap .fm h4{margin:0 0 8px;font-size:15px;color:var(--primary-dark);}
+.fmap .fm ul{margin:0;padding-left:18px;font-size:13.5px;color:#44506a;}
+.fmap .fm li{margin:3px 0;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
+.stat{border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fff;text-align:center;}
+.stat .num{font-size:26px;font-weight:700;color:var(--primary-dark);}
+.stat .num.red{color:var(--red);}
+.stat .lbl{font-size:13px;color:var(--muted);margin-top:2px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+  .wire .w-body{flex-direction:column;}
+  .wire .w-side{width:100%;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  table,blockquote,.wire,.scene,.flow{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="toc-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰ 目录</button>
+  <span class="title">mydbd 北斗导航数据业务平台 · 操作审计日志产品设计（业务说明）</span>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+    <ul>
+      <li><a href="#cover">文档说明</a></li>
+      <li><a href="#why">一、为什么做</a>
+        <ul>
+          <li><a href="#why-bg">1.1 业务背景</a></li>
+          <li><a href="#why-pain">1.2 现在的问题</a></li>
+          <li><a href="#why-value">1.3 做成后的价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#map">二、业务全景</a></li>
+      <li><a href="#roles">三、谁在用、什么场景用</a></li>
+      <li><a href="#record">四、一条审计记录讲了什么</a></li>
+      <li><a href="#features">五、功能总览</a></li>
+      <li><a href="#scope-auto">六、什么操作会被自动记录</a></li>
+      <li><a href="#page">七、审计日志查询页</a></li>
+      <li><a href="#login">八、登录安全审计</a></li>
+      <li><a href="#trace">九、出事了怎么查：追溯流程</a></li>
+      <li><a href="#tamper">十、防篡改与合规留存</a></li>
+      <li><a href="#rules">十一、业务规则汇总</a></li>
+      <li><a href="#scope">十二、本期做与不做</a></li>
+      <li><a href="#accept">十三、业务验收标准</a></li>
+      <li><a href="#decision">十四、待确认事项</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+
+    <h1 id="cover">操作审计日志 · 产品设计说明书</h1>
+    <p class="cover-meta">功能编号：F34（系统管理域）｜文档版本：v1.0｜编写日期：2026-10-02｜配套技术文档：MOD-AUDIT-001</p>
+    <blockquote>
+      <p><strong>一句话说明：</strong>平台把所有关键操作自动"记账"且账本不可改，安全管理员可以按人、按时间、按功能查到每一笔操作的来龙去脉。</p>
+    </blockquote>
+
+    <h2 id="why">一、为什么做</h2>
+
+    <h3 id="why-bg">1.1 业务背景</h3>
+    <p>北斗导航数据业务平台承载车辆实时位置、驾驶风险预警、视频证据、处置工单等敏感数据，使用方包括企业调度员、安全管理员、平台运维等多种角色。行业监管（道路运输车辆动态监控管理办法、网络安全等级保护）对运营平台有明确要求：<strong>重要操作必须留痕、日志不可篡改、保存期限不少于 6 个月（事故相关证据更久）</strong>。随着平台从演示阶段走向多用户真实运营，"谁做了什么"必须可追溯。</p>
+
+    <h3 id="why-pain">1.2 现在的问题</h3>
+    <table>
+      <tr><th style="width:150px">痛点</th><th>具体表现</th><th style="width:200px">后果</th></tr>
+      <tr><td>操作无记录</td><td>车辆/终端/司机被误删、绑定关系被换绑后，无法知道操作人、时间</td><td>责任无法界定，纠纷只能"猜"</td></tr>
+      <tr><td>登录无追踪</td><td>密码被冒用、有人暴力尝试登录，系统没有任何记录</td><td>账号盗用发现不了、取证不了</td></tr>
+      <tr><td>敏感查询无管控</td><td>后续上线视频调阅、数据导出后，谁在什么时间看了哪辆车，无据可查</td><td>隐私泄露风险，合规检查不过</td></tr>
+      <tr><td>日志可被改动</td><td>如果管理员能登录数据库直接改日志，留痕就失去意义</td><td>"自己监督自己"，证据效力不足</td></tr>
+    </table>
+
+    <h3 id="why-value">1.3 做成后的价值</h3>
+    <div class="fmap">
+      <div class="fm"><h4>定责有据</h4><ul><li>误操作、恶意操作可精确定位到人、时间、IP</li><li>处置动作与业务对象串联</li></ul></div>
+      <div class="fm"><h4>安全发现</h4><ul><li>登录失败异常增多可被检索发现</li><li>非常用 IP、非常时段操作可追溯</li></ul></div>
+      <div class="fm"><h4>合规交付</h4><ul><li>满足监管留痕与防篡改要求</li><li>检查时可直接导出/展示日志</li></ul></div>
+      <div class="fm"><h4>无感运行</h4><ul><li>自动采集，业务人员零感知</li><li>不增加任何业务操作步骤</li></ul></div>
+    </div>
+
+    <h2 id="map">二、业务全景</h2>
+    <p>审计日志是一个<strong>横切所有业务模块</strong>的支撑能力：业务系统照常运转，审计在后台默默记录，最后汇聚到一个只读的查询页面。</p>
+    <div class="rel-map">
+      <div class="rel-node"><div class="n-title">登录认证</div><div class="n-sub">成功/失败</div></div>
+      <div class="rel-link">操作 ↓<br><b>自动留痕</b></div>
+      <div class="rel-node core"><div class="n-title">审计采集</div><div class="n-sub">谁·何时·何地<br>对什么·做什么·结果</div></div>
+      <div class="rel-link">操作 ↓<br><b>自动留痕</b></div>
+      <div class="rel-node"><div class="n-title">主数据/监控<br>工单/视频…</div><div class="n-sub">各业务模块</div></div>
+      <div class="rel-link"><b>只追加写入</b> →</div>
+      <div class="rel-node"><div class="n-title">审计日志库</div><div class="n-sub">不可改不可删</div></div>
+      <div class="rel-link"><b>检索 →</b></div>
+      <div class="rel-node"><div class="n-title">审计查询页</div><div class="n-sub">仅管理员可见</div></div>
+    </div>
+
+    <h2 id="roles">三、谁在用、什么场景用</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员（主要用户）</div>
+        <div class="sc-name">"这辆车的终端是谁换绑的？"</div>
+        <div class="sc-text">按车牌/车辆 ID 搜到对象相关的全部操作，定位操作人、时间、来源 IP，配合业务记录复盘。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">"昨晚是不是有人在试密码？"</div>
+        <div class="sc-text">筛选动作=登录失败、时间=昨晚，查看尝试使用的用户名和来源 IP，发现暴力破解或共享账号滥用。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业管理者</div>
+        <div class="sc-name">"月度安全例会上要看操作概况"</div>
+        <div class="sc-text">通过概览数字（总操作量、成功率、登录失败次数、高频操作人）了解平台使用与安全态势。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">合规检查 / 外部审计</div>
+        <div class="sc-name">"请提供近三个月的管理员操作记录"</div>
+        <div class="sc-text">按时间段导出范围数据（导出能力本期以页面检索+详情呈现，导出文件在后续波次），并出示防篡改说明。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">平台运维</div>
+        <div class="sc-name">"某接口被反馈操作失败，查现场"</div>
+        <div class="sc-text">通过结果=失败筛选，结合错误消息、耗时、请求摘要，还原故障现场（不替代技术日志，但是业务视角补充）。</div>
+      </div>
+    </div>
+
+    <h2 id="record">四、一条审计记录讲了什么</h2>
+    <p>每一条日志回答六个问题（5W1H 的产品化表达）：</p>
+    <table>
+      <tr><th style="width:110px">问题</th><th style="width:150px">记录内容</th><th>产品化说明 / 示例</th></tr>
+      <tr><td><strong>谁</strong></td><td>操作人账号</td><td>admin；登录失败时记录"对方自称是谁"（输入的用户名），即使密码错误也留痕</td></tr>
+      <tr><td><strong>什么时间</strong></td><td>操作发生时间</td><td>精确到秒，按本地时区（Asia/Shanghai）展示</td></tr>
+      <tr><td><strong>从哪来</strong></td><td>IP 地址、设备信息</td><td>经门户转发的真实客户端 IP；浏览器/设备类型（User-Agent 摘要）</td></tr>
+      <tr><td><strong>在哪个功能</strong></td><td>模块 + 动作</td><td>如"主数据 / 车辆登记"、"认证 / 登录失败"、"工单 / 派单"（后续）</td></tr>
+      <tr><td><strong>对什么对象</strong></td><td>对象类型 + ID</td><td>车辆（京 A34567，ID 10086）、终端 TERM_003 等</td></tr>
+      <tr><td><strong>结果怎样</strong></td><td>成功/失败、错误原因、耗时</td><td>失败必须记原因，如"车牌+颜色已存在"；耗时用于发现慢操作</td></tr>
+    </table>
+    <blockquote class="warn"><p><strong>隐私保护：</strong>日志不是"什么都存"。密码、令牌、密钥一律脱敏显示为 <strong>\*\*\*</strong>；手机号仅保留前 3 后 4（如 138\*\*\*\*8000）；请求内容超长截断，避免把敏感大报文写入审计库。</p></blockquote>
+
+    <h2 id="features">五、功能总览</h2>
+    <div class="fmap">
+      <div class="fm"><h4>① 自动留痕</h4><ul><li>登录成功/失败</li><li>新增/修改/删除类操作全量</li><li>敏感查询按开关记录</li></ul></div>
+      <div class="fm"><h4>② 日志检索</h4><ul><li>时间/用户/模块/动作/结果筛选</li><li>关键字模糊搜索</li><li>分页、详情抽屉</li></ul></div>
+      <div class="fm"><h4>③ 安全概览</h4><ul><li>操作总量与成功率</li><li>登录失败次数</li><li>动作分布/高频用户</li></ul></div>
+      <div class="fm"><h4>④ 防篡改</h4><ul><li>只追加、页面无编辑删除入口</li><li>每行内容指纹</li><li>为后续校验/归档预留</li></ul></div>
+    </div>
+
+    <h2 id="scope-auto">六、什么操作会被自动记录</h2>
+    <p>采集不需要开发人员逐个接口"打招呼"，平台按统一规则自动执行；个别敏感查询用"显式标记"方式加入。</p>
+    <table>
+      <tr><th style="width:230px">操作类型</th><th style="width:110px">是否记录</th><th>说明 / 典型示例</th></tr>
+      <tr><td>登录成功 / 登录失败</td><td><span class="badge green">记录</span></td><td>失败同样记录，用于发现暴力破解</td></tr>
+      <tr><td>新增类（登记车辆、录入司机、建规则…）</td><td><span class="badge green">记录</span></td><td>自动提取新建对象的 ID</td></tr>
+      <tr><td>修改类（编辑档案、换绑、改规则…）</td><td><span class="badge green">记录</span></td><td>记录修改目标与请求摘要（不记对比快照*）</td></tr>
+      <tr><td>删除类（删除档案、解绑…）</td><td><span class="badge green">记录</span></td><td>业务上是软删除也记录为删除动作</td></tr>
+      <tr><td>数据导出</td><td><span class="badge green">记录</span></td><td>后续波次上线时打标记，记录导出条件</td></tr>
+      <tr><td>视频调阅、证据播放/下载</td><td><span class="badge green">记录</span></td><td>随视频功能（F16/F25）上线，记录调阅对象</td></tr>
+      <tr><td>报警确认、派单、坐席干预</td><td><span class="badge green">记录</span></td><td>随 F17/F20/F21 上线自动纳入</td></tr>
+      <tr><td>普通列表/详情查询</td><td><span class="badge amber">默认不记录</span></td><td>量级巨大且价值低；确需审计的查询由产品在需求中指定后开启</td></tr>
+      <tr><td>审计页自身的查询</td><td><span class="badge red">不记录</span></td><td>避免"查日志产生日志"刷屏（访问审计页本身仍会随登录与会话留痕）</td></tr>
+    </table>
+    <p class="cover-meta">* 修改前后字段对比（数据变更快照）列入后续增强，本期记录"谁、在何时、提交了什么"，已能满足绝大多数定责场景。</p>
+
+    <h2 id="page">七、审计日志查询页</h2>
+    <p>入口：左侧菜单 <strong>系统管理 → 操作审计</strong>。页面整体只读，没有任何新增/编辑/删除按钮——"审计员只能看账本，不能改账本"。</p>
+
+    <div class="wire">
+      <div class="w-top">操作审计 ｜ 时间范围：近 7 天 ▾ ｜ 用户：[　] ｜ 模块：全部 ▾ ｜ 动作：全部 ▾ ｜ 结果：全部 ▾ ｜ 关键字 [　] ｜ [查询] [重置]</div>
+      <div class="stat-row" style="margin:8px 0">
+        <div class="stat"><div class="num">1,284</div><div class="lbl">区间操作总量</div></div>
+        <div class="stat"><div class="num">98.6%</div><div class="lbl">成功率</div></div>
+        <div class="stat"><div class="num red">7</div><div class="lbl">登录失败次数</div></div>
+        <div class="stat"><div class="num">36</div><div class="lbl">今日操作数</div></div>
+      </div>
+      <div class="w-table">
+        <div class="head"><span>时间</span><span>用户</span><span>模块/动作</span><span>对象</span><span>IP</span><span>耗时</span><span>结果</span><span></span></div>
+        <div><span>10-02 14:22:31</span><span>admin</span><span>主数据/换绑终端</span><span>车辆 10086</span><span>10.1.2.8</span><span>38ms</span><span>成功</span><span>详情</span></div>
+        <div><span>10-02 09:15:02</span><span>admin</span><span>认证/登录失败</span><span>—</span><span>10.1.2.55</span><span>21ms</span><span style="color:#b91c1c">失败</span><span>详情</span></div>
+        <div><span>10-02 09:14:55</span><span>admin</span><span>认证/登录成功</span><span>—</span><span>10.1.2.55</span><span>64ms</span><span>成功</span><span>详情</span></div>
+        <div><span>10-01 17:40:10</span><span>admin</span><span>主数据/车辆删除</span><span>车辆 10092</span><span>10.1.2.8</span><span>30ms</span><span style="color:#b91c1c">失败·有绑定</span><span>详情</span></div>
+      </div>
+    </div>
+
+    <h4>交互规则</h4>
+    <ul>
+      <li><strong>默认条件：</strong>进入页面默认展示最近 7 天；单次查询时间跨度最大 90 天（防止一次拉取过大数据）；结束时间不填默认当前时刻。</li>
+      <li><strong>失败行高亮：</strong>结果列失败使用红色标签；动作标签按动作类型着色（登录失败=红、增删改=蓝、查询类=灰）。</li>
+      <li><strong>详情抽屉：</strong>点"详情"从右侧滑出，分区展示：基本信息（人/时间/结果）、请求信息（方法/URI/参数/脱敏请求体）、对象信息、终端信息（IP/设备）。请求体以格式化 JSON 展示。</li>
+      <li><strong>对象跳转（后续增强）：</strong>详情中的车辆/终端 ID 未来可点击跳到对应档案；本期先展示文本。</li>
+    </ul>
+
+    <h2 id="login">八、登录安全审计</h2>
+    <p>登录是安全审计中最特殊的事件：<strong>失败的登录也要记</strong>，而且要记住"试图登录的用户名"和来源 IP——这是发现撞库、暴力破解、离职人员尝试登录的唯一数据来源。</p>
+    <table>
+      <tr><th>场景</th><th>记录内容</th><th>页面呈现</th></tr>
+      <tr><td>密码正确登录</td><td>动作=登录成功，用户=账号，IP/UA，耗时</td><td>蓝色"登录成功"标签</td></tr>
+      <tr><td>密码错误/用户不存在</td><td>动作=登录失败，用户=对方输入的用户名，失败原因，IP/UA</td><td>红色"登录失败"标签，详情可见错误消息</td></tr>
+      <tr><td>令牌过期后操作</td><td>接口返回 401，前端跳登录页；该次请求以匿名身份记录失败</td><td>用于排查会话异常</td></tr>
+    </table>
+
+    <h2 id="trace">九、出事了怎么查：典型追溯流程</h2>
+    <p><strong>场景：</strong>调度员反馈"京 A34567 车上的终端被换成了别的设备，不知道谁操作的"。安全管理员的操作路径：</p>
+    <div class="flow">
+      <div class="step"><div class="s-title">按对象初筛</div><div class="s-desc">在关键字输入车辆 ID/车牌，或时间范围圈定事发当天，筛出相关操作</div></div>
+      <div class="step"><div class="s-title">定位关键动作</div><div class="s-desc">在结果中找到"换绑终端/绑定终端"记录，确认精确时间</div></div>
+      <div class="step"><div class="s-title">锁定操作人</div><div class="s-desc">详情中看到操作账号、来源 IP、设备信息</div></div>
+      <div class="step"><div class="s-title">串联前后操作</div><div class="s-desc">按该用户+时间扩大检索，看其前后还做了什么（解绑、编辑等）</div></div>
+      <div class="step"><div class="s-title">形成结论</div><div class="s-desc">依据不可篡改的日志记录出具处理意见，必要时截图/导出存档</div></div>
+    </div>
+
+    <h2 id="tamper">十、防篡改与合规留存</h2>
+    <ul>
+      <li><strong>只追加账本：</strong>系统只提供日志的"写入"（系统自动）和"查看"（管理员）能力，<strong>没有任何修改、删除接口和页面按钮</strong>。</li>
+      <li><strong>内容指纹：</strong>每条日志落库时对核心内容计算一个 SHA-256 指纹。若有人绕过应用直接改数据库，未来的巡检任务重算指纹即可发现被改动的行。</li>
+      <li><strong>演进路线（本期之后）：</strong>① 指纹链（每条记录含上一条指纹，形成可整体校验的链条）；② 数据库账号只授 SELECT/INSERT 权限；③ 按保留期归档（普通 6 个月、涉事记录长期保全）到低成本存储；④ 向外部日志平台同步。</li>
+    </ul>
+    <blockquote class="tip"><p><strong>产品口径：</strong>本期重点解决"留痕全、查得到、改不了（应用层）"；正式等保测评所需的指纹链巡检与外部归档，在获得本期运营反馈后于后续迭代落地。</p></blockquote>
+
+    <h2 id="rules">十一、业务规则汇总</h2>
+    <table>
+      <tr><th style="width:210px">规则</th><th>说明</th></tr>
+      <tr><td>自动采集原则</td><td>除显式标记的敏感查询外，不需要业务模块主动写日志；漏记属于平台缺陷</td></tr>
+      <tr><td>失败也记录</td><td>业务被拦截（如同号重复、互斥冲突）、登录失败、权限不足都要记，且失败原因可见</td></tr>
+      <tr><td>审计不影响业务</td><td>日志组件故障时业务操作照常成功，故障信号进入技术日志供运维发现</td></tr>
+      <tr><td>敏感信息脱敏</td><td>密码/令牌/密钥打码，手机号部分隐藏，报文截断；不记录文件流</td></tr>
+      <tr><td>查询范围限制</td><td>默认近 7 天，单次最大 90 天，防止大范围拖取日志</td></tr>
+      <tr><td>可见权限</td><td>本期仅 admin 可见；F33 用户权限体系上线后按权限码 audit:view 控制</td></tr>
+      <tr><td>日志不可清理</td><td>页面不提供删除；保留期/归档策略由后台运维任务统一执行（后续）</td></tr>
+    </table>
+
+    <h2 id="scope">十二、本期做与不做</h2>
+    <table>
+      <tr><th style="width:50%">本期做（第一波，随 F34 交付）</th><th>本期不做（后续迭代）</th></tr>
+      <tr>
+        <td>
+          ✅ 登录成功/失败自动留痕<br>
+          ✅ 全部新增/修改/删除操作自动留痕<br>
+          ✅ 操作人/IP/设备/对象/结果/耗时/脱敏报文<br>
+          ✅ 审计日志检索页（筛选+分页+详情）<br>
+          ✅ 区间概览统计（总量/成功率/登录失败/分布）<br>
+          ✅ 行内容指纹、只追加存储
+        </td>
+        <td>
+          ⏤ 字段级变更前后对比快照<br>
+          ⏤ 日志导出文件（Excel/PDF）<br>
+          ⏤ 指纹链与巡检工具、外部 SIEM 对接<br>
+          ⏤ 自动归档/清理调度（随 F35）<br>
+          ⏤ 异常操作实时告警（随 F19）<br>
+          ⏤ Python 处理服务内部操作的审计
+        </td>
+      </tr>
+    </table>
+
+    <h2 id="accept">十三、业务验收标准</h2>
+    <ol>
+      <li>用正确/错误密码各登录一次，审计页分别出现"登录成功""登录失败"，失败记录能看到输入的用户名与 IP；</li>
+      <li>在车辆档案完成一次"登记 → 编辑 → 打开绑定管理换绑终端"，审计页能按时间顺序找到对应 3 类操作，详情中对象 ID 正确、请求体里看不到明文密码；</li>
+      <li>制造一次失败操作（如重复车牌），日志以"失败+原因"展示，红色标识明显；</li>
+      <li>普通列表翻页、查看详情<strong>不产生</strong>新日志；审计页自身的查询也不产生日志；</li>
+      <li>按用户、模块、动作、结果、关键字、时间范围筛选结果准确，默认近 7 天、跨度超过 90 天被友好提示；</li>
+      <li>页面上找不到任何编辑/删除日志的入口；</li>
+      <li>概览数字与明细数据一致；中文显示正常，时间为本地时间。</li>
+    </ol>
+
+    <h2 id="decision">十四、待确认事项</h2>
+    <table>
+      <tr><th style="width:60px">#</th><th>待确认内容</th><th style="width:150px">建议口径</th></tr>
+      <tr><td>1</td><td>普通查询默认不记、导出/视频调阅等敏感查询显式记录的范围</td><td>建议认可，待各业务波次落地时补充标记清单</td></tr>
+      <tr><td>2</td><td>日志先内存队列异步写入，极端高峰退化为同步写入（优先不丢）</td><td>建议认可</td></tr>
+      <tr><td>3</td><td>本期仅行指纹、不做指纹链巡检</td><td>建议认可，后续合规专项迭代</td></tr>
+      <tr><td>4</td><td>审计页面当前仅 admin 可见</td><td>随 F33 IAM 权限码 audit:view 收口</td></tr>
+      <tr><td>5</td><td>日志保留时长与归档方式</td><td>建议普通记录 ≥ 6 个月，涉事记录按案件周期，随 F35 配置化</td></tr>
+    </table>
+
+  </main>
+</div>
+</body>
+</html>

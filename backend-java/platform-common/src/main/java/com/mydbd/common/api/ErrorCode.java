@@ -7,6 +7,7 @@ public enum ErrorCode {
 
     BAD_REQUEST(40001, "请求参数错误"),
     UNAUTHORIZED(40101, "未认证或登录已失效"),
+    LOCKED(42301, "账号已锁定"),
     FORBIDDEN(40301, "无访问权限"),
     NOT_FOUND(40401, "资源不存在"),
     CONFLICT(40901, "资源状态冲突"),

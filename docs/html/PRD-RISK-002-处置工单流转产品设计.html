@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>处置工单流转（F20） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;vertical-align:middle;}
+.badge.blue{background:var(--accent-bg);color:var(--primary);}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.flow{counter-reset:step;display:flex;gap:0;margin:22px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:170px;position:relative;background:#f7f9fd;
+  border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px 46px;margin-right:14px;}
+.flow .step:last-child{margin-right:0;}
+.flow .step::before{counter-increment:step;content:counter(step);
+  position:absolute;left:12px;top:14px;width:24px;height:24px;border-radius:50%;
+  background:var(--primary);color:#fff;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+.flow .step .s-title{font-weight:700;font-size:14.5px;color:#16345f;}
+.flow .step .s-desc{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.6;}
+.scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0;}
+.scene{border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff;
+  box-shadow:0 1px 3px rgba(16,42,90,.06);}
+.scene .sc-role{font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;}
+.scene .sc-name{font-size:15px;font-weight:700;color:#16345f;margin-bottom:6px;}
+.scene .sc-text{font-size:13.5px;color:var(--muted);line-height:1.7;}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:16px 0;}
+.stat{border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fff;text-align:center;}
+.stat .num{font-size:26px;font-weight:700;color:var(--primary-dark);}
+.stat .num.red{color:var(--red);} .stat .num.amber{color:var(--amber);} .stat .num.green{color:var(--green);}
+.stat .lbl{font-size:13px;color:var(--muted);margin-top:2px;}
+@media (max-width:900px){.content{padding:28px 20px;margin:12px;} .toc{display:none;}}
+</style>
+</head>
+<body>
+<div class="topbar"><span class="title">PRD-RISK-002 · 处置工单流转（F20）产品设计</span></div>
+<div class="layout">
+<nav class="toc"><div class="toc-inner"><div class="toc-title">目录</div>
+<ul>
+  <li><a href="#s1">1. 背景与目标</a></li>
+  <li><a href="#s2">2. 角色与职责</a></li>
+  <li><a href="#s3">3. 工单生成与来源</a></li>
+  <li><a href="#s4">4. 状态机与操作</a></li>
+  <li><a href="#s5">5. 处置时限与超时升级</a></li>
+  <li><a href="#s6">6. 闭环与留痕</a></li>
+  <li><a href="#s7">7. 页面与交互</a></li>
+  <li><a href="#s8">8. 权限模型</a></li>
+  <li><a href="#s9">9. 业务规则与边界</a></li>
+  <li><a href="#s10">10. 验收标准</a></li>
+</ul></div></nav>
+<main class="content">
+
+<h1>处置工单流转（F20）<br><span style="font-size:15px;color:#667085;font-weight:400;">风险事件"待处理 → 处理中 → 已闭环"全流程闭环 · 分派 · 时限 · 超时升级</span></h1>
+<p class="cover-meta">文档编号：PRD-RISK-002　|　所属功能：F20（第一波）　|　版本：v1.0　|　日期：2026-10-02</p>
+<p class="cover-meta">上游依赖：F18 风控规则引擎（CEP）产生风险事件　|　下游预留：F19 多渠道通知、F21 坐席干预记录、F14 WebSocket 秒级推送</p>
+
+<h2 id="s1">1. 背景与目标</h2>
+<p>F18 上线后平台可持续产生分级风险事件，但当前事件只有 <code>未处置 / 已处置</code> 一个布尔标记和一条处置意见，<strong>"谁在处理、处理到哪一步、有没有超时、超时谁来兜底"</strong>全部不可见，无法满足企业对安全运营闭环的考核要求。</p>
+<p>F20 在不改变 F18 事件产生链路的前提下，为每一条风险事件挂载一张<strong>处置工单</strong>，实现：</p>
+<ul>
+  <li><strong>状态可管</strong>：待处理 → 处理中 → 已闭环，状态流转全程留痕；</li>
+  <li><strong>责任到人</strong>：支持主管分派、坐席认领、转派，工单始终有唯一负责人；</li>
+  <li><strong>时限可控</strong>：按风险等级配置处置时限（SLA），临期/超时实时可见；</li>
+  <li><strong>超时可升级</strong>：超时未闭环自动标记升级，进入安全主管督办队列；</li>
+  <li><strong>闭环可溯</strong>：闭环必须选择处置结果并填写说明，形成可审计的运营档案（F21 干预动作、F23 画像统计的数据基础）。</li>
+</ul>
+<blockquote class="tip"><p>本期范围：工单模型、状态机、分派/认领/转派/闭环、SLA 时限与超时升级、工单列表与详情、与风险事件页打通。<strong>不包含</strong>：短信/语音/App 外发通知（F19）、WebSocket 实时弹窗（F14，上线后工单列表自动受益于推送）、干预动作细分统计（F21）。</p></blockquote>
+
+<h2 id="s2">2. 角色与职责</h2>
+<table>
+<thead><tr><th>角色</th><th>系统角色</th><th>在工单流程中的职责</th></tr></thead>
+<tbody>
+<tr><td>一线监控坐席</td><td>DISPATCHER（调度监控员）</td><td>看待处理工单、<strong>认领</strong>、开始处理、闭环；可转派；不能配置 SLA</td></tr>
+<tr><td>安全主管</td><td>SAFE_ADMIN（安全管理员）</td><td>全部工单可见、<strong>分派</strong>给指定坐席、督办<strong>超时升级</strong>工单、闭环；维护各级别 SLA 时限</td></tr>
+<tr><td>企业车队长</td><td>FLEET_CAPTAIN</td><td>查看/认领/闭环本企业相关工单（本期数据范围与监控页一致，暂不做行级裁剪）</td></tr>
+<tr><td>超级管理员</td><td>SUPER_ADMIN</td><td>全部权限（硬编码）</td></tr>
+</tbody>
+</table>
+
+<h2 id="s3">3. 工单生成与来源</h2>
+<ul>
+  <li><strong>自动生成</strong>：F18 CEP 引擎每落一条 <code>mon.risk_event</code>，在同一事务内自动创建一张工单（状态=待处理），并按事件风险等级套用 SLA 计算应闭环时限（deadline）。事件与工单 <strong>1:1</strong>。</li>
+  <li><strong>历史补齐</strong>：上线迁移时，对存量 <code>handle_status=0（未处置）</code> 的事件批量补建待处理工单；已处置历史事件不补单（保留原处置意见，视为历史数据）。</li>
+  <li><strong>懒补建</strong>：任何入口（如老版本事件页）发现事件无工单且未处置时，可触发补建，保证"无死角"。</li>
+</ul>
+<blockquote class="warn"><p>工单是事件的<strong>运营视图</strong>，事件标题、车牌、等级等关键信息在工单上做快照；事件被清理（本期不做事件物理删除）不影响工单档案的完整性。</p></blockquote>
+
+<h2 id="s4">4. 状态机与操作</h2>
+<div class="flow">
+  <div class="step"><div class="s-title">待处理 PENDING</div><div class="s-desc">新建/分派/退回后的初始态。可被认领或被主管分派；显示 SLA 倒计时。</div></div>
+  <div class="step"><div class="s-title">处理中 PROCESSING</div><div class="s-desc">坐席认领或主管分派后进入。可转派（负责人变更，状态不变）、闭环。</div></div>
+  <div class="step"><div class="s-title">已闭环 CLOSED</div><div class="s-desc">终态。必须选择处置结果 + 填写说明；回写事件"已处置"。不可再编辑。</div></div>
+</div>
+<table>
+<thead><tr><th>操作</th><th>起始状态</th><th>结束状态</th><th>权限</th><th>必填/规则</th></tr></thead>
+<tbody>
+<tr><td>认领</td><td>待处理（未指派人）</td><td>处理中</td><td>risk:order:handle</td><td>负责人=当前用户；记录认领时间</td></tr>
+<tr><td>分派</td><td>待处理 / 处理中</td><td>处理中</td><td>risk:order:assign</td><td>从"有处置权限的启用用户"中选择；可填分派备注</td></tr>
+<tr><td>转派</td><td>处理中</td><td>处理中</td><td>risk:order:handle</td><td>选择新负责人 + 转派原因；原负责人、转派链路全部留痕</td></tr>
+<tr><td>开始处理</td><td>待处理（已被分派但尚未接单）</td><td>处理中</td><td>负责人本人 risk:order:handle</td><td>记录接单时间；分派后未"开始"也允许直接闭环（接单与闭环合并）</td></tr>
+<tr><td>闭环</td><td>待处理 / 处理中</td><td>已闭环</td><td>risk:order:handle</td><td>必选处置结果、必填闭环说明；同步事件 handle_status=1</td></tr>
+</tbody>
+</table>
+<blockquote><p>每次状态/负责人变化写一条 <strong>工单流转日志</strong>（动作、前后状态、前后负责人、操作人、备注、时间），详情页按时间线展示。闭环工单的日志与快照长期保留（F34 审计之外的业务级轨迹）。</p></blockquote>
+
+<h2 id="s5">5. 处置时限与超时升级</h2>
+<p>按风险等级配置 SLA（安全管理员可在工单页"SLA 配置"入口维护，变更只影响<strong>此后新建</strong>工单）：</p>
+<table>
+<thead><tr><th>风险等级</th><th>默认处置时限</th><th>升级宽限期</th><th>业务含义</th></tr></thead>
+<tbody>
+<tr><td><span class="badge red">高风险</span></td><td>15 分钟</td><td>超时后 +10 分钟</td><td>疲劳、严重超速、FCW 等高风险，必须立即干预</td></tr>
+<tr><td><span class="badge amber">中风险</span></td><td>60 分钟</td><td>超时后 +30 分钟</td><td>当班内完成处置</td></tr>
+<tr><td><span class="badge blue">低风险</span></td><td>240 分钟</td><td>超时后 +60 分钟</td><td>当日内完成处置</td></tr>
+</tbody>
+</table>
+<ul>
+  <li><strong>剩余时限</strong>：列表显示倒计时（如 <code>剩余 08:32</code>）；剩余 ≤ 20% 时限变橙色提醒（临期）。</li>
+  <li><strong>超时 overdue</strong>：当前时间 &gt; deadline 且未闭环 → 红色"已超时"，统计条与筛选均可定位。</li>
+  <li><strong>升级 escalated</strong>：超过 deadline + 宽限期仍未闭环 → 自动置"已升级"标记：
+    <ol>
+      <li>列表置顶进入安全主管的<strong>督办队列</strong>（默认筛选"已升级"）；</li>
+      <li>工单出现醒目标记，主管可直接改派/督办并留言；</li>
+      <li>预留 F19 通知钩子（本期只落数据与页面标记，不发短信）。</li>
+    </ol>
+  </li>
+  <li>由平台定时任务每分钟扫描一次（兜底），列表/详情打开时也实时计算，避免等扫描。</li>
+</ul>
+
+<h2 id="s6">6. 闭环与留痕</h2>
+<p>闭环时必须选择<strong>处置结果</strong>（单选，用于后续 F21/F23 统计）：</p>
+<table>
+<thead><tr><th>结果码</th><th>名称</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>PHONE_REMIND</td><td>电话提醒</td><td>已电话联系驾驶员/企业提醒纠正</td></tr>
+<tr><td>EDUCATION</td><td>安全教育</td><td>约谈、教育培训、书面警示</td></tr>
+<tr><td>SUSPEND</td><td>停运整改</td><td>车辆/驾驶员停运整改</td></tr>
+<tr><td>FALSE_ALARM</td><td>误报排除</td><td>经核实为设备误报/数据异常，不做处置</td></tr>
+<tr><td>OTHER</td><td>其他</td><td>其他处置方式（必须在说明中写明）</td></tr>
+</tbody>
+</table>
+<ul>
+  <li>闭环说明必填，10~255 字（防止"已处理"式无效闭环）；</li>
+  <li>闭环即终态，不提供"反闭环"；若闭环有误，由安全管理员走审计可追溯的<strong>重新打开</strong>（权限 risk:order:assign，二次确认并强制填写原因，日志保留 REOPEN 记录）；</li>
+  <li>闭环同时回写风险事件：<code>handle_status=1</code>、<code>handle_remark=结果名 + 闭环说明</code>，保持事件页与工单页口径一致。</li>
+</ul>
+
+<h2 id="s7">7. 页面与交互</h2>
+<h3>7.1 处置工单列表（新菜单：实时监控 → 处置工单，路由 /risk/orders）</h3>
+<div class="stat-row">
+  <div class="stat"><div class="num" id="k1">—</div><div class="lbl">待处理</div></div>
+  <div class="stat"><div class="num amber" id="k2">—</div><div class="lbl">处理中</div></div>
+  <div class="stat"><div class="num red" id="k3">—</div><div class="lbl">超时未闭环</div></div>
+  <div class="stat"><div class="num red" id="k4">—</div><div class="lbl">已升级</div></div>
+  <div class="stat"><div class="num green" id="k5">—</div><div class="lbl">今日闭环</div></div>
+  <div class="stat"><div class="num" id="k6">—</div><div class="lbl">平均闭环时长</div></div>
+</div>
+<ul>
+  <li>筛选：车牌/工单号关键词、状态、风险等级、处置结果、超时（全部/临期/已超时/已升级）、负责人、事件时间范围；</li>
+  <li>列表列：工单号/事件名称（副标题事件码）、车牌、等级 tag、来源、事件时间、状态 tag、负责人、剩余时限/超时、升级标记、操作；</li>
+  <li>默认排序：已升级 → 已超时 → 待处理（高等级在前）→ 处理中 → 其余，同级按事件时间升序；</li>
+  <li>行操作按状态与权限动态出现：认领 / 分派 / 转派 / 开始处理 / 闭环 / 详情。</li>
+</ul>
+<h3>7.2 工单详情（右侧抽屉 720px）</h3>
+<ul>
+  <li>顶部：工单状态、SLA 倒计时（超时红底）、升级标记；</li>
+  <li>事件快照卡：名称/事件码、来源、车牌、发生时间、位置（经纬度+小地图标点）、速度、置信度、截图/视频入口（有 media_url 时）；</li>
+  <li>处置卡：负责人、分派/认领/接单/闭环各时间点、处置结果、闭环说明；</li>
+  <li><strong>流转时间线</strong>：创建 → 分派 → 认领 → 转派 → 闭环/重开，逐条显示操作人与备注；</li>
+  <li>操作区：分派（用户下拉+备注）、转派、闭环（结果单选+说明 textarea）；预留"干预记录"区域（F21 落地）。</li>
+</ul>
+<h3>7.3 风险预警分析页（F18 页面改造）</h3>
+<ul>
+  <li>未处置事件的操作由"处置"改为"<strong>去处理</strong>"：点击后确保工单存在（无则补建）并直接打开该工单详情抽屉；</li>
+  <li>已处置事件显示闭环结果 tag（电话提醒/误报排除等），悬浮显示闭环说明；</li>
+  <li>事件页仍保留只读，处置动作统一收归工单，避免两个入口口径不一致。</li>
+</ul>
+<h3>7.4 SLA 配置（弹窗，安全管理员）</h3>
+<p>三个等级各自维护"处置时限（分钟）/升级宽限（分钟）"，保存审计留痕；修改后列表顶部短暂提示"仅对新工单生效"。</p>
+
+<h2 id="s8">8. 权限模型</h2>
+<table>
+<thead><tr><th>权限码</th><th>类型</th><th>含义</th><th>授予角色</th></tr></thead>
+<tbody>
+<tr><td>risk:order:view</td><td>菜单（id=14，/risk/orders）</td><td>工单列表/详情可见</td><td>SUPER_ADMIN / SAFE_ADMIN / DISPATCHER / FLEET_CAPTAIN</td></tr>
+<tr><td>risk:order:handle</td><td>按钮（id=915）</td><td>认领、开始、转派、闭环</td><td>SUPER_ADMIN / SAFE_ADMIN / DISPATCHER / FLEET_CAPTAIN</td></tr>
+<tr><td>risk:order:assign</td><td>按钮（id=916）</td><td>分派、重新打开、SLA 配置、督办</td><td>SUPER_ADMIN / SAFE_ADMIN</td></tr>
+</tbody>
+</table>
+<p>所有写操作经 F34 审计（module=RISK，含分派/闭环/重开/SLA 修改）。行级数据权限沿用本期监控口径（不做裁剪，后续统一接入数据范围）。</p>
+
+<h2 id="s9">9. 业务规则与边界</h2>
+<ol>
+  <li>事件与工单严格 1:1：唯一索引 <code>uk_order_event(event_id)</code>；并发补建靠唯一约束兜底，不报用户错误。</li>
+  <li>状态扭转非法操作返回业务错误（如闭环后再闭环：40901 工单已闭环）。</li>
+  <li>不能分派给停用/无处置权限的用户；分派下拉只列有效用户。</li>
+  <li>SLA 只存分钟正整数（时限 1~10080，宽限 0~1440）；修改只影响新单。</li>
+  <li>超时/升级是<strong>可重算状态</strong>：以 deadline 实时计算为准，定时任务只做升级标记与督办排序所需物化字段；误调服务器时间后下一轮扫描自动纠正。</li>
+  <li>历史已处置事件无工单：详情不展示工单入口，仅显示原 handle_remark。</li>
+  <li>工单不做物理删除；事件被规则引擎持续写入，工单创建失败不得影响事件入库（事件入库为主事务，工单为同事务内动作——若工单写入异常则整体回滚并由引擎旁路捕获记录错误日志，事件不丢的设计见 MOD 说明）。</li>
+</ol>
+
+<h2 id="s10">10. 验收标准</h2>
+<ol>
+  <li>CEP 新产生的每条事件在 1 秒内可在工单列表看到对应"待处理"工单，deadline 按等级正确（高 15/中 60/低 240 分钟）。</li>
+  <li>坐席认领 → 处理中；主管分派给指定坐席，负责人与流转日志正确；转派链路完整可查。</li>
+  <li>闭环必须选结果+≥10 字说明，否则前端拦截、后端 40001；闭环后事件页状态同步为已处置且显示结果。</li>
+  <li>构造过期工单：超时显示红色倒计时为负；超过宽限期自动出现"已升级"并进入主管督办视图。</li>
+  <li>统计条数字与库内一致；平均闭环时长按当日已闭环单计算。</li>
+  <li>安全管理员可改 SLA，改后新建工单 deadline 立即按新值；旧单不变。</li>
+  <li>重新打开仅 SAFE_ADMIN 可用，强制填原因，日志含 REOPEN；重开后可再次闭环。</li>
+  <li>DISPATCHER 无 SLA 配置/重开入口；无 risk:order:view 的角色（如纯 MDM 角色）菜单不可见、直访被路由守卫拦截、直调 API 40301。</li>
+  <li>存量未处置事件迁移后均有工单；已处置历史事件不产生工单。</li>
+  <li>全部分派/闭环/重开/SLA 操作在审计日志可检索。</li>
+</ol>
+
+</main>
+</div>
+</body>
+</html>

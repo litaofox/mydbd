@@ -41,8 +41,9 @@ public class MonitorController {
             @RequestParam(defaultValue = "10") long size,
             @RequestParam(required = false) String eventSource,
             @RequestParam(required = false) Integer riskLevel,
-            @RequestParam(required = false) Integer handleStatus) {
-        return Result.ok(monitorService.pageRisks(page, size, eventSource, riskLevel, handleStatus));
+            @RequestParam(required = false) Integer handleStatus,
+            @RequestParam(required = false) Long ruleId) {
+        return Result.ok(monitorService.pageRisks(page, size, eventSource, riskLevel, handleStatus, ruleId));
     }
 
     /** 处置风险事件 */

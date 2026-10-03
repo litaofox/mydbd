@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>终端报警中心（F17） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">终端报警中心（F17） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <nav class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 报警从哪来：数据口径</a></li>
+      <li><a href="#s3">3. 报警中心页面</a></li>
+      <li><a href="#s4">4. 处置闭环</a></li>
+      <li><a href="#s5">5. 实时推送与统计</a></li>
+      <li><a href="#s6">6. 角色与权限</a></li>
+      <li><a href="#s7">7. 与其他功能的关系</a></li>
+      <li><a href="#s8">8. 边界与后续演进</a></li>
+    </ul>
+  </div></nav>
+  <main class="content">
+    <h1>终端报警中心（F17）</h1>
+    <p class="cover-meta">功能编号 F17 · 实时监控域 · 第一波 · 关联文档 MOD-MON-004（模块技术设计）</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>车载终端（JT/T 808 设备）在运行中会直接上报硬件级报警：超速、疲劳驾驶、围栏越界、紧急求助、设备故障。过去这些报警在平台里只是一个<strong>只读的空列表</strong>——能看到，但不能筛选、不能处置、没有闭环。</p>
+    <p>F17 把它升级为<strong>报警中心</strong>：独立页面集中展示全部终端报警，支持按车牌、类型、状态、时间筛选；新报警通过实时推送秒级到达；坐席可以"确认 → 解除"完成处置闭环，每一步都留有审计痕迹。</p>
+    <blockquote class="tip"><p>一句话定位：F17 管"终端硬件报上来的事实"，F18~F21 管"平台研判出来的风险"，两条线各自闭环、互不混淆。</p></blockquote>
+
+    <h2 id="s2">2. 报警从哪来：数据口径</h2>
+    <p>报警数据落在既有的 <code>traj.traj_warn_info</code> 表（不新建表）。报警类型以平台字典表 <code>base_warn_type</code> 为唯一权威：</p>
+    <table>
+      <tr><th>类型</th><th>等级</th><th>典型场景</th></tr>
+      <tr><td>超速报警</td><td>红（高）</td><td>终端判定车速持续超过设定阈值</td></tr>
+      <tr><td>疲劳驾驶</td><td>红（高）</td><td>连续驾驶超时、终端疲劳提醒触发</td></tr>
+      <tr><td>围栏越界</td><td>橙（中）</td><td>车辆驶入/驶出设定电子围栏</td></tr>
+      <tr><td>紧急求助</td><td>红（高）</td><td>司机按下终端紧急按钮</td></tr>
+      <tr><td>设备故障</td><td>灰（低）</td><td>GNSS/终端硬件异常</td></tr>
+    </table>
+    <blockquote class="warn"><p>现状提示：当前演示环境终端尚未接入，表内数据由模拟/SQL 构造产生。列表为空属预期，不是缺陷；接入波次启动后由终端实时上报。</p></blockquote>
+
+    <h2 id="s3">3. 报警中心页面</h2>
+    <p>入口：菜单"实时监控 → 终端报警中心"（路由 <code>/alarms</code>）。页面自上而下分四块：</p>
+    <ul>
+      <li><strong>统计条</strong>：窗口期内总数、待处理、已确认、已解除四个数字，30 秒自动刷新，新报警推送到达时即时累加。</li>
+      <li><strong>筛选栏</strong>：车牌模糊输入、报警类型下拉、处置状态、时间范围（默认今日）。</li>
+      <li><strong>报警表格</strong>：车牌、类型（按等级红/橙/灰着色）、报警起止时间、速度、持续标志、状态标签、处置人、更新时间、操作列。按报警开始时间倒序，分页浏览。</li>
+      <li><strong>详情抽屉</strong>：点击"详情"滑出，展示完整字段、起止坐标小地图（起终点连线）、处置信息，以及<strong>关联风险</strong>——同车牌报警前后 30 分钟内平台研判出的风险事件，方便坐席交叉印证，并可一键跳转风险预警页人工研判。</li>
+    </ul>
+
+    <h2 id="s4">4. 处置闭环</h2>
+    <div class="flow">
+      <div class="step"><div class="t">待处理</div><div class="d">终端上报默认状态</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">已确认</div><div class="d">坐席知晓并跟进中</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">已解除</div><div class="d">登记结论，闭环</div></div>
+    </div>
+    <ul>
+      <li><strong>确认</strong>：一键操作，记录处置人与时间，表示"已看到、正在处理"。</li>
+      <li><strong>解除</strong>：必须选择结论——<em>属实 / 误报 / 未知</em>，可附不超过 200 字的说明（如"已电话提醒司机降速"）。</li>
+      <li>明显误报或已自愈的报警允许<strong>跳过确认直接解除</strong>。</li>
+      <li>解除是终态，<strong>不可重开</strong>：报警是硬件上报的事实记录，处置错了通过审计日志追溯纠正，不做状态回退。</li>
+      <li>两名坐席同时操作同一条报警时，只有一人成功，另一人会收到"状态已变更，请刷新后重试"的提示——不会出现覆盖打架。</li>
+    </ul>
+    <blockquote><p>每次确认/解除都会写入操作审计（模块 MONITOR、动作 HANDLE、对象 ALARM），安全主管可在审计页完整回放。</p></blockquote>
+
+    <h2 id="s5">5. 实时推送与统计</h2>
+    <ul>
+      <li>复用 F14 实时推送通道：新报警产生后约 1 秒内，打开着报警中心的坐席会收到提示（车牌 + 类型），列表首行自动插入新报警，无需手动刷新。</li>
+      <li>统计口径按"报警开始时间"落在所选窗口内计算；对外提供 <code>page / latest / stats</code> 三个只读契约，供 F15 监控大屏的"报警态势卡"和 F16 坐席面板直接消费。</li>
+      <li>处置状态的变化本期不做全站推送，其他坐席靠 30 秒统计刷新与筛选感知。</li>
+    </ul>
+
+    <h2 id="s6">6. 角色与权限</h2>
+    <table>
+      <tr><th>角色</th><th>查看报警</th><th>确认/解除</th></tr>
+      <tr><td>系统管理员</td><td>✔</td><td>✔</td></tr>
+      <tr><td>安全管理员</td><td>✔</td><td>✔</td></tr>
+      <tr><td>调度坐席</td><td>✔</td><td>✔</td></tr>
+      <tr><td>车队队长</td><td>✔</td><td>✘（只读）</td></tr>
+    </table>
+    <p>队长角色进入页面只能看列表与详情，处置按钮自动隐藏；即便直接调用接口也会被服务端拒绝（双层校验）。</p>
+
+    <h2 id="s7">7. 与其他功能的关系</h2>
+    <ul>
+      <li><strong>F14 实时推送</strong>：报警增量复用其 ALARM 消息，零改动。</li>
+      <li><strong>F15 大屏 / F16 面板</strong>：只读消费本模块统计与最新报警契约。</li>
+      <li><strong>F18~F21 风险闭环</strong>：两套体系互不转换——终端报警不会自动变成风险工单，风险工单也不改写报警状态；仅在详情页做"同车牌 ±30 分钟"的只读关联展示。</li>
+      <li><strong>F34 审计</strong>：处置动作全量留痕。</li>
+      <li><strong>F35 字典</strong>：新增"报警处置状态"字典项，供全局统一文案。</li>
+    </ul>
+
+    <h2 id="s8">8. 边界与后续演进</h2>
+    <ul>
+      <li>本期<strong>不做</strong>：列表导出、报警转工单、处置状态全站秒级推送、JT/T 808 原始 32 位报警标志位解析（终端侧已解析为离散类型）。</li>
+      <li>演进方向：终端接入波次补齐真实数据源；如需状态秒级同步，扩展推送协议后再实施；如业务要求"报警升级工单"，届时单独评审资源与契约。</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

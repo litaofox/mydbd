@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>坐席干预记录（F21） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.funnel{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.funnel .step{flex:1;min-width:140px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:16px;text-align:center;position:relative;}
+.funnel .step .num{font-size:26px;font-weight:700;color:var(--primary-dark);}
+.funnel .step .lbl{font-size:13px;color:var(--muted);margin-top:4px;}
+.funnel .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;}
+.badge.green{background:var(--green-bg);color:var(--green);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.red{background:var(--red-bg);color:var(--red);}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">坐席干预记录（F21） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <div class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 干预动作模型</a></li>
+      <li><a href="#s3">3. 与工单/事件的关系</a></li>
+      <li><a href="#s4">4. 感知—预警—干预—闭环 漏斗</a></li>
+      <li><a href="#s5">5. 页面与交互</a></li>
+      <li><a href="#s6">6. 权限与审计</a></li>
+      <li><a href="#s7">7. 验收标准</a></li>
+    </ul>
+  </div></div>
+  <div class="content">
+    <h1>坐席干预记录（F21）</h1>
+    <p class="cover-meta">文档编号：PRD-RISK-003　|　所属功能：F21（第一波）　|　版本：v1.0　|　日期：2026-10-02</p>
+    <p class="cover-meta">上游依赖：F20 处置工单流转（工单状态机与闭环结果）　|　下游：F23 风险趋势与画像（干预统计维度）</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>F20 上线后，风险事件可流转为工单并闭环，闭环时选择处置结果（电话提醒/教育/处罚等）。但<strong>闭环结果只记录最终一次动作</strong>，坐席在处置过程中对司机执行的<strong>多次干预</strong>（先电话未接、再电话接通口头教育、最后通知停运）没有留痕，导致：</p>
+    <ul>
+      <li>无法回答"这个工单坐席到底做了什么"，复盘困难；</li>
+      <li>无法统计"感知—预警—干预—闭环"全链路转化，安全运营效果不可量化；</li>
+      <li>同一司机被多次干预但无累计视图，无法识别屡教不改对象。</li>
+    </ul>
+    <blockquote><p><strong>目标</strong>：建立干预动作留痕机制，支持按工单/事件记录每次干预的动作类型、结果与备注，并产出"感知→预警→干预→闭环"漏斗与闭环率指标。</p></blockquote>
+
+    <h2 id="s2">2. 干预动作模型</h2>
+    <p>每次干预为一条独立记录，核心字段：</p>
+    <table>
+      <thead><tr><th>字段</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>order_id</td><td>关联工单（必填，干预从工单详情发起）</td></tr>
+        <tr><td>event_id / plate_no / identity_code</td><td>冗余事件与车辆/终端标识，便于独立统计</td></tr>
+        <tr><td>action_type</td><td>动作类型：<code>PHONE_REMIND</code> 电话提醒 / <code>EDUCATION</code> 安全教育 / <code>STOP</code> 停运通知 / <code>PENALTY</code> 处罚 / <code>OTHER</code> 其他</td></tr>
+        <tr><td>action_result</td><td>动作结果：<code>SUCCESS</code> 成功 / <code>FAILED</code> 失败 / <code>NO_ANSWER</code> 未接通 / <code>PENDING</code> 待跟进</td></tr>
+        <tr><td>operator_id / operator_name</td><td>操作坐席</td></tr>
+        <tr><td>remark</td><td>干预说明（如教育内容、电话沟通要点），≤500 字</td></tr>
+        <tr><td>create_date</td><td>干预时间</td></tr>
+      </tbody>
+    </table>
+
+    <h3>2.1 动作类型与工单闭环结果的关系</h3>
+    <p>F20 工单闭环结果（close_result）是<strong>最终定性</strong>，干预记录是<strong>过程明细</strong>。一个工单可有 0~N 条干预记录；闭环时若选择了 close_result，系统<strong>自动补记一条</strong>对应动作类型的干预记录（action_result=SUCCESS），避免坐席重复录入。</p>
+    <table>
+      <thead><tr><th>close_result</th><th>自动生成的 action_type</th></tr></thead>
+      <tbody>
+        <tr><td>PHONE_REMIND 电话提醒</td><td>PHONE_REMIND</td></tr>
+        <tr><td>EDUCATION 安全教育</td><td>EDUCATION</td></tr>
+        <tr><td>REPORT_PENALTY 通报处罚</td><td>PENALTY</td></tr>
+        <tr><td>TRAFFIC_VIOLATION 交通违法</td><td>PENALTY</td></tr>
+        <tr><td>FALSE_ALARM 误报</td><td>不生成干预记录</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s3">3. 与工单/事件的关系</h2>
+    <ul>
+      <li><strong>工单为主</strong>：干预记录挂在工单下（order_id 必填），继承工单的 event_id/plate_no/identity_code。</li>
+      <li><strong>事件视图</strong>：可按 event_id 反查该事件所有干预记录（一事件一单，故等价于工单干预记录）。</li>
+      <li><strong>删除</strong>：干预记录不支持物理删除（审计留痕），只能追加；工单逻辑删（valid_mark=0）时干预记录保留。</li>
+    </ul>
+
+    <h2 id="s4">4. 感知—预警—干预—闭环 漏斗</h2>
+    <p>按时间范围（默认今日）统计安全运营全链路转化：</p>
+    <div class="funnel">
+      <div class="step"><div class="num">E</div><div class="lbl">感知：风险事件数</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">O</div><div class="lbl">预警：生成工单数</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">I</div><div class="lbl">干预：有干预的工单数</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">C</div><div class="lbl">闭环：已闭环工单数</div></div>
+    </div>
+    <ul>
+      <li><strong>干预率</strong> = 有干预的工单数 / 工单数（I/O）</li>
+      <li><strong>闭环率</strong> = 已闭环工单数 / 工单数（C/O）</li>
+      <li><strong>干预成功率</strong> = action_result=SUCCESS 的干预数 / 干预总数</li>
+    </ul>
+    <blockquote class="tip"><p>统计口径：均按 create_date 落在时间范围内统计；"有干预的工单"指该工单存在至少 1 条 intervention 记录。</p></blockquote>
+
+    <h2 id="s5">5. 页面与交互</h2>
+    <h3>5.1 工单详情抽屉（OrderDetailDrawer）增强</h3>
+    <p>在原有"流转时间线"下方新增<strong>干预记录</strong>区块：</p>
+    <ul>
+      <li>列表：时间、动作类型（标签）、结果（成功/失败/未接）、坐席、备注；</li>
+      <li>新增按钮（risk:order:handle）：弹窗选动作类型、结果、备注，保存后即时刷新；</li>
+      <li>闭环工单自动补记的干预记录标记 <span class="badge green">系统</span>。</li>
+    </ul>
+    <h3>5.2 风险预警分析页（RiskEvents）统计增强</h3>
+    <p>在页面顶部统计条新增"今日漏斗"卡片：事件 / 工单 / 干预 / 闭环 四项数字 + 干预率、闭环率百分比。</p>
+    <h3>5.3 （可选）独立干预记录列表</h3>
+    <p>本期不做独立菜单页；干预记录通过工单详情维护，统计通过风险页查看。</p>
+
+    <h2 id="s6">6. 权限与审计</h2>
+    <ul>
+      <li>新增干预记录需 <code>risk:order:handle</code>（与工单处置同权限）；</li>
+      <li>查看干预记录需 <code>risk:order:view</code>；</li>
+      <li>新增干预操作写入审计日志（@AuditLog action=HANDLE, objectType=INTERVENTION）。</li>
+    </ul>
+
+    <h2 id="s7">7. 验收标准</h2>
+    <ol>
+      <li>工单详情可新增干预记录，列表正确显示动作类型、结果、坐席、时间。</li>
+      <li>工单闭环（非误报）时自动生成一条对应类型的干预记录，标记系统来源。</li>
+      <li>风险页漏斗统计：事件数、工单数、干预工单数、闭环数与数据库一致；干预率、闭环率计算正确。</li>
+      <li>干预记录不可删除，仅可追加。</li>
+      <li>无 risk:order:handle 权限的用户看不到"新增干预"按钮。</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>

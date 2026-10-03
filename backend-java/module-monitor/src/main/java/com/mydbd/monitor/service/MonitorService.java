@@ -51,11 +51,12 @@ public class MonitorService {
      * 风险事件分页查询
      */
     public PageData<RiskEvent> pageRisks(long page, long size, String eventSource,
-                                         Integer riskLevel, Integer handleStatus) {
+                                         Integer riskLevel, Integer handleStatus, Long ruleId) {
         LambdaQueryWrapper<RiskEvent> wrapper = new LambdaQueryWrapper<RiskEvent>()
                 .eq(StringUtils.hasText(eventSource), RiskEvent::getEventSource, eventSource)
                 .eq(riskLevel != null, RiskEvent::getRiskLevel, riskLevel)
                 .eq(handleStatus != null, RiskEvent::getHandleStatus, handleStatus)
+                .eq(ruleId != null, RiskEvent::getRuleId, ruleId)
                 .orderByDesc(RiskEvent::getEventTime);
         Page<RiskEvent> result = riskEventMapper.selectPage(new Page<>(page, size), wrapper);
         return new PageData<>(result.getTotal(), result.getCurrent(), result.getSize(), result.getRecords());

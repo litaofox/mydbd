@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.mydbd</groupId>
+        <artifactId>backend-java</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <artifactId>module-risk</artifactId>
+    <name>module-risk</name>
+    <description>风险预警域：F18 风控规则引擎（CEP）规则与电子围栏配置</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>platform-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mydbd</groupId>
+            <artifactId>module-notify</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

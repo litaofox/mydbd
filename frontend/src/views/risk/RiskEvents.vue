@@ -28,6 +28,35 @@
       </el-col>
     </el-row>
 
+    <!-- 感知—预警—干预—闭环 漏斗（F21） -->
+    <el-card v-if="funnel" style="margin-bottom: 12px">
+      <div class="funnel">
+        <div class="f-step">
+          <div class="f-num">{{ funnel.eventTotal }}</div>
+          <div class="f-lbl">感知 · 风险事件</div>
+        </div>
+        <div class="f-arrow">→</div>
+        <div class="f-step">
+          <div class="f-num">{{ funnel.orderTotal }}</div>
+          <div class="f-lbl">预警 · 生成工单</div>
+        </div>
+        <div class="f-arrow">→</div>
+        <div class="f-step">
+          <div class="f-num">{{ funnel.interventionTotal }}</div>
+          <div class="f-lbl">干预 · 已干预工单</div>
+        </div>
+        <div class="f-arrow">→</div>
+        <div class="f-step">
+          <div class="f-num" style="color:#15803d">{{ funnel.closedTotal }}</div>
+          <div class="f-lbl">闭环 · 已闭环工单</div>
+        </div>
+        <div class="f-rate">
+          <div>干预率 <strong>{{ funnel.interventionRate }}%</strong></div>
+          <div>闭环率 <strong style="color:#15803d">{{ funnel.closeRate }}%</strong></div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 筛选 -->
     <el-card style="margin-bottom: 12px">
       <div class="toolbar" style="margin-bottom: 0">
@@ -47,6 +76,14 @@
           <el-option :value="0" label="未处置" />
           <el-option :value="1" label="已处置" />
         </el-select>
+        <el-select v-model="filters.ruleId" placeholder="命中规则" clearable filterable style="width: 200px">
+          <el-option
+            v-for="r in ruleOptions"
+            :key="r.id"
+            :value="r.id"
+            :label="r.ruleName + '（' + r.ruleCode + '）'"
+          />
+        </el-select>
         <el-button type="primary" @click="loadRisks">查询</el-button>
       </div>
     </el-card>
@@ -57,7 +94,12 @@
         <el-card>
           <template #header>风险预警事件</template>
           <el-table :data="risks" size="small">
-            <el-table-column prop="eventCode" label="事件码" width="150" />
+            <el-table-column label="事件名称" min-width="170">
+              <template #default="{ row }">
+                <div>{{ row.title || row.eventCode }}</div>
+                <div class="code-sub">{{ row.eventCode }}</div>
+              </template>
+            </el-table-column>
             <el-table-column prop="eventSource" label="来源" width="90">
               <template #default="{ row }">
                 <el-tag size="small">{{ row.eventSource }}</el-tag>
@@ -84,10 +126,12 @@
             </el-table-column>
             <el-table-column label="操作" width="76" fixed="right">
               <template #default="{ row }">
-                <el-button v-if="row.handleStatus === 0" link type="primary" @click="openHandle(row)">
-                  处置
+                <el-button v-if="row.handleStatus === 0" link type="primary" @click="goHandle(row)">
+                  去处理
                 </el-button>
-                <span v-else style="color: #9ca3af">--</span>
+                <el-tooltip v-else :content="row.handleRemark || ''" placement="top">
+                  <span style="color: #9ca3af">--</span>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
@@ -137,17 +181,7 @@
       </el-table>
     </el-card>
 
-    <!-- 处置对话框 -->
-    <el-dialog v-model="dialogVisible" title="风险事件处置" width="460px">
-      <div style="margin-bottom: 10px; color: #4b5563; font-size: 13px">
-        {{ active?.eventCode }} ｜ {{ active?.plateNo }} ｜ {{ active?.eventTime }}
-      </div>
-      <el-input v-model="handleRemark" type="textarea" :rows="4" placeholder="请填写处置意见（如：电话提醒驾驶员休息、误报标记等）" />
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitHandle">确认处置</el-button>
-      </template>
-    </el-dialog>
+    <OrderDetailDrawer v-model="drawerVisible" :order-id="activeOrderId" @refresh="loadRisks" />
   </div>
 </template>
 
@@ -160,30 +194,32 @@ import {
   getRiskTypeStats,
   getRisks,
   getVideoAnalyses,
-  handleRisk,
   type Overview,
   type RiskEvent,
   type VideoAnalysis
 } from '@/api/monitor'
+import { ensureOrder, getOrderFunnel, listAllRules, type RiskRule, type OrderFunnel } from '@/api/risk'
+import OrderDetailDrawer from './OrderDetailDrawer.vue'
 
 const overview = ref<Partial<Overview>>({})
 const risks = ref<RiskEvent[]>([])
 const total = ref(0)
 const videoAnalyses = ref<VideoAnalysis[]>([])
 const chartRef = ref<HTMLDivElement>()
+const ruleOptions = ref<RiskRule[]>([])
+const funnel = ref<OrderFunnel | null>(null)
 
 const filters = reactive({
   page: 1,
   size: 10,
   eventSource: '',
   riskLevel: undefined as number | undefined,
-  handleStatus: undefined as number | undefined
+  handleStatus: undefined as number | undefined,
+  ruleId: undefined as number | undefined
 })
 
-const dialogVisible = ref(false)
-const active = ref<RiskEvent | null>(null)
-const handleRemark = ref('')
-const submitting = ref(false)
+const drawerVisible = ref(false)
+const activeOrderId = ref<number | null>(null)
 
 function levelText(level: number): string {
   return level === 3 ? '高' : level === 2 ? '中' : '低'
@@ -199,7 +235,8 @@ async function loadRisks() {
     size: filters.size,
     eventSource: filters.eventSource || undefined,
     riskLevel: filters.riskLevel,
-    handleStatus: filters.handleStatus
+    handleStatus: filters.handleStatus,
+    ruleId: filters.ruleId
   })
   risks.value = result.records
   total.value = Number(result.total)
@@ -210,25 +247,14 @@ function onPageChange(page: number) {
   loadRisks()
 }
 
-function openHandle(row: RiskEvent) {
-  active.value = row
-  handleRemark.value = ''
-  dialogVisible.value = true
-}
-
-async function submitHandle() {
-  if (!handleRemark.value.trim()) {
-    ElMessage.warning('请填写处置意见')
-    return
-  }
-  submitting.value = true
+async function goHandle(row: RiskEvent) {
+  // 确保工单存在（无则补建），再打开详情抽屉
   try {
-    await handleRisk(active.value!.id, handleRemark.value.trim())
-    ElMessage.success('处置完成')
-    dialogVisible.value = false
-    await Promise.all([loadRisks(), loadOverview()])
-  } finally {
-    submitting.value = false
+    const order = await ensureOrder(row.id)
+    activeOrderId.value = Number(order.id)
+    drawerVisible.value = true
+  } catch (e) {
+    ElMessage.error('创建工单失败')
   }
 }
 
@@ -259,5 +285,71 @@ async function loadChart() {
 onMounted(async () => {
   await Promise.all([loadOverview(), loadRisks(), loadChart()])
   videoAnalyses.value = await getVideoAnalyses()
+  // 规则下拉需要 risk:rule:view 权限，无权限时静默降级
+  try {
+    ruleOptions.value = await listAllRules()
+  } catch {
+    ruleOptions.value = []
+  }
+  loadFunnel()
 })
+
+async function loadFunnel() {
+  try {
+    const start = new Date(new Date().setHours(0, 0, 0, 0)).toISOString().slice(0, 19)
+    const end = new Date(new Date().setHours(0, 0, 0, 0) + 86400000).toISOString().slice(0, 19)
+    funnel.value = await getOrderFunnel(start, end)
+  } catch {
+    funnel.value = null
+  }
+}
 </script>
+
+<style scoped>
+.code-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.3;
+}
+.funnel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.f-step {
+  flex: 1;
+  min-width: 110px;
+  text-align: center;
+  padding: 10px 8px;
+  background: #f6f8fc;
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+}
+.f-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f5fbf;
+}
+.f-lbl {
+  font-size: 12px;
+  color: #667085;
+  margin-top: 2px;
+}
+.f-arrow {
+  color: #1f5fbf;
+  font-size: 18px;
+  font-weight: 700;
+}
+.f-rate {
+  margin-left: auto;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #667085;
+  line-height: 1.8;
+}
+.f-rate strong {
+  color: #1f5fbf;
+  font-size: 15px;
+}
+</style>

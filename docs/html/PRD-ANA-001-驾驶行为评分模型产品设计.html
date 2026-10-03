@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>驾驶行为评分模型（F22） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.matrix{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;}
+.matrix .lvl{flex:1;min-width:150px;border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fbfcfe;text-align:center;}
+.matrix .lvl h4{margin:0 0 6px;font-size:22px;}
+.matrix .lvl .rng{font-size:13px;color:var(--muted);}
+.matrix .lvl .nm{font-size:14px;font-weight:600;margin-top:6px;}
+.lvl.a{border-top:4px solid var(--green);} .lvl.a h4{color:var(--green);}
+.lvl.b{border-top:4px solid #2563eb;} .lvl.b h4{color:#2563eb;}
+.lvl.c{border-top:4px solid var(--amber);} .lvl.c h4{color:var(--amber);}
+.lvl.d{border-top:4px solid #c2410c;} .lvl.d h4{color:#c2410c;}
+.lvl.e{border-top:4px solid var(--red);} .lvl.e h4{color:var(--red);}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">驾驶行为评分模型（F22） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <div class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 评分从哪些行为来</a></li>
+      <li><a href="#s3">3. 扣分规则与等级</a></li>
+      <li><a href="#s4">4. 归属与有效性规则</a></li>
+      <li><a href="#s5">5. 计算节奏与重算</a></li>
+      <li><a href="#s6">6. 页面与交互</a></li>
+      <li><a href="#s7">7. 权限与数据范围</a></li>
+      <li><a href="#s8">8. 验收标准</a></li>
+    </ul>
+  </div></div>
+  <div class="content">
+    <h1>驾驶行为评分模型（F22）</h1>
+    <p class="cover-meta">文档编号：PRD-ANA-001　|　所属功能：F22（第一波）　|　版本：v1.0　|　日期：2026-10-03</p>
+    <p class="cover-meta">上游依赖：F18 风控规则引擎（风险事件）、轨迹数据（GPS 点）、F20 工单闭环结果（误报剔除）、主数据绑定（车-终端-司机）　|　下游：F23 风险趋势与画像、F15 大屏</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>平台已经能识别单个危险动作（超速、疲劳、分心……）并逐条流转处置，但管理层缺少一个<strong>把"一天驾驶表现"浓缩成一个数字</strong>的视角：司机张三今天到底开得安不安全？哪个车队风险最高？没有评分，安全管理和保险定价（UBI）都没有可比较的基准。</p>
+    <blockquote><p><strong>目标</strong>：每天为每位有行驶数据的司机产出一个 <strong>0~100 安全分</strong>与 <strong>A~E 等级</strong>，量化急加减速、超速、疲劳、分心等驾驶行为；评分可查询、可追溯（扣分明细）、可重算，作为 UBI 定价与风险画像（F23）的基础数据资产。</p></blockquote>
+
+    <h2 id="s2">2. 评分从哪些行为来</h2>
+    <p>评分输入来自两类数据：</p>
+    <table>
+      <thead><tr><th>来源</th><th>行为特征</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="4">风险事件（F18 产出）</td><td>超速（一般/严重）</td><td>规则引擎按速度阈值判定</td></tr>
+        <tr><td>疲劳驾驶（时长回溯 + 终端 DSM 信号）</td><td>连续驾驶超时、闭眼/哈欠识别</td></tr>
+        <tr><td>分心驾驶（终端 DSM 信号）</td><td>接打电话、左顾右盼</td></tr>
+        <tr><td>前碰撞风险 / 车道偏离（ADAS 信号）、疲劳叠加超速</td><td>终端视频识别上报</td></tr>
+        <tr><td>GPS 轨迹派生</td><td>急加速、急减速</td><td>由相邻速度点差分计算（加速度 ≥ ±2.5 m/s²），连续猛踩油门只算一次</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn"><p><strong>不参与评分</strong>：围栏进出（GEO_ENTER/EXIT，属区域管理而非驾驶行为）；坐席闭环为"误报排除"（FALSE_ALARM）的事件——误报不应拉低司机分数。</p></blockquote>
+
+    <h2 id="s3">3. 扣分规则与等级</h2>
+    <p>基础分 100，按当日发生的危险行为逐项扣减，最低 0 分：</p>
+    <table>
+      <thead><tr><th>行为</th><th>每次扣分</th><th>单日上限</th><th>口径</th></tr></thead>
+      <tbody>
+        <tr><td>高风险事件（严重超速/疲劳/前碰撞/分心叠加等）</td><td><strong>−8</strong></td><td>不设</td><td>每个事件 1 次</td></tr>
+        <tr><td>中风险事件（一般超速/分心/车道偏离）</td><td><strong>−4</strong></td><td>不设</td><td>每个事件 1 次</td></tr>
+        <tr><td>急加速</td><td>−0.5</td><td>−5（10 次封顶）</td><td>GPS 差分合并后事件数</td></tr>
+        <tr><td>急减速</td><td>−0.5</td><td>−5（10 次封顶）</td><td>同上</td></tr>
+      </tbody>
+    </table>
+    <p>得分映射五级等级（字典 <code>score_level</code>）：</p>
+    <div class="matrix">
+      <div class="lvl a"><h4>A</h4><div class="rng">≥ 90 分</div><div class="nm">优秀</div></div>
+      <div class="lvl b"><h4>B</h4><div class="rng">75 ~ 89.9</div><div class="nm">良好</div></div>
+      <div class="lvl c"><h4>C</h4><div class="rng">60 ~ 74.9</div><div class="nm">一般</div></div>
+      <div class="lvl d"><h4>D</h4><div class="rng">40 ~ 59.9</div><div class="nm">较差</div></div>
+      <div class="lvl e"><h4>E</h4><div class="rng">&lt; 40</div><div class="nm">危险</div></div>
+    </div>
+    <p>每条评分记录同时保存<strong>特征明细</strong>（各行为的次数与实扣分），页面可查"主要扣分项 Top3"，让分数可解释、可申诉。</p>
+
+    <h2 id="s4">4. 归属与有效性规则</h2>
+    <ul>
+      <li><strong>分数归司机</strong>：车辆当日数据按"当日生效的主班司机"归属；重算历史日期时使用<strong>当时生效的绑定关系</strong>，不受后续换司机影响。</li>
+      <li><strong>无主班司机的车不评分</strong>（事件与轨迹照常保留，只是不产分数）。</li>
+      <li><strong>样本门槛</strong>：当日 GPS 点数 ≥ 200 且行驶时长 ≥ 30 分钟才出分——防止零星几个点或长时间停车误评；不满足门槛的司机当日无记录（重算后不满足会删除旧记录）。</li>
+    </ul>
+
+    <h2 id="s5">5. 计算节奏与重算</h2>
+    <div class="flow">
+      <div class="step"><div class="t">T+1 自动</div><div class="d">每日 01:00 计算前一天全部司机评分</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">手动重算</div><div class="d">管理员选日期区间（≤92 天）重算，用于数据补录/规则修正后刷新</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">幂等覆盖</div><div class="d">同一司机同一天重算结果唯一，重复执行不产生脏数据</div></div>
+    </div>
+    <blockquote><p>重算为后台异步任务，提交即返回；同一时刻只允许一个计算任务，任务进行中再次提交会提示"请稍后再试"。</p></blockquote>
+
+    <h2 id="s6">6. 页面与交互</h2>
+    <p>新增"分析决策 → 驾驶评分"页面：</p>
+    <ul>
+      <li><strong>顶部概览卡</strong>：近 7 天平均分、评分记录数、E 级（危险）人数、等级分布饼图。</li>
+      <li><strong>筛选</strong>：日期范围、司机、车牌、等级。</li>
+      <li><strong>列表</strong>：日期、司机、车牌、分数（按等级着色）、等级标签、主要扣分项 Top3、事件数、样本点数。</li>
+      <li><strong>详情抽屉</strong>（点击行）：10 项特征明细表（次数/扣分）+ 该司机近 30 天分数趋势折线图。</li>
+      <li><strong>重算按钮</strong>（仅超级管理员可见）：弹出日期区间与可选司机对话框，提交后台任务。</li>
+    </ul>
+
+    <h2 id="s7">7. 权限与数据范围</h2>
+    <table>
+      <thead><tr><th>角色</th><th>查看评分</th><th>手动重算</th><th>数据范围</th></tr></thead>
+      <tbody>
+        <tr><td>超级管理员</td><td>✓</td><td>✓</td><td>全部</td></tr>
+        <tr><td>安全管理员</td><td>✓</td><td>✓（接口级校验）</td><td>按角色数据范围（与车辆列表同口径）</td></tr>
+        <tr><td>调度员 / 车队长</td><td>✗</td><td>✗</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>评分行的企业归属快照自车辆（dept_id），查询按登录人的部门数据范围过滤；绑定变更后历史分数的归属不迁移。</p>
+
+    <h2 id="s8">8. 验收标准</h2>
+    <ol>
+      <li>受控数据对账：造当日 220 个轨迹点（含连续急加速段、急减速段）+ 若干风险事件（其中一条工单闭环为误报）→ 分数/等级/特征明细逐项符合 §3 扣分表，误报事件不扣分，连续急加速只计一次。</li>
+      <li>门槛：150 点的司机不出分；先出分后清数据重算 → 旧记录被删除。</li>
+      <li>归属：解绑主班司机重算 → 该车当日不产分。</li>
+      <li>重算：参数非法（起&gt;止 / 跨度&gt;92 天）报 46001；任务进行中重复提交报 46002；非管理员调用报 40301；重算两次结果一致。</li>
+      <li>页面：admin 见"分析决策/驾驶评分"菜单；筛选、Top3 扣分、抽屉明细与 30 天趋势正常；无权限用户访问被路由守卫拦截。</li>
+      <li>每日 01:00 定时任务自动产出前一日评分（演示环境可临时改 cron 验证）。</li>
+      <li>回归：既有 F18/F20/F19 页面与接口不受影响。</li>
+    </ol>
+    <hr>
+    <p class="cover-meta">技术实现详见：docs/design/mod/MOD-ANA-001-驾驶行为评分模型模块设计.md</p>
+  </div>
+</div>
+</body>
+</html>

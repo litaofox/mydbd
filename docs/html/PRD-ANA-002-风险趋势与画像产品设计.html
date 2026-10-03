@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>风险趋势与画像（F23） · 产品设计（业务说明）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --green:#15803d; --green-bg:#ecfdf3; --amber:#b45309; --amber-bg:#fffbeb;
+  --red:#b91c1c; --red-bg:#fef2f2;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:var(--amber-bg);border-left-color:var(--amber);color:#7c4a06;}
+blockquote.tip{background:var(--green-bg);border-left-color:var(--green);color:#14532d;}
+ul,ol{padding-left:26px;} li{margin:5px 0;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14.5px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 14px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+code{background:#f1f5f9;border:1px solid var(--border);border-radius:4px;
+  padding:1px 6px;font-family:Consolas,Monaco,monospace;font-size:13.5px;color:#0f3a73;}
+.cover-meta{color:var(--muted);font-size:14px;margin:8px 0 0;}
+.matrix{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;}
+.matrix .lvl{flex:1;min-width:150px;border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:#fbfcfe;text-align:center;}
+.matrix .lvl h4{margin:0 0 6px;font-size:22px;}
+.matrix .lvl .rng{font-size:13px;color:var(--muted);}
+.matrix .lvl .nm{font-size:14px;font-weight:600;margin-top:6px;}
+.flow{display:flex;align-items:center;gap:0;margin:24px 0;flex-wrap:wrap;}
+.flow .step{flex:1;min-width:150px;background:var(--accent-bg);border:1px solid var(--border);
+  border-radius:10px;padding:14px;text-align:center;}
+.flow .step .t{font-weight:700;color:var(--primary-dark);font-size:15px;}
+.flow .step .d{font-size:13px;color:var(--muted);margin-top:4px;}
+.flow .arrow{color:var(--primary);font-size:22px;font-weight:700;padding:0 6px;}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="title">风险趋势与画像（F23） · 产品设计（业务说明）</div></div>
+<div class="layout">
+  <nav class="toc"><div class="toc-inner">
+    <div class="toc-title">目录</div>
+    <ul>
+      <li><a href="#s1">1. 背景与目标</a></li>
+      <li><a href="#s2">2. 四个分析视角</a></li>
+      <li><a href="#s3">3. 趋势分析</a></li>
+      <li><a href="#s4">4. 对象画像</a></li>
+      <li><a href="#s5">5. 黑点路段</a></li>
+      <li><a href="#s6">6. 对比排行</a></li>
+      <li><a href="#s7">7. 数据范围与权限</a></li>
+      <li><a href="#s8">8. 边界与后续演进</a></li>
+    </ul>
+  </div></nav>
+  <main class="content">
+    <h1>风险趋势与画像（F23）</h1>
+    <p class="cover-meta">功能编号 F23 · 风险预警闭环域 · 第一波 · 关联文档 MOD-ANA-002（模块技术设计）</p>
+
+    <h2 id="s1">1. 背景与目标</h2>
+    <p>平台已经能实时发现风险事件（F18 规则引擎）、分级通知（F19）、派单处置（F20/F21）并给司机打出每日安全评分（F22）。但坐席和安全管理员还缺一个<strong>回看与对比</strong>的工具：一段时间里风险是变多还是变少？哪辆车、哪个司机、哪个企业问题最集中？哪些路段事故高发？</p>
+    <p>F23 就是把这些历史数据"摊开来看"的分析页面。它<strong>只读</strong>——不新增任何业务数据，只在已有的风险事件、工单、干预、评分之上做统计与可视化，帮助管理者发现问题规律、评估处置效果、定位高风险对象。</p>
+    <blockquote class="tip"><p>一句话定位：F18~F22 负责"发现—处置—打分"，F23 负责"复盘—对比—找规律"。</p></blockquote>
+
+    <h2 id="s2">2. 四个分析视角</h2>
+    <p>页面顶部统一选择<strong>时间范围</strong>（近 7 日 / 近 30 日 / 近 90 日 / 自定义，最长一年），下方四个标签页对应四个视角：</p>
+    <div class="flow">
+      <div class="step"><div class="t">趋势分析</div><div class="d">风险随时间怎么变</div></div>
+      <div class="arrow">·</div>
+      <div class="step"><div class="t">对象画像</div><div class="d">某车/司机/企业的体检报告</div></div>
+      <div class="arrow">·</div>
+      <div class="step"><div class="t">黑点路段</div><div class="d">哪些位置事故高发</div></div>
+      <div class="arrow">·</div>
+      <div class="step"><div class="t">对比排行</div><div class="d">谁的风险最高</div></div>
+    </div>
+    <p>四个视角都支持<strong>全网 / 企业 / 司机 / 车辆</strong>四种维度切换，数据范围随登录人的可见部门自动收敛。</p>
+
+    <h2 id="s3">3. 趋势分析</h2>
+    <p>用折线图展示所选范围内风险事件数量随时间的变化，可按<strong>日 / 周 / 月</strong>粒度聚合：</p>
+    <ul>
+      <li><strong>总量线 + 分级线</strong>：一条事件总数曲线，叠加高/中/低三个风险等级的分量曲线，直观看出"量涨了还是结构恶化了"。</li>
+      <li><strong>Top5 事件类型</strong>：自动挑出期间最多的 5 类事件（超速、疲劳、分心等）做堆叠柱，回答"主要风险来自哪里"。</li>
+      <li>没有数据的时段补 0，曲线连续不跳变。</li>
+    </ul>
+    <blockquote><p>口径：事件时间取事件发生时间，缺失时退回入库时间；与预警处理规则一致，只统计平台留痕的事件，不含全量视频。</p></blockquote>
+
+    <h2 id="s4">4. 对象画像</h2>
+    <p>选定一辆车、一个司机或一个企业，生成该对象的"风险体检卡"，四块内容：</p>
+    <table>
+      <thead><tr><th>分区</th><th>内容</th><th>业务含义</th></tr></thead>
+      <tbody>
+        <tr><td>概览头卡</td><td>周期事件总数、高危数、最新评分与等级</td><td>一眼看出对象整体风险水位</td></tr>
+        <tr><td>评分曲线</td><td>引用 F22 每日安全评分随时间变化</td><td>处置后行为是否改善</td></tr>
+        <tr><td>事件构成</td><td>各类型事件占比（雷达/占比条）</td><td>问题集中在哪类行为</td></tr>
+        <tr><td>干预与闭环</td><td>事件→工单→干预→闭环漏斗 + 工单 Top5</td><td>处置是否跟得上、闭环率如何</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn"><p>司机归属为近似口径：事件按车牌归集，车辆换司机后历史事件跟随当前司机，页面已标注。</p></blockquote>
+
+    <h2 id="s5">5. 黑点路段</h2>
+    <p>把期间所有风险事件的位置按<strong>网格聚类</strong>（可选 100/200/500 米方格），找出事件最密集、等级最重的 Top N 个"黑点"，左侧列表 + 右侧地图标记联动，颜色按加权风险分分档（红/橙/黄）。</p>
+    <blockquote class="warn"><p><strong>本期是网格近似，不是真实路段</strong>：平台尚未接入路网数据，黑点按地理方格聚合，用于定位"高发区域"。待路网匹配上线后升级为按实际路段聚合，接口结构不变。</p></blockquote>
+
+    <h2 id="s6">6. 对比排行</h2>
+    <p>在周期内对司机或车辆按<strong>等级加权风险分</strong>（高3/中2/低1 累加）排名，输出 Top N 榜，附带事件数、高危数与最新评分。点某一行可直接跳到该对象的画像页深入查看。</p>
+
+    <h2 id="s7">7. 数据范围与权限</h2>
+    <ul>
+      <li>功能权限 <code>analysis:profile:view</code>：超级管理员、安全管理员可见"分析决策 → 风险趋势与画像"；调度监控员、企业车队长不可见（菜单不显示 + 直访拦截 + 接口 40301 三层一致）。</li>
+      <li>数据范围沿用平台统一口径：受限用户只能看到自己可见部门子树内车辆的事件/工单/评分，黑点、趋势、排行同步收敛。</li>
+      <li>全页面只读，不产生任何写操作。</li>
+    </ul>
+
+    <h2 id="s8">8. 边界与后续演进</h2>
+    <table>
+      <thead><tr><th>本期不做</th><th>原因 / 后续</th></tr></thead>
+      <tbody>
+        <tr><td>真实路段匹配</td><td>依赖路网数据（第二波 F10），本期网格近似</td></tr>
+        <tr><td>风险预测/趋势外推</td><td>无模型基座，属第三波智能域</td></tr>
+        <tr><td>实时连续热力图</td><td>属大屏（F15）职责，本页面是历史聚合列表+标记</td></tr>
+        <tr><td>报表导出 / PDF</td><td>后续波次</td></tr>
+        <tr><td>修改评分或事件数据</td><td>硬约束：F23 对所有源表只读</td></tr>
+      </tbody>
+    </table>
+    <blockquote><p>与 F22 的关系：F23 只消费 F22 的评分快照。若 F22 尚未上线，画像页评分区显示"依赖未就绪"占位，其余分析照常可用。</p></blockquote>
+  </main>
+</div>
+</body>
+</html>

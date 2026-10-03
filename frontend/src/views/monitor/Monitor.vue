@@ -10,6 +10,9 @@
       <el-tag v-if="sim" :type="sim.running ? 'success' : 'info'">
         模拟器：{{ sim.running ? `运行中（${sim.ticks} ticks）` : '已停止' }}
       </el-tag>
+      <el-tag :type="connected ? 'success' : 'warning'" effect="plain">
+        实时推送：{{ connected ? '已连接' : '降级轮询' }}
+      </el-tag>
       <el-button link @click="refresh">刷新</el-button>
     </div>
 
@@ -69,11 +72,18 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- F16 车辆详情聚合面板 -->
+    <VehicleDetailDrawer
+      v-model="panelVisible"
+      :vehicle-id="panelVehicleId"
+      :live-point="panelLivePoint"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -86,6 +96,9 @@ import {
   type GpsPoint
 } from '@/api/traj'
 import { getOverview, type Overview } from '@/api/monitor'
+import { getVehicleOptions } from '@/api/mdm'
+import { useRealtime, type RiskBrief, type AlarmBrief } from '@/composables/useRealtime'
+import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
 
 const mapRef = ref<HTMLDivElement>()
 const points = ref<GpsPoint[]>([])
@@ -93,9 +106,28 @@ const overview = ref<Partial<Overview>>({})
 const sampleLoading = ref(false)
 const sim = ref<{ running: boolean; ticks: number }>()
 
+// ===== F16 车辆详情面板（MOD-MON-003 §6.4） =====
+const plateNoToId = new Map<string, string>()
+const panelVisible = ref(false)
+const panelVehicleId = ref<string | null>(null)
+const panelPlateNo = ref<string | null>(null)
+const panelLivePoint = computed(() =>
+  panelPlateNo.value ? points.value.find((x) => x.plateNo === panelPlateNo.value) ?? null : null
+)
+
+function openPanel(p: GpsPoint) {
+  const id = plateNoToId.get(p.plateNo)
+  if (!id) {
+    ElMessage.warning('无权查看该车辆或车辆未建档')
+    return
+  }
+  panelVehicleId.value = id
+  panelPlateNo.value = p.plateNo
+  panelVisible.value = true
+}
+
 let map: L.Map
 let markerLayer: L.LayerGroup
-let timer: number
 
 function makeIcon(point: GpsPoint): L.DivIcon {
   return L.divIcon({
@@ -114,6 +146,7 @@ function renderMarkers() {
   for (const p of points.value) {
     const marker = L.marker([p.lat, p.lng], { icon: makeIcon(p) })
       .bindTooltip(`${p.plateNo}　${p.speed} km/h`, { direction: 'top' })
+    marker.on('click', () => openPanel(p))
     markerLayer.addLayer(marker)
     latLngs.push([p.lat, p.lng])
   }
@@ -134,6 +167,38 @@ async function refresh() {
 async function refreshSimStatus() {
   sim.value = await simulatorStatus()
 }
+
+function handlePoints(pts: GpsPoint[]) {
+  points.value = pts
+  if (map) renderMarkers()
+}
+
+function handleOverview(ov: Overview) {
+  overview.value = ov
+}
+
+function handleRisk(risks: RiskBrief[]) {
+  if (!risks.length) return
+  overview.value.todayRisks = (overview.value.todayRisks ?? 0) + risks.length
+  risks.slice(-3).forEach((r) => {
+    ElMessage.warning(`新风险事件：${r.plateNo} ${r.eventCode}（等级 ${r.riskLevel}）`)
+  })
+}
+
+function handleAlarm(alarms: AlarmBrief[]) {
+  if (!alarms.length) return
+  overview.value.todayWarnings = (overview.value.todayWarnings ?? 0) + alarms.length
+  alarms.slice(-3).forEach((a) => {
+    ElMessage.warning(`终端报警：${a.plateNo} 类型 ${a.typeId}`)
+  })
+}
+
+const { connected } = useRealtime({
+  onPoints: handlePoints,
+  onOverview: handleOverview,
+  onRisk: handleRisk,
+  onAlarm: handleAlarm
+})
 
 async function onLoadSample() {
   sampleLoading.value = true
@@ -169,12 +234,20 @@ onMounted(async () => {
   ).addTo(map)
   markerLayer = L.layerGroup().addTo(map)
 
-  await Promise.all([refresh(), refreshSimStatus()])
-  timer = window.setInterval(refresh, 5000)
+  // F16：plateNo → vehicleId 映射（/api/mdm/vehicles/options 已按 deptScope 裁剪）
+  try {
+    const opts = await getVehicleOptions()
+    plateNoToId.clear()
+    for (const o of opts) plateNoToId.set(o.label, String(o.id))
+  } catch {
+    /* 映射缺失时点选会提示未建档，不阻塞页面 */
+  }
+
+  // useRealtime 已在 onMounted 内首屏拉取一次数据 + 建立 WS
+  await refreshSimStatus()
 })
 
 onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
   if (map) map.remove()
 })
 </script>

@@ -25,6 +25,15 @@ public class RiskEvent {
 
     private String eventSource;
 
+    /** F18：命中规则 id（围栏事件为空） */
+    private Long ruleId;
+
+    /** F18：命中围栏 id（非围栏事件为空） */
+    private Long fenceId;
+
+    /** F18：事件中文名快照 */
+    private String title;
+
     private String plateNo;
 
     private String identityCode;
