@@ -173,11 +173,21 @@ onMounted(async () => {
   ).addTo(map)
 
   vehicles.value = await getVehicles()
+  applyRouteQuery()
+})
 
-  // 支持 /playback?plateNo=&identityCode= 从实时监控页带参跳入：自动选中并查询
-  // （未带时间条件时沿用本页"不填时间 = 查询全部轨迹"的既有语义）
+/**
+ * 应用路由参数（支持从实时监控/报警中心等页带参跳入）：
+ * - plateNo / identityCode：自动选中车辆（identityCode 精确匹配优先，车牌兜底）
+ * - date=YYYY-MM-DD：时间窗自动填当天 00:00:00 ~ 23:59:59 并查询
+ * - 带车参但无 date：沿用本页"不填时间 = 查询全部轨迹"的既有语义
+ * - 无任何参数：保持打开本页的初始状态，不自动查询
+ */
+function applyRouteQuery() {
   const qIdentity = typeof route.query.identityCode === 'string' ? route.query.identityCode : ''
   const qPlate = typeof route.query.plateNo === 'string' ? route.query.plateNo : ''
+  const qDate = typeof route.query.date === 'string' ? route.query.date : ''
+
   const matched =
     vehicles.value.find((v) => v.identityCode === qIdentity) ||
     vehicles.value.find((v) => v.plateNo === qPlate)
@@ -186,8 +196,20 @@ onMounted(async () => {
   } else if (qIdentity) {
     identityCode.value = qIdentity
   }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(qDate)) {
+    start.value = `${qDate} 00:00:00`
+    end.value = `${qDate} 23:59:59`
+  } else if (qIdentity || qPlate) {
+    start.value = ''
+    end.value = ''
+  }
+
   if (identityCode.value) onQuery()
-})
+}
+
+// 同标签换车：path 不变仅 query 变化时（多标签模式切换车辆）重新应用参数
+watch(() => route.query, applyRouteQuery)
 
 onBeforeUnmount(() => {
   if (playTimer) window.clearInterval(playTimer)

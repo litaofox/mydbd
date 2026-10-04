@@ -165,6 +165,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import dayjs from 'dayjs'
 import { getVehiclePanel, type VehiclePanel } from '@/api/monitor'
 import type { GpsPoint } from '@/api/traj'
 import {
@@ -360,9 +361,15 @@ function goMonitor() {
 }
 function goPlayback() {
   // 同时携带车牌与终端识别码：select 显示车牌，查询走识别码
+  // 日期取实时定位点的日期，回放页自动锁定当天 0点~24点
   const plate = panel.value?.vehicle.vehicleNo ?? ''
   const identity = panel.value?.terminal?.identityCode ?? ''
-  router.push(`/playback?plateNo=${encodeURIComponent(plate)}&identityCode=${encodeURIComponent(identity)}`)
+  const t = posPoint.value?.gpsTime
+  const date = t && dayjs(t).isValid() ? dayjs(t).format('YYYY-MM-DD') : undefined
+  router.push({
+    path: '/playback',
+    query: { plateNo: plate, identityCode: identity || undefined, date }
+  })
 }
 function onVideo() {
   ElMessage.info('视频调阅建设中，将随 F25（第三波）上线')

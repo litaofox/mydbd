@@ -100,7 +100,7 @@
               <el-button link type="primary" size="small" @click="goMonitor(row.plateNo)">监控</el-button>
             </el-tooltip>
             <el-tooltip content="回放该车历史轨迹" placement="top">
-              <el-button link type="primary" size="small" @click="goPlayback(row.plateNo)">轨迹</el-button>
+              <el-button link type="primary" size="small" @click="goPlayback(row)">轨迹</el-button>
             </el-tooltip>
             <el-button
               v-if="row.handleStatus === 0"
@@ -215,6 +215,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import dayjs from 'dayjs'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRealtime, type AlarmBrief } from '@/composables/useRealtime'
@@ -237,8 +238,15 @@ const router = useRouter()
 function goMonitor(plateNo: string) {
   router.push(`/monitor?plate=${encodeURIComponent(plateNo)}`)
 }
-function goPlayback(plateNo: string) {
-  router.push(`/playback?plateNo=${encodeURIComponent(plateNo)}`)
+function goPlayback(row: AlarmVO) {
+  // 锁定报警发生当天的轨迹；带 identityCode 便于精确选车
+  const d = row.startWarnTime && dayjs(row.startWarnTime).isValid()
+    ? dayjs(row.startWarnTime).format('YYYY-MM-DD')
+    : undefined
+  router.push({
+    path: '/playback',
+    query: { plateNo: row.plateNo, identityCode: row.identityCode || undefined, date: d }
+  })
 }
 
 // ===== 列表与筛选 =====

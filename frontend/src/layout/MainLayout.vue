@@ -102,20 +102,66 @@
         </div>
       </el-header>
 
+      <!-- 多标签栏：一功能一标签（path 唯一），/monitor 固定不可关 -->
+      <div class="tab-bar" role="tablist" aria-label="功能标签页">
+        <div
+          v-for="t in tabs.tabs"
+          :key="t.path"
+          class="tab-item"
+          :class="{ active: route.path === t.path, affix: t.affix }"
+          role="tab"
+          :aria-selected="route.path === t.path"
+          :aria-label="`标签页：${t.title}${t.affix ? '（固定）' : ''}`"
+          tabindex="0"
+          @click="activateTab(t)"
+          @keydown.enter="activateTab(t)"
+          @contextmenu.prevent="openTabMenu($event, t)"
+        >
+          <span class="tab-title">{{ t.title }}</span>
+          <el-icon
+            v-if="!t.affix"
+            class="tab-close"
+            role="button"
+            :aria-label="`关闭 ${t.title}`"
+            @click.stop="closeTab(t)"
+            @keydown.enter.stop="closeTab(t)"
+          ><Close /></el-icon>
+        </div>
+      </div>
+
       <el-main style="padding: 0; background: #f0f2f5">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <component :is="Component" :key="viewKey" />
+        </router-view>
       </el-main>
     </el-container>
+
+    <!-- 标签右键菜单 -->
+    <Teleport to="body">
+      <div v-if="tabMenu.visible" class="tab-menu-mask" @click="closeTabMenu" @contextmenu.prevent="closeTabMenu"></div>
+      <div
+        v-if="tabMenu.visible"
+        class="tab-menu"
+        role="menu"
+        aria-label="标签操作"
+        :style="{ left: tabMenu.x + 'px', top: tabMenu.y + 'px' }"
+      >
+        <div class="tab-menu-item" role="menuitem" tabindex="0" @click="onMenuRefresh">刷新当前</div>
+        <div class="tab-menu-item" role="menuitem" tabindex="0" @click="onMenuCloseOthers">关闭其他</div>
+        <div class="tab-menu-item" role="menuitem" tabindex="0" @click="onMenuCloseAll">关闭全部</div>
+      </div>
+    </Teleport>
 
     <ProfileDialog ref="profileRef" />
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
+import { useTabsStore, type TabItem } from '@/store/tabs'
 import { useNotify } from '@/composables/useNotify'
 import { readAll } from '@/api/notify'
 import type { MenuNode } from '@/api/auth'
@@ -125,9 +171,68 @@ import ProfileDialog from '@/components/ProfileDialog.vue'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const tabs = useTabsStore()
 const notify = useNotify()
 const { unread: notifyUnread, latest: notifyLatest } = notify
 notify.init()
+
+// ========================= 多标签页 =========================
+// 固定标签：/monitor 不可关闭（sessionStorage 恢复后缺失则补回）
+tabs.ensureAffix('/monitor', '实时导航监控')
+
+// 当前页视图 key：path + 刷新序号，"刷新当前"靠序号自增触发组件重建
+const viewKey = computed(() => route.path + '#' + tabs.refreshSeq)
+
+// 路由变化登记标签（一功能一标签）；/dashboard 与 /login 不在布局内，双保险跳过
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.path === '/login' || route.path === '/dashboard') return
+    tabs.visit(route.path, route.fullPath, (route.meta.title as string) || route.path)
+  },
+  { immediate: true }
+)
+
+function activateTab(t: TabItem) {
+  if (route.fullPath !== t.fullPath) router.push(t.fullPath).catch(() => undefined)
+}
+
+function closeTab(t: TabItem) {
+  if (t.affix) return
+  const next = tabs.remove(t.path, route.path)
+  if (next) {
+    if (route.fullPath !== next) router.push(next)
+  } else if (route.path === t.path) {
+    router.push('/monitor')
+  }
+}
+
+const tabMenu = ref({ visible: false, x: 0, y: 0, path: '' })
+
+function openTabMenu(ev: MouseEvent, t: TabItem) {
+  tabMenu.value = { visible: true, x: ev.clientX, y: ev.clientY, path: t.path }
+}
+
+function closeTabMenu() {
+  tabMenu.value.visible = false
+}
+
+function onMenuRefresh() {
+  closeTabMenu()
+  tabs.refresh()
+}
+
+function onMenuCloseOthers() {
+  closeTabMenu()
+  const stay = tabs.closeOthers(tabMenu.value.path)
+  if (route.fullPath !== stay) router.push(stay).catch(() => undefined)
+}
+
+function onMenuCloseAll() {
+  closeTabMenu()
+  const dest = tabs.closeAll()
+  if (route.path !== dest) router.push(dest).catch(() => undefined)
+}
 
 function formatTime(t: string) {
   if (!t) return ''
@@ -176,6 +281,7 @@ async function onCommand(command: string) {
     }
     // 先显式收起确认框遮罩（其关闭动画与后续跳转/状态重置存在时序竞争，曾残留遮罩拦截登录页）
     ElMessageBox.close()
+    tabs.reset() // 清空会话标签，避免下个会话恢复上个账号的标签
     await auth.logout()
     // 硬跳转：彻底重置前端内存态与所有弹层，进入干净的登录页
     window.location.assign('/login')
@@ -309,5 +415,111 @@ async function onCommand(command: string) {
   text-align: center;
   padding-top: 6px;
   border-top: 1px solid #f0f0f0;
+}
+
+/* ========================= 多标签栏 ========================= */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 12px 0;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab-bar::-webkit-scrollbar {
+  height: 3px;
+}
+
+.tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  outline: none;
+}
+
+.tab-item:hover {
+  color: #2563eb;
+}
+
+.tab-item.active {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  background: #2563eb;
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-item.affix .tab-title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #60a5fa;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.tab-close {
+  font-size: 12px;
+  border-radius: 3px;
+  padding: 1px;
+  color: #9ca3af;
+}
+
+.tab-close:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+/* 标签右键菜单 */
+.tab-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+
+.tab-menu {
+  position: fixed;
+  z-index: 3001;
+  min-width: 110px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.tab-menu-item {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  color: #374151;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.tab-menu-item:hover {
+  background: #eff6ff;
+  color: #2563eb;
 }
 </style>

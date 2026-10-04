@@ -68,6 +68,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import dayjs from 'dayjs'
 import {
   listVideoChannels,
   playVideoChannel,
@@ -86,6 +87,8 @@ const props = defineProps<{
   plate: string
   identityCode: string
   vehicleId: string | null
+  /** 该车最新定位时间，用于轨迹回放锁定当天 */
+  gpsTime?: string | null
   following: boolean
 }>()
 
@@ -120,9 +123,12 @@ function reserved<T>(name: string, p: Promise<T>, okMsg?: string) {
 
 function goTrack() {
   close()
+  const d = props.gpsTime && dayjs(props.gpsTime).isValid()
+    ? dayjs(props.gpsTime).format('YYYY-MM-DD')
+    : undefined
   router.push({
     path: '/playback',
-    query: { plateNo: props.plate, identityCode: props.identityCode }
+    query: { plateNo: props.plate, identityCode: props.identityCode || undefined, date: d }
   })
 }
 

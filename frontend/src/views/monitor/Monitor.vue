@@ -58,22 +58,22 @@
         </div>
 
         <div class="m-stats">
-          <div class="stat-cell" :class="{ active: activeTab === 'all' }" @click="pickTab('all')">
+          <div class="stat-cell" title="勾选全部车辆" :class="{ active: statFilter === 'all' }" @click="pickStat('all')">
             <span class="stat-dot s-total"></span><span class="stat-num">{{ stats.total }}</span><span class="stat-name">车辆总数</span>
           </div>
-          <div class="stat-cell">
+          <div class="stat-cell" title="勾选全部在线车辆（行驶/停车/报警）" :class="{ active: statFilter === 'online' }" @click="pickStat('online')">
             <span class="stat-dot s-online"></span><span class="stat-num" style="color:#16a34a">{{ stats.online }}</span><span class="stat-name">在线</span>
           </div>
-          <div class="stat-cell" :class="{ active: activeTab === 'drive' }" @click="pickTab('drive')">
+          <div class="stat-cell" title="勾选行驶中车辆" :class="{ active: statFilter === 'drive' }" @click="pickStat('drive')">
             <span class="stat-dot s-drive"></span><span class="stat-num">{{ stats.drive }}</span><span class="stat-name">行驶中</span>
           </div>
-          <div class="stat-cell" :class="{ active: activeTab === 'stop' }" @click="pickTab('stop')">
+          <div class="stat-cell" title="勾选停车车辆" :class="{ active: statFilter === 'stop' }" @click="pickStat('stop')">
             <span class="stat-dot s-stop"></span><span class="stat-num">{{ stats.stop }}</span><span class="stat-name">停车</span>
           </div>
-          <div class="stat-cell" :class="{ active: activeTab === 'offline' }" @click="pickTab('offline')">
+          <div class="stat-cell" title="勾选离线车辆" :class="{ active: statFilter === 'offline' }" @click="pickStat('offline')">
             <span class="stat-dot s-off"></span><span class="stat-num">{{ stats.offline }}</span><span class="stat-name">离线</span>
           </div>
-          <div class="stat-cell" :class="{ active: activeTab === 'alarm' }" @click="pickTab('alarm')">
+          <div class="stat-cell" title="勾选报警车辆" :class="{ active: statFilter === 'alarm' }" @click="pickStat('alarm')">
             <span class="stat-dot s-alarm"></span><span class="stat-num stat-alarm-blink">{{ stats.alarm }}</span><span class="stat-name">报警</span>
           </div>
         </div>
@@ -172,6 +172,7 @@
       :plate="ctx.plate"
       :identity-code="ctx.identityCode"
       :vehicle-id="ctx.vehicleId"
+      :gps-time="ctx.gpsTime"
       :following="ctx.plate === followPlate"
       @close="ctx.visible = false"
       @detail="openDetailFromCtx"
@@ -237,6 +238,8 @@ const deptTree = ref<Dept[]>([])
 const keyword = ref('')
 const windowMin = ref(10)
 const activeTab = ref<'all' | 'drive' | 'stop' | 'offline' | 'alarm'>('all')
+// 左栏统计格筛选（比底部标签多一个 'online' 口径）
+const statFilter = ref<'all' | 'online' | 'drive' | 'stop' | 'offline' | 'alarm'>('all')
 const checkedPlates = ref<Set<string>>(new Set())
 const followPlate = ref<string | null>(null)
 const bottomCollapsed = ref(false)
@@ -258,7 +261,7 @@ const panelOnline = computed(() => {
 })
 
 // 右键菜单
-const ctx = ref({ visible: false, x: 0, y: 0, plate: '', identityCode: '', vehicleId: null as string | null })
+const ctx = ref({ visible: false, x: 0, y: 0, plate: '', identityCode: '', vehicleId: null as string | null, gpsTime: '' as string })
 
 // ========================= 数据视图模型 =========================
 const vmMap = computed(() => {
@@ -480,6 +483,26 @@ function pickTab(t: typeof activeTab.value) {
   activeTab.value = t
 }
 
+/**
+ * 点击左栏统计格：按点击时刻的状态快照（refTime + windowMin 口径）筛出车辆，
+ * 在车辆树中批量勾选并同步地图。勾选不随实时推送自动变动，重新点击即重选。
+ */
+function pickStat(f: typeof statFilter.value) {
+  statFilter.value = f
+  const plates: string[] = []
+  for (const vm of vmMap.value.values()) {
+    const s = statusOf(vm)
+    if (f === 'all' || (f === 'online' ? s !== 'offline' : s === f)) plates.push(vm.plate)
+  }
+  // setCheckedKeys 是程序化操作，不会触发 el-tree 的 check 事件，需手动同步勾选集合
+  treeRef.value?.setCheckedKeys(plates.map((p) => 'v' + p))
+  checkedPlates.value = new Set(plates)
+  // 底部表格标签联动：在线口径无对应标签，落到"全部"
+  activeTab.value = f === 'online' ? 'all' : f
+  // 展开全部车队节点，让勾选结果立即可见
+  nextTick(expandAll)
+}
+
 function toggleBottom() {
   bottomCollapsed.value = !bottomCollapsed.value
   setTimeout(() => map?.invalidateSize(), 220)
@@ -696,7 +719,8 @@ function openCtx(e: MouseEvent, plate: string) {
     y: e.clientY,
     plate,
     identityCode: vm?.identityCode || '',
-    vehicleId: vm?.vehicleId || null
+    vehicleId: vm?.vehicleId || null,
+    gpsTime: vm?.point?.gpsTime || ''
   }
 }
 
@@ -789,7 +813,14 @@ function handleTrack(plate: string) {
   const vm = vmMap.value.get(plate)
   router.push({
     path: '/playback',
-    query: { plateNo: plate, identityCode: vm?.identityCode || undefined }
+    query: {
+      plateNo: plate,
+      identityCode: vm?.identityCode || undefined,
+      // 携带该车最新定位日期，回放页自动锁定当天 0点~24点
+      date: vm?.point?.gpsTime && dayjs(vm.point.gpsTime).isValid()
+        ? dayjs(vm.point.gpsTime).format('YYYY-MM-DD')
+        : undefined
+    }
   })
 }
 
