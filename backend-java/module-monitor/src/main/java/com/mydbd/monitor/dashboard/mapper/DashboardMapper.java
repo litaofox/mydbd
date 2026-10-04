@@ -19,17 +19,20 @@ public interface DashboardMapper {
     @Select("SELECT config_value FROM traj.sys_config WHERE config_key = #{key}")
     String selectConfigValue(@Param("key") String key);
 
-    /** D-01/D-02：有效车辆总数 + 窗口内有定位的车辆数（vehicle→terminal→gps 链路） */
+    /**
+     * D-01/D-02：有效车辆总数 + 窗口内有定位的车辆数（vehicle→terminal→gps 链路）
+     * 性能：相关子查询按 (identity_code, gps_time DESC) 索引取 max，避免 JOIN 全量轨迹表聚合。
+     */
     @Select("""
             SELECT (SELECT count(*) FROM traj.traj_vehicle WHERE valid_mark = 1) AS "vehicleTotal",
                    count(*) FILTER (WHERE t.last_gps >= now() - make_interval(mins => #{windowMinutes})) AS "onlineCount"
-              FROM (SELECT v.id, max(p.gps_time) AS last_gps
+              FROM (SELECT v.id,
+                           (SELECT max(p.gps_time) FROM traj.traj_gps_point p
+                             WHERE p.identity_code = tm.identity_code) AS last_gps
                       FROM traj.traj_vehicle v
                       JOIN traj.traj_vehicle_terminal vt ON vt.vehicle_id = v.id AND vt.status = 1 AND vt.valid_mark = 1
                       JOIN traj.traj_terminal tm ON tm.id = vt.terminal_id AND tm.valid_mark = 1
-                      JOIN traj.traj_gps_point p ON p.identity_code = tm.identity_code
-                     WHERE v.valid_mark = 1
-                     GROUP BY v.id) t
+                     WHERE v.valid_mark = 1) t
             """)
     DashboardSummaryVO.Online selectOnline(@Param("windowMinutes") int windowMinutes);
 
@@ -68,8 +71,9 @@ public interface DashboardMapper {
               JOIN traj.traj_vehicle v ON v.dept_id = d.id AND v.valid_mark = 1
               LEFT JOIN traj.traj_vehicle_terminal vt ON vt.vehicle_id = v.id AND vt.status = 1 AND vt.valid_mark = 1
               LEFT JOIN traj.traj_terminal tm ON tm.id = vt.terminal_id AND tm.valid_mark = 1
-              LEFT JOIN (SELECT identity_code, max(gps_time) AS last_gps
-                           FROM traj.traj_gps_point GROUP BY identity_code) o ON o.identity_code = tm.identity_code
+              LEFT JOIN LATERAL (SELECT max(p.gps_time) AS last_gps
+                                   FROM traj.traj_gps_point p
+                                  WHERE p.identity_code = tm.identity_code) o ON true
              WHERE d.valid_mark = 1
              GROUP BY d.id, d.dept_name
              ORDER BY "online" DESC, "total" DESC
@@ -95,6 +99,15 @@ public interface DashboardMapper {
              GROUP BY 1
             """)
     List<Map<String, Object>> selectRegionRiskCounts(@Param("dayStart") LocalDateTime dayStart);
+
+    /** 按注册 city_code 取有效车牌集合（风险列表区域钻取用） */
+    @Select("""
+            SELECT v.vehicle_no
+              FROM traj.traj_vehicle v
+             WHERE v.valid_mark = 1
+               AND COALESCE(NULLIF(v.city_code, ''), '') = #{cityCode}
+            """)
+    List<String> selectVehicleNosByCityCode(@Param("cityCode") String cityCode);
 
     /** D-10：近 24h 风险事件 0.02°×0.02° 网格聚合，count 降序封顶 500 格 */
     @Select("""

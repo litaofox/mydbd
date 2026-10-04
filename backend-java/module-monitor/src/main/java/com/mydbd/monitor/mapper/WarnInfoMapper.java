@@ -18,8 +18,17 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
     @Select("SELECT count(*) FROM traj.traj_warn_info WHERE start_warn_time::date = CURRENT_DATE")
     long countTodayWarnings();
 
-    /** 有轨迹的在途车辆数（监控域直接读取 traj schema，避免跨模块依赖） */
-    @Select("SELECT count(DISTINCT identity_code) FROM traj.traj_gps_point")
+    /**
+     * 有轨迹的在途车辆数（监控域直接读取 traj schema，避免跨模块依赖）
+     * 性能：终端表驱动 + EXISTS 索引探测，避免 count(DISTINCT) 全量扫描轨迹表。
+     */
+    @Select("""
+            SELECT count(*)
+              FROM traj.traj_terminal t
+             WHERE t.valid_mark = 1
+               AND EXISTS (SELECT 1 FROM traj.traj_gps_point g
+                            WHERE g.identity_code = t.identity_code LIMIT 1)
+            """)
     long countActiveVehicles();
 
     /**

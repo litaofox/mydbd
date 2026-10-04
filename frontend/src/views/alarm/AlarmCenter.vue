@@ -96,6 +96,12 @@
         <el-table-column label="操作" min-width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+            <el-tooltip content="在实时监控中定位该车" placement="top">
+              <el-button link type="primary" size="small" @click="goMonitor(row.plateNo)">监控</el-button>
+            </el-tooltip>
+            <el-tooltip content="回放该车历史轨迹" placement="top">
+              <el-button link type="primary" size="small" @click="goPlayback(row.plateNo)">轨迹</el-button>
+            </el-tooltip>
             <el-button
               v-if="row.handleStatus === 0"
               v-perm="'alarm:handle'"
@@ -207,7 +213,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -225,6 +231,15 @@ import {
 } from '@/api/alarm'
 
 const route = useRoute()
+const router = useRouter()
+
+// ===== 行级快捷钻取 =====
+function goMonitor(plateNo: string) {
+  router.push(`/monitor?plate=${encodeURIComponent(plateNo)}`)
+}
+function goPlayback(plateNo: string) {
+  router.push(`/playback?plateNo=${encodeURIComponent(plateNo)}`)
+}
 
 // ===== 列表与筛选 =====
 const query = reactive({

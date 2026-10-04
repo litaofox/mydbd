@@ -34,6 +34,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       JWT_HMAC_SECRET: ${JWT_HMAC_SECRET}
       SERVICE_TOKEN: ${SERVICE_TOKEN}
+      AMAP_KEY: ${AMAP_KEY:-}
       JAVA_OPTS: "-Xmx640m -XX:+UseG1GC"
     ports:
       - "127.0.0.1:8080:8080"

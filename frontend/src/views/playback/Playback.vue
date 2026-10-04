@@ -42,7 +42,7 @@
         />
 
         <div class="current">
-          <div>{{ current ? current.gpsTime : '--' }}</div>
+          <div>{{ currentTime }}</div>
           <div>{{ current ? current.speed + ' km/h' : '' }}</div>
         </div>
       </div>
@@ -52,10 +52,14 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import dayjs from 'dayjs'
 import { getTrack, getVehicles, type GpsPoint, type VehicleOption } from '@/api/traj'
+
+const route = useRoute()
 
 const mapRef = ref<HTMLDivElement>()
 const vehicles = ref<VehicleOption[]>([])
@@ -76,6 +80,13 @@ let playTimer: number
 
 const maxIndex = computed(() => Math.max(0, track.value.length - 1))
 const current = computed(() => track.value[index.value])
+// 轨迹接口部分链路返回 ISO 串，统一展示为 yyyy-MM-dd HH:mm:ss
+const currentTime = computed(() => {
+  const t = current.value?.gpsTime
+  if (!t) return '--'
+  const d = dayjs(t)
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : t
+})
 
 const playbackIcon = L.divIcon({
   className: '',
@@ -162,6 +173,20 @@ onMounted(async () => {
   ).addTo(map)
 
   vehicles.value = await getVehicles()
+
+  // 支持 /playback?plateNo=&identityCode= 从实时监控页带参跳入：自动选中并查询
+  // （未带时间条件时沿用本页"不填时间 = 查询全部轨迹"的既有语义）
+  const qIdentity = typeof route.query.identityCode === 'string' ? route.query.identityCode : ''
+  const qPlate = typeof route.query.plateNo === 'string' ? route.query.plateNo : ''
+  const matched =
+    vehicles.value.find((v) => v.identityCode === qIdentity) ||
+    vehicles.value.find((v) => v.plateNo === qPlate)
+  if (matched) {
+    identityCode.value = matched.identityCode
+  } else if (qIdentity) {
+    identityCode.value = qIdentity
+  }
+  if (identityCode.value) onQuery()
 })
 
 onBeforeUnmount(() => {

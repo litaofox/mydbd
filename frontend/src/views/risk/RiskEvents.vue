@@ -84,6 +84,20 @@
             :label="r.ruleName + '（' + r.ruleCode + '）'"
           />
         </el-select>
+        <el-input
+          v-model="filters.plateNo"
+          placeholder="车牌号"
+          clearable
+          style="width: 140px"
+          @keyup.enter="loadRisks"
+        />
+        <el-tag
+          v-if="filters.cityCode"
+          closable
+          type="warning"
+          effect="plain"
+          @close="filters.cityCode = ''; filters.cityName = ''; loadRisks()"
+        >城市：{{ filters.cityName || filters.cityCode }}</el-tag>
         <el-button type="primary" @click="loadRisks">查询</el-button>
       </div>
     </el-card>
@@ -218,7 +232,11 @@ const filters = reactive({
   eventSource: '',
   riskLevel: undefined as number | undefined,
   handleStatus: undefined as number | undefined,
-  ruleId: undefined as number | undefined
+  ruleId: undefined as number | undefined,
+  plateNo: '',
+  // 区域柱钻取：cityCode 参与过滤，cityName 仅用于展示标签
+  cityCode: '',
+  cityName: ''
 })
 
 const drawerVisible = ref(false)
@@ -239,7 +257,9 @@ async function loadRisks() {
     eventSource: filters.eventSource || undefined,
     riskLevel: filters.riskLevel,
     handleStatus: filters.handleStatus,
-    ruleId: filters.ruleId
+    ruleId: filters.ruleId,
+    plateNo: filters.plateNo.trim() || undefined,
+    cityCode: filters.cityCode || undefined
   })
   risks.value = result.records
   total.value = Number(result.total)
@@ -286,13 +306,20 @@ async function loadChart() {
 }
 
 onMounted(async () => {
-  // 大屏钻取：从 route.query 恢复筛选条件（handleStatus/riskLevel）
+  // 大屏钻取：从 route.query 恢复筛选条件（handleStatus/riskLevel/plateNo/cityCode）
   const q = route.query
   if (q.handleStatus !== undefined && q.handleStatus !== '' && !Number.isNaN(Number(q.handleStatus))) {
     filters.handleStatus = Number(q.handleStatus)
   }
   if (q.riskLevel !== undefined && q.riskLevel !== '' && !Number.isNaN(Number(q.riskLevel))) {
     filters.riskLevel = Number(q.riskLevel)
+  }
+  if (typeof q.plateNo === 'string' && q.plateNo) {
+    filters.plateNo = q.plateNo
+  }
+  if (typeof q.cityCode === 'string' && q.cityCode) {
+    filters.cityCode = q.cityCode
+    filters.cityName = typeof q.cityName === 'string' ? q.cityName : ''
   }
   await Promise.all([loadOverview(), loadRisks(), loadChart()])
   videoAnalyses.value = await getVideoAnalyses()

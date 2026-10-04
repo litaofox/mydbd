@@ -101,9 +101,15 @@
       </aside>
     </div>
 
-    <!-- 风险飘条（自绘 div，同屏 ≤3 条、5s 自动消失） -->
+    <!-- 风险飘条（自绘 div，同屏 ≤3 条、5s 自动消失，点击查看该车详情） -->
     <div class="toasts">
-      <div v-for="t in toasts" :key="t.key" class="toast">
+      <div
+        v-for="t in toasts"
+        :key="t.key"
+        class="toast"
+        title="点击查看车辆详情"
+        @click="openPanelByPlate(t.plateNo)"
+      >
         新风险：{{ t.plateNo }} {{ t.title }}（等级 {{ t.level }}）
       </div>
     </div>
@@ -113,6 +119,7 @@
       v-model="panelVisible"
       :vehicle-id="panelVehicleId"
       :live-point="panelLivePoint"
+      :online="panelOnline"
     />
   </div>
 </template>
@@ -371,15 +378,32 @@ const panelLivePoint = computed(() =>
   panelPlateNo.value ? points.value.find((x) => x.plateNo === panelPlateNo.value) ?? null : null
 )
 
-function openPanel(p: GpsPoint) {
-  const id = plateNoToId.get(p.plateNo)
+/** 抽屉在线状态：与监控页同口径——以实时点集中最新定位时间为基准，10 分钟窗口内视为在线（数据时基可能滞后墙钟） */
+const panelOnline = computed(() => {
+  const pts = points.value
+  if (!pts.length) return undefined
+  const ts = (v: string) => new Date(String(v).replace('T', ' ').replace(/-/g, '/')).getTime()
+  let refTime = 0
+  for (const p of pts) refTime = Math.max(refTime, ts(p.gpsTime))
+  if (!refTime) return undefined
+  const p = panelPlateNo.value ? pts.find((x) => x.plateNo === panelPlateNo.value) : null
+  if (!p) return undefined
+  return refTime - ts(p.gpsTime) <= 10 * 60 * 1000
+})
+
+function openPanelByPlate(plateNo: string) {
+  const id = plateNoToId.get(plateNo)
   if (!id) {
     ElMessage.warning('无权查看该车辆或车辆未建档')
     return
   }
   panelVehicleId.value = id
-  panelPlateNo.value = p.plateNo
+  panelPlateNo.value = plateNo
   panelVisible.value = true
+}
+
+function openPanel(p: GpsPoint) {
+  openPanelByPlate(p.plateNo)
 }
 
 // ===== ECharts =====
@@ -510,8 +534,11 @@ function renderCharts() {
   if (regionChartRef.value) {
     if (!regionChart) {
       regionChart = echarts.init(regionChartRef.value)
-      // 点击区域柱子 → 风险预警分析（未处置）
-      regionChart.on('click', () => drill('/risk', { handleStatus: 0 }))
+      // 点击区域柱子 → 风险预警分析（未处置，按该市注册车辆过滤）
+      regionChart.on('click', (p: { dataIndex: number }) => {
+        const r = summary.value?.regionStats[p.dataIndex]
+        if (r) drill('/risk', { handleStatus: 0, cityCode: r.cityCode, cityName: r.cityName })
+      })
     }
     regionChart.setOption(barOption(
       s.regionStats.map((r) => ({ name: r.cityName, a: r.vehicleCount, b: r.riskCount, aName: '车辆数', bName: '今日风险' }))
@@ -758,6 +785,11 @@ onBeforeUnmount(() => {
   padding: 0.45rem 1rem;
   border-radius: 0.4rem;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.toast:hover {
+  background: rgba(220, 38, 38, 0.95);
 }
 
 /* 车辆 marker（与 Monitor.vue 同款式） */

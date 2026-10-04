@@ -11,6 +11,7 @@ import com.mydbd.monitor.entity.WarnInfo;
 import com.mydbd.monitor.mapper.RiskEventMapper;
 import com.mydbd.monitor.mapper.VideoAnalysisMapper;
 import com.mydbd.monitor.mapper.WarnInfoMapper;
+import com.mydbd.monitor.dashboard.mapper.DashboardMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,7 @@ public class MonitorService {
     private final RiskEventMapper riskEventMapper;
     private final VideoAnalysisMapper videoAnalysisMapper;
     private final WarnInfoMapper warnInfoMapper;
+    private final DashboardMapper dashboardMapper;
 
     /**
      * 监控总览：在途车辆 / 今日风险 / 未处置风险 / 今日终端报警
@@ -49,14 +51,27 @@ public class MonitorService {
 
     /**
      * 风险事件分页查询
+     * @param plateNo  车牌（模糊匹配，大屏/明细页钻取）
+     * @param cityCode 车辆注册地城市代码（区域分布柱钻取；经车辆表换算车牌集合过滤）
      */
     public PageData<RiskEvent> pageRisks(long page, long size, String eventSource,
-                                         Integer riskLevel, Integer handleStatus, Long ruleId) {
+                                         Integer riskLevel, Integer handleStatus, Long ruleId,
+                                         String plateNo, String cityCode) {
+        // 区域钻取：先按注册地换算车牌集合，空集合直接返回空页
+        List<String> cityPlates = null;
+        if (StringUtils.hasText(cityCode)) {
+            cityPlates = dashboardMapper.selectVehicleNosByCityCode(cityCode);
+            if (cityPlates.isEmpty()) {
+                return new PageData<>(0, page, size, List.of());
+            }
+        }
         LambdaQueryWrapper<RiskEvent> wrapper = new LambdaQueryWrapper<RiskEvent>()
                 .eq(StringUtils.hasText(eventSource), RiskEvent::getEventSource, eventSource)
                 .eq(riskLevel != null, RiskEvent::getRiskLevel, riskLevel)
                 .eq(handleStatus != null, RiskEvent::getHandleStatus, handleStatus)
                 .eq(ruleId != null, RiskEvent::getRuleId, ruleId)
+                .like(StringUtils.hasText(plateNo), RiskEvent::getPlateNo, plateNo)
+                .in(cityPlates != null, RiskEvent::getPlateNo, cityPlates)
                 .orderByDesc(RiskEvent::getEventTime);
         Page<RiskEvent> result = riskEventMapper.selectPage(new Page<>(page, size), wrapper);
         return new PageData<>(result.getTotal(), result.getCurrent(), result.getSize(), result.getRecords());

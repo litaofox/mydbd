@@ -57,6 +57,8 @@ export function getRisks(params: {
   riskLevel?: number
   handleStatus?: number
   ruleId?: number
+  plateNo?: string
+  cityCode?: string
 }): Promise<PageResult<RiskEvent>> {
   return http.get('/api/monitor/risks', { params })
 }

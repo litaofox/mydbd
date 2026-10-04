@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时监控 · 页面效果原型（mydbd）</title>
+<link rel="stylesheet" href="./vendor/leaflet.css">
+<script src="./vendor/leaflet.js"></script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-light: #60a5fa;
+    --primary-bg: #eff6ff;
+    --success: #16a34a;
+    --warning: #f59e0b;
+    --danger: #dc2626;
+    --ink: #1f2937;
+    --ink-2: #374151;
+    --muted: #6b7280;
+    --muted-2: #9ca3af;
+    --line: #e5e7eb;
+    --line-soft: #f0f0f0;
+    --bg: #f0f2f5;
+    --sidebar: #111827;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 13px; height: 100vh; min-width: 1080px;
+    display: flex; flex-direction: column; overflow: auto;
+  }
+  /* ===== 页面标题条 ===== */
+  .page-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .page-title { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .page-sub { font-size: 12px; color: var(--muted-2); }
+  .head-spacer { flex: 1; }
+  .conn-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--success); background: #f0fdf4;
+    border: 1px solid #bbf7d0; border-radius: 999px; padding: 3px 10px;
+  }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); position: relative; }
+  .conn-dot::after {
+    content: ''; position: absolute; inset: -3px; border-radius: 50%;
+    border: 2px solid var(--success); opacity: .5; animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(1.6); opacity: 0; } }
+  .hbtn {
+    width: 30px; height: 30px; border: 1px solid var(--line); background: #fff; border-radius: 4px;
+    color: var(--muted); cursor: pointer; font-size: 14px; display: inline-flex;
+    align-items: center; justify-content: center; transition: .15s;
+  }
+  .hbtn:hover { color: var(--primary); border-color: var(--primary-light); background: var(--primary-bg); }
+
+  /* ===== 主体三栏 ===== */
+  .workspace { flex: 1; display: flex; gap: 10px; padding: 10px 12px; min-height: 560px; }
+  .left-panel {
+    width: 272px; flex: 0 0 272px; background: #fff; border: 1px solid var(--line);
+    border-radius: 4px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .search-box { padding: 10px; border-bottom: 1px solid var(--line-soft); }
+  .search-input {
+    width: 100%; height: 32px; border: 1px solid #d1d5db; border-radius: 4px;
+    padding: 0 10px 0 30px; font-size: 13px; color: var(--ink); outline: none;
+    background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") no-repeat 9px center;
+  }
+  .search-input:focus { border-color: var(--primary-light); }
+  .search-input::placeholder { color: var(--muted-2); }
+
+  .tree-wrap { flex: 1; overflow-y: auto; padding: 6px 4px; }
+  .tnode { user-select: none; }
+  .trow { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 4px; cursor: pointer; line-height: 22px; }
+  .trow:hover { background: #f3f6fb; }
+  .trow.checked-bg { background: var(--primary-bg); }
+  .caret { width: 14px; color: var(--muted-2); font-size: 10px; text-align: center; transition: .15s; }
+  .caret.open { transform: rotate(90deg); }
+  .ck { width: 14px; height: 14px; border: 1px solid #c0c4cc; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; flex: 0 0 14px; }
+  .ck.on { background: var(--primary); border-color: var(--primary); }
+  .ck.half { background: var(--primary); border-color: var(--primary); }
+  .folder { color: #d9a441; }
+  .tlabel { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tcount { font-size: 11px; color: var(--muted-2); }
+  .vplate { font-weight: 500; }
+  .trow:has(> .vplate) { cursor: context-menu; }
+  .vdot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+  .d-drive { background: var(--primary); } .d-stop { background: #9ca3af; } .d-offline { background: #d1d5db; } .d-alarm { background: var(--danger); }
+  .tchildren { padding-left: 16px; display: none; }
+  .tchildren.open { display: block; }
+
+  .stat-grid {
+    flex: 0 0 auto; border-top: 1px solid var(--line-soft); padding: 10px 8px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .stat-cell {
+    display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 4px;
+    cursor: pointer; border: 1px solid transparent; transition: .15s;
+  }
+  .stat-cell:hover { background: #f8fafc; }
+  .stat-cell.active { background: var(--primary-bg); border-color: #bfdbfe; }
+  .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+  .stat-num { font-size: 18px; font-weight: 600; min-width: 34px; }
+  .stat-name { font-size: 12px; color: var(--muted); }
+  .s-total .stat-dot { background: #111827; } .s-total .stat-num { color: #111827; }
+  .s-online .stat-dot { background: var(--success); } .s-online .stat-num { color: var(--success); }
+  .s-drive .stat-dot { background: var(--primary); } .s-drive .stat-num { color: var(--primary); }
+  .s-stop .stat-dot { background: #9ca3af; } .s-stop .stat-num { color: #6b7280; }
+  .s-off .stat-dot { background: #d1d5db; } .s-off .stat-num { color: #9ca3af; }
+  .s-alarm .stat-dot { background: var(--danger); } .s-alarm .stat-num { color: var(--danger); }
+  .s-alarm { position: relative; }
+  .s-alarm .stat-num { animation: alarmBlink 1.6s ease-in-out infinite; }
+  @keyframes alarmBlink { 50% { opacity: .45; } }
+
+  /* ===== 右区：地图 + 底表 ===== */
+  .right-panel { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+  .map-card {
+    flex: 1; position: relative; background: #fff; border: 1px solid var(--line);
+    border-radius: 4px; overflow: hidden; min-height: 0;
+  }
+  #map { position: absolute; inset: 0; }
+  .map-toolbar {
+    position: absolute; top: 10px; right: 10px; z-index: 600; display: flex; gap: 8px; align-items: center;
+  }
+  .addr-box {
+    display: flex; align-items: center; background: #fff; border: 1px solid var(--line);
+    border-radius: 4px; height: 30px; padding: 0 4px 0 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .addr-box input { border: none; outline: none; width: 170px; font-size: 12px; color: var(--ink); background: transparent; }
+  .addr-box input::placeholder { color: var(--muted-2); }
+  .addr-go { width: 24px; height: 24px; border: none; background: var(--primary); color: #fff; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .tool-btns { display: flex; gap: 6px; }
+  .tool-btns .hbtn { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .conn-badge {
+    position: absolute; top: 10px; left: 12px; z-index: 600;
+    background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 12px; font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+
+  /* 自定义 marker */
+  .mk { width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid #fff;
+        box-shadow: 0 1px 6px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 12px; }
+  .mk-drive { background: var(--primary); }
+  .mk-stop { background: #9ca3af; }
+  .mk-offline { background: #cbd5e1; }
+  .mk-alarm { background: var(--danger); position: relative; }
+  .mk-alarm::before {
+    content: ''; position: absolute; inset: -5px; border-radius: 50%;
+    border: 2px solid var(--danger); animation: pulse 1.5s ease-out infinite;
+  }
+
+  /* 富信息气泡 */
+  .leaflet-popup-content-wrapper { border-radius: 8px; padding: 0; box-shadow: 0 6px 24px rgba(17,24,39,.16); }
+  .leaflet-popup-content { margin: 0; width: 272px; }
+  .pop { font-family: inherit; }
+  .pop-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; }
+  .pop-plate { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .tag { font-size: 11px; padding: 1px 8px; border-radius: 3px; line-height: 18px; }
+  .tag-drive { color: var(--primary); background: var(--primary-bg); border: 1px solid #bfdbfe; }
+  .tag-stop { color: #6b7280; background: #f3f4f6; border: 1px solid #e5e7eb; }
+  .tag-alarm { color: var(--danger); background: #fef2f2; border: 1px solid #fecaca; }
+  .pop-body { padding: 0 12px 8px; }
+  .pop-row { display: flex; font-size: 12px; line-height: 21px; color: var(--muted); }
+  .pop-row b { color: var(--ink-2); font-weight: 500; }
+  .pop-row .k { width: 58px; flex: 0 0 58px; }
+  .pop-addr { color: var(--ink-2); }
+  .geo-hint { color: var(--muted-2); font-size: 11px; margin-left: 4px; }
+  .pop-actions { display: flex; gap: 6px; padding: 8px 12px 12px; flex-wrap: wrap; }
+  .pbtn {
+    height: 28px; padding: 0 12px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: #fff; color: var(--ink-2);
+  }
+  .pbtn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .pbtn-primary:hover { background: #1d4ed8; }
+  .pbtn:hover { border-color: var(--primary-light); color: var(--primary); }
+  .pbtn-soon {
+    border-style: dashed; color: var(--muted-2); position: relative;
+  }
+  .pbtn-soon .soon-dot { position: absolute; top: -4px; right: -4px; width: 8px; height: 8px; border-radius: 50%;
+                         background: var(--warning); border: 1.5px solid #fff; }
+
+  /* 右键式更多菜单（视口级，地图图标/气泡按钮/表格行三处共用） */
+  .ctx-mask { position: fixed; inset: 0; z-index: 2000; display: none; }
+  .ctx-mask.open { display: block; }
+  .ctx-menu {
+    position: fixed; width: 176px; background: #fff; border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(17,24,39,.18); border: 1px solid var(--line); padding: 5px; z-index: 2001;
+  }
+  .ctx-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+  .ctx-item:hover { background: var(--primary-bg); color: var(--primary); }
+  .ctx-item .ci-icon { width: 16px; text-align: center; }
+  .ctx-item .soon-tag { margin-left: auto; font-size: 10px; color: var(--warning); border: 1px solid #fde68a; background: #fffbeb; border-radius: 3px; padding: 0 5px; line-height: 16px; }
+  .ctx-item .ci-arrow { margin-left: auto; color: var(--muted-2); font-size: 10px; }
+  .ctx-item.has-sub { position: relative; }
+  .ctx-sub {
+    display: none; position: absolute; left: 100%; top: -6px; margin-left: 2px;
+    width: 172px; background: #fff; border-radius: 6px; border: 1px solid var(--line);
+    box-shadow: 0 8px 28px rgba(17,24,39,.18); padding: 5px;
+  }
+  .ctx-item.has-sub:hover > .ctx-sub { display: block; }
+  .ctx-menu.flip-x .ctx-sub { left: auto; right: 100%; margin-left: 0; margin-right: 2px; }
+  .ctx-sep { height: 1px; background: var(--line-soft); margin: 4px 2px; }
+  .ctx-item.danger:hover { background: #fef2f2; color: var(--danger); }
+  .ctx-item.danger .soon-tag { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
+
+  /* 底部车辆表 */
+  .bottom-card {
+    flex: 0 0 248px; background: #fff; border: 1px solid var(--line); border-radius: 4px;
+    display: flex; flex-direction: column; min-height: 0; transition: flex-basis .2s;
+  }
+  .bottom-card.collapsed { flex-basis: 42px; }
+  .bottom-head { display: flex; align-items: center; padding: 0 12px; height: 42px; border-bottom: 1px solid var(--line-soft); flex: 0 0 42px; }
+  .tabs { display: flex; gap: 4px; }
+  .tab { padding: 0 12px; height: 42px; line-height: 42px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
+  .tab .badge { font-size: 11px; margin-left: 3px; }
+  .btools { margin-left: auto; display: flex; gap: 4px; }
+  .tbl-wrap { flex: 1; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th {
+    text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 500; background: #fafbfc;
+    border-bottom: 1px solid var(--line-soft); position: sticky; top: 0; z-index: 1;
+  }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid #f7f8fa; color: var(--ink-2); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f6f9ff; }
+  .mini-plate { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; color: var(--ink); }
+  .mini-plate .vdot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* toast */
+  .toast-wrap { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .toast {
+    background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--warning);
+    border-radius: 4px; padding: 9px 16px; font-size: 13px; color: var(--ink-2);
+    box-shadow: 0 4px 16px rgba(17,24,39,.12); animation: toastIn .25s ease;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+  .legend-note { position: absolute; bottom: 12px; left: 12px; z-index: 600; background: rgba(255,255,255,.92);
+    border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 11px; color: var(--muted);
+    display: flex; gap: 12px; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .legend-note span { display: inline-flex; gap: 4px; align-items: center; }
+  .legend-note i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .proto-banner {
+    background: #fffbeb; border-bottom: 1px solid #fde68a; color: #92400e; font-size: 12px;
+    padding: 5px 16px; text-align: center; flex: 0 0 auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="proto-banner">静态效果原型 · 仅供布局/配色/命名评审，数据均为模拟；带 <b>橙点 / 虚线</b> 的操作为已预留接口、下版本开放</div>
+
+<!-- 页面标题条 -->
+<div class="page-head">
+  <div>
+    <div class="page-title">实时监控</div>
+  </div>
+  <span class="page-sub">车辆位置 · 状态分布 · 报警总览</span>
+  <div class="head-spacer"></div>
+  <span class="conn-pill"><span class="conn-dot"></span>实时连接 · 1s 推送</span>
+  <button class="hbtn" title="手动刷新" onclick="toast('已刷新车辆最新位置')">⟳</button>
+</div>
+
+<div class="workspace">
+  <!-- 左栏 -->
+  <div class="left-panel">
+    <div class="search-box">
+      <input class="search-input" placeholder="车牌号 / 终端号 / SIM 卡号">
+    </div>
+    <div class="tree-wrap" id="tree">
+      <div class="tnode">
+        <div class="trow checked-bg" onclick="toggleNode(this)">
+          <span class="caret open">▶</span>
+          <span class="ck on" onclick="event.stopPropagation();toggleCk(this)">✓</span>
+          <span class="folder">📁</span><span class="tlabel">安徽朗迪物流集团</span><span class="tcount">148</span>
+        </div>
+        <div class="tchildren open">
+          <div class="tnode">
+            <div class="trow checked-bg" onclick="toggleNode(this)">
+              <span class="caret open">▶</span>
+              <span class="ck on" onclick="event.stopPropagation();toggleCk(this)">✓</span>
+              <span class="folder">📁</span><span class="tlabel">蓝鲸物流车队</span><span class="tcount">36</span>
+            </div>
+            <div class="tchildren open">
+              <div class="trow" oncontextmenu="event.preventDefault();openCtxAt(event,'皖NB4535')"><span class="caret"></span><span class="ck on" onclick="toggleCk(this)">✓</span><span class="vdot d-drive"></span><span class="tlabel vplate">皖NB4535</span></div>
+              <div class="trow" oncontextmenu="event.preventDefault();openCtxAt(event,'皖NB4536')"><span class="caret"></span><span class="ck on" onclick="toggleCk(this)">✓</span><span class="vdot d-alarm"></span><span class="tlabel vplate">皖NB4536</span></div>
+              <div class="trow" oncontextmenu="event.preventDefault();openCtxAt(event,'皖NE1022')"><span class="caret"></span><span class="ck on" onclick="toggleCk(this)">✓</span><span class="vdot d-stop"></span><span class="tlabel vplate">皖NE1022</span></div>
+              <div class="trow" oncontextmenu="event.preventDefault();openCtxAt(event,'皖NC0871')"><span class="caret"></span><span class="ck half" onclick="toggleCk(this)">−</span><span class="vdot d-stop"></span><span class="tlabel vplate">皖NC0871</span></div>
+            </div>
+          </div>
+          <div class="tnode">
+            <div class="trow" onclick="toggleNode(this)">
+              <span class="caret">▶</span>
+              <span class="ck" onclick="event.stopPropagation();toggleCk(this)"></span>
+              <span class="folder">📁</span><span class="tlabel">世纪物流车队</span><span class="tcount">42</span>
+            </div>
+            <div class="tchildren"></div>
+          </div>
+          <div class="tnode">
+            <div class="trow" onclick="toggleNode(this)">
+              <span class="caret">▶</span>
+              <span class="ck" onclick="event.stopPropagation();toggleCk(this)"></span>
+              <span class="folder">📁</span><span class="tlabel">途安运输车队</span><span class="tcount">38</span>
+            </div>
+            <div class="tchildren"></div>
+          </div>
+          <div class="tnode">
+            <div class="trow" onclick="toggleNode(this)">
+              <span class="caret">▶</span>
+              <span class="ck" onclick="event.stopPropagation();toggleCk(this)"></span>
+              <span class="folder">📁</span><span class="tlabel">金田野冷链车队</span><span class="tcount">32</span>
+            </div>
+            <div class="tchildren"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-cell s-total" onclick="pickTab('all',this)"><span class="stat-dot"></span><span class="stat-num">148</span><span class="stat-name">车辆总数</span></div>
+      <div class="stat-cell s-online" onclick="pickTab(null,this)"><span class="stat-dot"></span><span class="stat-num">126</span><span class="stat-name">在线</span></div>
+      <div class="stat-cell s-drive" onclick="pickTab('drive',this)"><span class="stat-dot"></span><span class="stat-num">21</span><span class="stat-name">行驶中</span></div>
+      <div class="stat-cell s-stop" onclick="pickTab('stop',this)"><span class="stat-dot"></span><span class="stat-num">105</span><span class="stat-name">停车</span></div>
+      <div class="stat-cell s-off" onclick="pickTab('offline',this)"><span class="stat-dot"></span><span class="stat-num">22</span><span class="stat-name">离线</span></div>
+      <div class="stat-cell s-alarm" onclick="pickTab('alarm',this)"><span class="stat-dot"></span><span class="stat-num">3</span><span class="stat-name">报警</span></div>
+    </div>
+  </div>
+
+  <!-- 右区 -->
+  <div class="right-panel">
+    <div class="map-card">
+      <div id="map"></div>
+
+      <div class="conn-badge"><span class="conn-dot" style="width:7px;height:7px;border-radius:50%;background:var(--success)"></span>实时推送：已连接</div>
+
+      <div class="map-toolbar">
+        <div class="addr-box">
+          <input id="addrInput" placeholder="搜索地点（预留）">
+          <button class="addr-go" onclick="addrSearch()">→</button>
+        </div>
+        <div class="tool-btns">
+          <button class="hbtn" title="切换图层（标准/卫星）" onclick="toast('图层切换：原型演示，正式版提供标准/卫星两种底图')">🗺</button>
+          <button class="hbtn" title="复位视野" onclick="resetView()">⤢</button>
+        </div>
+      </div>
+
+      <div class="legend-note">
+        <span><i style="background:var(--primary)"></i>行驶</span>
+        <span><i style="background:#9ca3af"></i>停车</span>
+        <span><i style="background:#cbd5e1"></i>离线</span>
+        <span><i style="background:var(--danger)"></i>报警</span>
+      </div>
+
+      <div class="ctx-mask" id="ctxMask" onclick="closeCtx()">
+        <div class="ctx-menu" id="ctxMenu" onclick="event.stopPropagation()"></div>
+      </div>
+    </div>
+
+    <!-- 底部状态表 -->
+    <div class="bottom-card" id="bottomCard">
+      <div class="bottom-head">
+        <div class="tabs">
+          <div class="tab active" data-k="all" onclick="pickTab('all',this)">全部<span class="badge">(148)</span></div>
+          <div class="tab" data-k="drive" onclick="pickTab('drive',this)">行驶中<span class="badge">(21)</span></div>
+          <div class="tab" data-k="stop" onclick="pickTab('stop',this)">停车<span class="badge">(105)</span></div>
+          <div class="tab" data-k="offline" onclick="pickTab('offline',this)">离线<span class="badge">(22)</span></div>
+          <div class="tab" data-k="alarm" onclick="pickTab('alarm',this)">报警<span class="badge" style="color:var(--danger)">(3)</span></div>
+        </div>
+        <div class="btools">
+          <button class="hbtn" title="列表密度" onclick="toast('表格列设置将在正式版提供')">⚙</button>
+          <button class="hbtn" id="collapseBtn" title="折叠/展开" onclick="toggleBottom()">▾</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" id="tblWrap">
+        <table>
+          <thead>
+            <tr><th style="width:48px">序号</th><th>车牌号</th><th>所属车队</th><th>定位时间</th><th style="width:90px">速度</th><th style="width:80px">方向</th><th style="width:120px">状态</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ---------------- mock 数据（怀宁县/合肥/苏州一带，贴近数据集） ---------------- */
+const vehicles = [
+  { plate: '皖NB4535', dept: '蓝鲸物流车队', lng: 116.832, lat: 30.735, speed: 0,  dir: 0,   status: 'stop',    time: '2026-10-04 13:36:54' },
+  { plate: '皖NB4536', dept: '蓝鲸物流车队', lng: 116.855, lat: 30.752, speed: 68, dir: 87,  status: 'alarm',   time: '2026-10-04 13:37:02', alarm: '超速报警' },
+  { plate: '皖NE1022', dept: '蓝鲸物流车队', lng: 116.798, lat: 30.710, speed: 42, dir: 180, status: 'alarm',   time: '2026-10-04 13:35:40', alarm: '围栏越界' },
+  { plate: '皖A006LE', dept: '世纪物流车队', lng: 117.227, lat: 31.821, speed: 82, dir: 142, status: 'drive',   time: '2026-10-04 13:37:10' },
+  { plate: '苏B003A7', dept: '途安运输车队', lng: 120.312, lat: 31.491, speed: 54, dir: 305, status: 'alarm',   time: '2026-10-04 13:36:58', alarm: '疲劳驾驶' },
+  { plate: '沪A00500', dept: '金田野冷链车队', lng: 121.473, lat: 31.230, speed: 0, dir: 0, status: 'offline', time: '2026-10-04 11:02:18' }
+];
+
+const statusName = { drive: '在线 · 行驶中', stop: '在线 · 停车', alarm: '在线 · 报警中', offline: '离线 · 信号中断' };
+const dotClass   = { drive: 'd-drive', stop: 'd-stop', alarm: 'd-alarm', offline: 'd-offline' };
+const tagClass   = { drive: 'tag-drive', stop: 'tag-stop', alarm: 'tag-alarm', offline: 'tag-stop' };
+const mkClass    = { drive: 'mk-drive', stop: 'mk-stop', alarm: 'mk-alarm', offline: 'mk-offline' };
+
+/* ---------------- 地图 ---------------- */
+const map = L.map('map', { zoomControl: false }).setView([30.95, 118.6], 7);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+  { subdomains: ['1','2','3','4'], maxZoom: 18, attribution: '&copy; 高德地图' }).addTo(map);
+
+function popHtml(v) {
+  const tag = v.status === 'alarm'
+    ? `<span class="tag tag-alarm">${v.alarm || '报警中'}</span>`
+    : `<span class="tag ${tagClass[v.status]}">${statusName[v.status]}</span>`;
+  return `
+  <div class="pop">
+    <div class="pop-head"><span class="pop-plate">${v.plate}</span>${tag}</div>
+    <div class="pop-body">
+      <div class="pop-row"><span class="k">速度</span><b>${v.speed} km/h</b><span style="margin-left:14px" class="k">方向</span><b>${v.dir}°</b></div>
+      <div class="pop-row"><span class="k">定位时间</span><b>${v.time}</b></div>
+      <div class="pop-row"><span class="k">坐标</span><b>${v.lng.toFixed(6)}, ${v.lat.toFixed(6)}</b></div>
+      <div class="pop-row"><span class="k">位置</span><span class="pop-addr">${v.lng.toFixed(6)}, ${v.lat.toFixed(6)}</span><span class="geo-hint">文字地址服务接入后显示</span></div>
+    </div>
+    <div class="pop-actions">
+      <button class="pbtn pbtn-primary" onclick="toast('跳转历史轨迹回放（自动带车牌 ${v.plate}）')">📍 轨迹回放</button>
+      <button class="pbtn" onclick="toast('打开车辆综合详情抽屉')">📋 车辆详情</button>
+      <button class="pbtn pbtn-soon" title="预留接口 · 下版本开放" onclick="soon('实时视频（JT/T 1078）')">🎥<span class="soon-dot"></span></button>
+      <button class="pbtn pbtn-soon" title="预留接口 · 下版本开放" onclick="soon('语音调度（JT/T 808）')">📞<span class="soon-dot"></span></button>
+      <button class="pbtn pbtn-soon" title="预留接口 · 下版本开放" onclick="soon('远程抓拍（0x8801）')">📷<span class="soon-dot"></span></button>
+      <button class="pbtn pbtn-soon" title="更多操作（也可在车辆图标上点鼠标右键）" onclick="event.stopPropagation();openCtxAt(event,'${v.plate}')">···</button>
+    </div>
+  </div>`;
+}
+
+vehicles.forEach(v => {
+  const arrow = v.status === 'offline' ? '' : `<span style="display:inline-block;transform:rotate(${v.dir}deg);line-height:1">▲</span>`;
+  const icon = L.divIcon({ className: '', iconSize: [26,26], iconAnchor: [13,13],
+    html: `<div class="mk ${mkClass[v.status]}">${arrow}</div>` });
+  const m = L.marker([v.lat, v.lng], { icon }).addTo(map);
+  m.bindPopup(popHtml(v), { closeButton: true, offset: [0, 8], autoPan: false });
+  m.on('click', () => currentPlate = v.plate);
+  // 车辆图标鼠标右键：弹上下文菜单（屏蔽浏览器默认菜单）
+  m.on('contextmenu', (e) => {
+    L.DomEvent.preventDefault(e);
+    map.closePopup();
+    openCtxAt(e.originalEvent, v.plate);
+  });
+});
+// 地图空白处右键不弹浏览器默认菜单（仅在车辆图标上出操作菜单）
+map.on('contextmenu', (e) => L.DomEvent.preventDefault(e));
+setTimeout(() => map.invalidateSize(), 100);
+
+/* ---------------- 底部表格 ---------------- */
+let currentFilter = 'all', currentPlate = null;
+function renderRows() {
+  const rows = vehicles.filter(v => currentFilter === 'all' || v.status === currentFilter);
+  document.getElementById('tbody').innerHTML = rows.map((v, i) => `
+    <tr onclick="focusVehicle('${v.plate}')" oncontextmenu="event.preventDefault();openCtxAt(event,'${v.plate}')">
+      <td>${i + 1}</td>
+      <td><span class="mini-plate"><span class="vdot ${dotClass[v.status]}"></span>${v.plate}</span></td>
+      <td>${v.dept}</td>
+      <td>${v.time}</td>
+      <td>${v.speed} km/h</td>
+      <td>${v.dir}°</td>
+      <td>${v.status === 'alarm' ? `<span class="tag tag-alarm">${v.alarm}</span>` : statusName[v.status]}</td>
+    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:var(--muted-2);padding:24px">该状态下暂无车辆</td></tr>`;
+}
+renderRows();
+
+function pickTab(k, el) {
+  currentFilter = k || 'all';
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.k === currentFilter));
+  document.querySelectorAll('.stat-cell').forEach(c => c.classList.remove('active'));
+  if (el && el.classList.contains('stat-cell')) el.classList.add('active');
+  renderRows();
+}
+function focusVehicle(plate) {
+  const v = vehicles.find(x => x.plate === plate);
+  if (!v) return;
+  map.setView([v.lat, v.lng], 13, { animate: true });
+  currentPlate = plate;
+}
+function resetView() { map.flyToBounds(vehicles.map(v => [v.lat, v.lng]), { padding: [40, 40] }); }
+resetView();
+
+/* ---------------- 左树 ---------------- */
+function toggleNode(rowEl) {
+  const children = rowEl.parentElement.querySelector('.tchildren');
+  const caret = rowEl.querySelector('.caret');
+  if (!children || !children.children.length) return;
+  children.classList.toggle('open');
+  caret.classList.toggle('open');
+}
+function toggleCk(el) {
+  if (el.classList.contains('on')) { el.classList.remove('on'); el.textContent = ''; }
+  else { el.classList.add('on'); el.classList.remove('half'); el.textContent = '✓'; }
+  el.closest('.trow')?.classList.toggle('checked-bg', el.classList.contains('on'));
+}
+
+/* ---------------- 底部折叠 ---------------- */
+function toggleBottom() {
+  const card = document.getElementById('bottomCard');
+  card.classList.toggle('collapsed');
+  document.getElementById('tblWrap').style.display = card.classList.contains('collapsed') ? 'none' : '';
+  document.getElementById('collapseBtn').textContent = card.classList.contains('collapsed') ? '▴' : '▾';
+  setTimeout(() => map.invalidateSize(), 220);
+}
+
+/* ---------------- 车辆上下文菜单（地图右键 / 气泡··· / 表格右键 共用） ---------------- */
+// 菜单模型：act=本期真实动作；soon=预留接口项；sub=级联子菜单（视频通道/终端指令）
+const CONTEXT_MENU = [
+  { icon: '📍', name: '轨迹回放', act: 'track' },
+  { icon: '🎥', name: '实时视频', soon: true, sub: [
+      { name: '全部通道', hint: '实时视频 · 全部通道（JT/T 1078 四窗格）' },
+      { name: '通道 1', hint: '实时视频 · 通道 1（JT/T 1078）' },
+      { name: '通道 2', hint: '实时视频 · 通道 2（JT/T 1078）' },
+      { name: '通道 3', hint: '实时视频 · 通道 3（JT/T 1078）' },
+      { name: '通道 4', hint: '实时视频 · 通道 4（JT/T 1078）' }
+  ]},
+  { icon: '⚡', name: '终端指令', soon: true, sub: [
+      { name: '文本下发', hint: '文本信息下发（JT/T 808 · 0x8300）' },
+      { name: '断油断电', danger: true, hint: '断油断电（JT/T 808 · 0x8500，正式版需二次确认）' },
+      { name: '恢复油电', hint: '恢复油电（JT/T 808 · 0x8500）' },
+      { name: '终端重启', hint: '终端远程重启/复位' },
+      { name: '参数设置', hint: '终端参数查询与设置（0x8104/0x8103）' }
+  ]},
+  { icon: '🎯', name: '持续跟踪', act: 'follow' },
+  { icon: '🎙️', name: '语音对讲', soon: true, hint: '语音对讲/监听（JT/T 808 · 0x8400）' },
+  { icon: '📷', name: '远程抓拍', soon: true, hint: '远程抓拍（JT/T 808 · 0x8801 影像采集）' },
+  { sep: true },
+  { icon: '📋', name: '车辆详情', act: 'detail' },
+  { icon: '🔗', name: '分享位置', act: 'share' }
+];
+
+function dispatchMenu(act, hint, plate) {
+  closeCtx();
+  if (hint) return soon(hint);
+  switch (act) {
+    case 'track':  return toast(`跳转历史轨迹回放（自动带车牌 ${plate}）`);
+    case 'detail': return toast('打开车辆综合详情抽屉');
+    case 'follow': return toast(`已开启「${plate}」持续跟踪，地图将自动跟随车辆移动`);
+    case 'share':  return shareLocation(plate);
+  }
+}
+
+function shareLocation(plate) {
+  const url = `${location.origin}/monitor?plate=${encodeURIComponent(plate)}`;
+  const ok = () => toast(`「${plate}」位置分享链接已复制（24 小时内有效）`);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(ok).catch(() => toast('分享链接已生成（当前环境禁止自动复制）'));
+  } else {
+    toast('分享链接已生成（当前环境不支持自动复制）');
+  }
+}
+
+function renderCtxMenu(plate) {
+  const menu = document.getElementById('ctxMenu');
+  menu.innerHTML = CONTEXT_MENU.map((it) => {
+    if (it.sep) return '<div class="ctx-sep"></div>';
+    const tag = it.soon ? '<span class="soon-tag">预留</span>' : '';
+    const arrow = it.sub ? '<span class="ci-arrow">▶</span>' : tag;
+    const sub = it.sub ? `<div class="ctx-sub">${it.sub.map((s) =>
+      `<div class="ctx-item${s.danger ? ' danger' : ''}">${s.name}<span class="soon-tag">预留</span></div>`
+    ).join('')}</div>` : '';
+    return `<div class="ctx-item has-sub" data-act="${it.act || ''}" data-hint="${it.hint || ''}">
+      <span class="ci-icon">${it.icon}</span>${it.name}${arrow}${sub}</div>`;
+  }).join('');
+
+  menu.querySelectorAll(':scope > .ctx-item').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.ctx-sub')) return; // 子菜单单独处理
+      dispatchMenu(el.dataset.act, el.dataset.hint, plate);
+    });
+  });
+  menu.querySelectorAll('.ctx-sub .ctx-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const text = el.textContent.replace('预留', '').trim();
+      const group = CONTEXT_MENU.find(g => g.sub && g.sub.some(s => s.name === text));
+      const hit = group && group.sub.find(s => s.name === text);
+      dispatchMenu('', hit ? hit.hint : text, plate);
+    });
+  });
+}
+
+function openCtxAt(e, plate) {
+  currentPlate = plate;
+  renderCtxMenu(plate);
+  const mask = document.getElementById('ctxMask');
+  const menu = document.getElementById('ctxMenu');
+  mask.classList.add('open');
+  // 靠右边缘时子菜单向左展开；先测量再定位，避免溢出视口
+  menu.classList.toggle('flip-x', e.clientX > window.innerWidth - 400);
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.left = Math.min(e.clientX + 4, window.innerWidth - mw - 8) + 'px';
+  menu.style.top  = Math.min(e.clientY + 4, window.innerHeight - mh - 8) + 'px';
+}
+function closeCtx() { document.getElementById('ctxMask').classList.remove('open'); }
+
+/* ---------------- 预留能力统一提醒 ---------------- */
+function soon(name) {
+  closeCtx();
+  toast(`「${name}」接口已预留，将在下一版本开放`);
+}
+function addrSearch() {
+  const kw = document.getElementById('addrInput').value.trim();
+  if (!kw) return toast('请输入地点关键字');
+  soon(`地点检索「${kw}」（地理编码服务）`);
+}
+
+/* ---------------- toast ---------------- */
+function toast(msg) {
+  const w = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  w.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2600);
+}
+</script>
+</body>
+</html>

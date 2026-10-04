@@ -38,6 +38,16 @@
       <el-header class="header">
         <div class="title">{{ route.meta.title || '' }}</div>
         <div class="header-right">
+          <el-tooltip content="监控总览大屏" placement="bottom">
+            <el-icon
+              class="dash-entry"
+              role="button"
+              aria-label="监控总览大屏"
+              tabindex="0"
+              @click="router.push('/dashboard')"
+              @keydown.enter="router.push('/dashboard')"
+            ><DataBoard /></el-icon>
+          </el-tooltip>
           <el-popover placement="bottom-end" :width="340" trigger="click" popper-class="notify-pop">
             <template #reference>
               <el-badge :value="notifyUnread" :max="99" :hidden="notifyUnread === 0" class="bell-badge">
@@ -226,6 +236,15 @@ async function onCommand(command: string) {
   font-size: 20px;
   color: #4b5563;
   cursor: pointer;
+}
+
+.dash-entry {
+  font-size: 20px;
+  color: #4b5563;
+  cursor: pointer;
+}
+.dash-entry:hover {
+  color: #2563eb;
 }
 
 .notify-head {

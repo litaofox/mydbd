@@ -142,6 +142,8 @@
 
         <!-- 底部操作 -->
         <div class="p-foot">
+          <el-button type="primary" @click="goMonitor">实时监控</el-button>
+          <el-button @click="goPlayback" :disabled="!panel.terminal">轨迹回放</el-button>
           <el-tooltip
             :disabled="hasVideo"
             content="该终端无视频通道"
@@ -151,7 +153,6 @@
               <el-button type="primary" plain :disabled="!hasVideo" @click="onVideo">视频调阅</el-button>
             </span>
           </el-tooltip>
-          <el-button @click="goPlayback" :disabled="!panel.terminal">轨迹回放</el-button>
         </div>
       </template>
     </div>
@@ -179,6 +180,8 @@ const props = defineProps<{
   modelValue: boolean
   vehicleId: string | null
   livePoint?: GpsPoint | null
+  /** 页面统一口径的在线状态；不传时回退为按定位时间 5 分钟判断 */
+  online?: boolean
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
 
@@ -212,12 +215,14 @@ const posPoint = computed(() => {
   return p ?? null
 })
 
-const online = computed(() => {
+/** 页面已给出统一口径在线状态时直接使用（数据时基可能滞后于墙钟） */
+const localOnline = computed(() => {
   const p = posPoint.value
   if (!p) return false
   const t = new Date(String(p.gpsTime).replace('T', ' ').replace(/-/g, '/')).getTime()
   return Date.now() - t <= 5 * 60 * 1000
 })
+const online = computed(() => props.online ?? localOnline.value)
 
 const hasVideo = computed(
   () => !!panel.value?.terminal && (panel.value.terminal.videoChannel ?? 0) > 0
@@ -349,8 +354,15 @@ function goArchive() {
 function goAlarms() {
   router.push(`/alarms?plateNo=${encodeURIComponent(panel.value?.vehicle.vehicleNo ?? '')}`)
 }
+function goMonitor() {
+  // 监控页支持 ?plate= 自动定位 + 打开气泡
+  router.push(`/monitor?plate=${encodeURIComponent(panel.value?.vehicle.vehicleNo ?? '')}`)
+}
 function goPlayback() {
-  router.push(`/playback?identityCode=${encodeURIComponent(panel.value?.terminal?.identityCode ?? '')}`)
+  // 同时携带车牌与终端识别码：select 显示车牌，查询走识别码
+  const plate = panel.value?.vehicle.vehicleNo ?? ''
+  const identity = panel.value?.terminal?.identityCode ?? ''
+  router.push(`/playback?plateNo=${encodeURIComponent(plate)}&identityCode=${encodeURIComponent(identity)}`)
 }
 function onVideo() {
   ElMessage.info('视频调阅建设中，将随 F25（第三波）上线')

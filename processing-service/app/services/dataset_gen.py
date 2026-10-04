@@ -88,6 +88,92 @@ CORRIDORS = {
               (120.094, 30.894), (121.473, 31.230)],
 }
 
+# 省内多市路线（按起点城市组织），用于模拟同省多市之间的物流流转
+INTRA_PROVINCE_ROUTES = {
+    "济南市": [
+        [(117.120, 36.651), (120.382, 36.067), (121.448, 37.464)],  # 济南-青岛-烟台
+        [(117.120, 36.651), (120.382, 36.067)],                      # 济南-青岛
+    ],
+    "青岛市": [
+        [(120.382, 36.067), (117.120, 36.651)],                      # 青岛-济南
+        [(120.382, 36.067), (121.448, 37.464)],                      # 青岛-烟台
+    ],
+    "烟台市": [
+        [(121.448, 37.464), (120.382, 36.067)],                      # 烟台-青岛
+        [(121.448, 37.464), (120.382, 36.067), (117.120, 36.651)],   # 烟台-青岛-济南
+    ],
+    "南京市": [
+        [(118.796, 32.060), (120.312, 31.491), (120.585, 31.299)],   # 南京-无锡-苏州
+        [(118.796, 32.060), (120.312, 31.491)],                      # 南京-无锡
+    ],
+    "无锡市": [
+        [(120.312, 31.491), (118.796, 32.060)],                      # 无锡-南京
+        [(120.312, 31.491), (120.585, 31.299)],                      # 无锡-苏州
+    ],
+    "苏州市": [
+        [(120.585, 31.299), (120.312, 31.491)],                      # 苏州-无锡
+        [(120.585, 31.299), (120.312, 31.491), (118.796, 32.060)],   # 苏州-无锡-南京
+    ],
+    "合肥市": [
+        [(117.227, 31.821), (118.433, 31.353)],                      # 合肥-芜湖
+        [(117.227, 31.821), (118.433, 31.353), (120.094, 30.894)],   # 合肥-芜湖-湖州
+    ],
+    "芜湖市": [
+        [(118.433, 31.353), (117.227, 31.821)],                      # 芜湖-合肥
+    ],
+    "上海市": [
+        [(121.473, 31.230), (120.585, 31.299)],                      # 上海-苏州
+        [(121.473, 31.230), (120.094, 30.894)],                      # 上海-湖州
+    ],
+}
+
+# 每个行程类型的权重：跨省 45% / 省内多市 40% / 市内短途 15%
+_TRIP_TYPE_WEIGHTS = [("cross_province", 45), ("intra_province", 40), ("local", 15)]
+
+
+def _pick_route(fleet: dict) -> tuple[list, str]:
+    """按权重选择当日行程路线，返回 (waypoints, trip_type)。"""
+    r = RNG.random() * 100
+    acc = 0
+    chosen = "local"
+    for ttype, w in _TRIP_TYPE_WEIGHTS:
+        acc += w
+        if r <= acc:
+            chosen = ttype
+            break
+    if chosen == "cross_province":
+        corr = CORRIDORS[fleet["corr"]]
+        waypoints = list(reversed(corr)) if RNG.random() < 0.5 else list(corr)
+        return waypoints, "cross_province"
+    if chosen == "intra_province":
+        routes = INTRA_PROVINCE_ROUTES.get(fleet["city"])
+        if routes:
+            return list(RNG.choice(routes)), "intra_province"
+    return _local_waypoints(fleet["center"]), "local"
+
+
+def _trip_start_time(day: date, trip_index: int, anomaly: bool, highway: bool) -> datetime:
+    """行程发车时间。
+
+    正常作息：5:00-9:00 上午 / 14:00-15:00 下午（长途）或 14:00-17:00 短途；
+    22:00 后原则上收车，确保 24:00 前结束；0:00-5:00 休息。
+    异常日（anomaly=True）首趟发车在凌晨 2:00-4:30，作为疲劳/夜间违规数据。
+    """
+    if anomaly and trip_index == 0:
+        h = RNG.randint(2, 4)
+        m = RNG.randint(0, 30) if h == 4 else RNG.randint(0, 59)
+        return datetime.combine(day, time(h, m, RNG.randint(0, 59)))
+    if trip_index == 0:
+        # 上午：长途 5:00-7:30 发车（12:00 前后结束），短途可到 9:00
+        if highway:
+            return datetime.combine(day, time(RNG.randint(5, 7), RNG.randint(0, 30), RNG.randint(0, 59)))
+        return datetime.combine(day, time(RNG.randint(5, 9), RNG.randint(0, 59), RNG.randint(0, 59)))
+    # 第二趟：长途限 14:00-14:30 发车（23:00 前结束，不跨午夜），短途 14:00-16:30
+    if highway:
+        m = RNG.randint(0, 30)
+        return datetime.combine(day, time(14, m, RNG.randint(0, 59)))
+    return datetime.combine(day, time(RNG.randint(14, 16), RNG.randint(0, 59), RNG.randint(0, 59)))
+
 _PLATE_ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SURNAMES = list("王李张刘陈杨黄赵周吴徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾")
 GIVEN_1 = list("伟芳娜敏静秀丽强磊军洋勇艳杰娟涛明超霞平刚桂英")
@@ -97,13 +183,13 @@ VTYPES = ["重型货车", "中型货车", "轻型货车", "牵引车", "冷链�
 ASSIGNEES = ["刘洋", "赵磊", "孙敏", "周强"]
 
 MODES = {
-    # 标准版：30s 一点，每日 1~3 趟，实测约 110~130 万点，加载 4~5 分钟；
+    # 标准版：30s 一点，每日 1~2 趟，跨省/省内多市为主，约 700~900 万点
     # 风险事件/工单总量封顶 96（<100），均匀分布在 9 月各天
-    "standard": {"interval_s": 30, "trips": (1, 3), "event_budget": 96,
+    "standard": {"interval_s": 30, "trips": (1, 2), "event_budget": 96,
                  "guarantee": {"SPEED_SEVERE": 6, "FATIGUE_DRIVE": 4,
                                "COMBO_FATIGUE_SPEED": 1}},
-    # 稠密版：15s 一点，每日 2~4 趟，约 400~500 万点；事件/工单封顶 192（<200）
-    "dense": {"interval_s": 15, "trips": (2, 4), "event_budget": 192,
+    # 稠密版：15s 一点，每日 2~3 趟，约 1500~1800 万点；事件/工单封顶 192（<200）
+    "dense": {"interval_s": 15, "trips": (2, 3), "event_budget": 192,
               "guarantee": {"SPEED_SEVERE": 12, "FATIGUE_DRIVE": 8,
                             "COMBO_FATIGUE_SPEED": 2}},
 }
@@ -349,45 +435,46 @@ def _emit_trip_points(start_dt, path, speed_fn, interval_s, mileage0):
     return rows, mileage
 
 
-def _plan_schedule(vehicles, budget: int) -> tuple[dict, dict, dict]:
+def _plan_schedule(vehicles, budget: int) -> tuple[dict, dict, dict, dict]:
     """配额制事件排期。
 
-    返回 (active_days, event_days, cross_days)：
-      active_days: {车序号: [活跃日 d,...]}（与主循环共用，保证 RNG 口径一致）
+    返回 (active_days, event_days, highway_days, anomaly_days)：
+      active_days: {车序号: [活跃日 d,...]}
       event_days: {车序号: set(d)} 被安排 1 起风险事件的"车-日"
-      cross_days: {车序号: set(d)} 当天执行跨省高速任务的"车-日"
-    事件按车辆风险倾向加权抽样（少数高风险车承担更多事件），总量恰好等于
-    budget，且在 30 天内均匀分布；跨省高速日额外加权（×12），保证严重超速、
-    疲劳驾驶等依托高速/清晨长行程的事件类型有合理占比。
+      highway_days: {车序号: set(d)} 当天有跨省/省内多市行程（高速类事件候选日）
+      anomaly_days: {车序号: set(d)} 当天首趟发车在凌晨 2-4 点（夜间异常数据）
+    事件按车辆风险倾向加权抽样，总量=budget，30 天均匀分布；高速日加权。
     """
     active_days: dict[int, list[int]] = {}
-    cross_days: dict[int, set] = {}
+    highway_days: dict[int, set] = {}
+    anomaly_days: dict[int, set] = {}
     weights: dict[int, float] = {}
     candidates = []
-    for vi, v in enumerate(vehicles):
-        # 风险倾向长尾：多数车 0.3 左右，约 15% 的车显著偏高
+    for vi in range(len(vehicles)):
         weights[vi] = 0.3 + (RNG.random() ** 4) * 6.0
-        cross_capable = (v["idx"] % 50) < 3
-        days = []
-        vi_cross = set()
+        days, vi_highway, vi_anomaly = [], set(), set()
         for d in range(MONTH_DAYS):
             day = MONTH_START + timedelta(days=d)
             if day.weekday() == 6 and RNG.random() < 0.55:
                 continue  # 部分周日停驶
             days.append(d)
-            if cross_capable and RNG.random() < 0.26:
-                vi_cross.add(d)
+            # 85% 的活跃日含跨省/省内多市行程（高速日）
+            if RNG.random() < 0.85:
+                vi_highway.add(d)
+            # 约 2.5% 的车-日为夜间异常日（凌晨 2-4 点发车）
+            if RNG.random() < 0.025:
+                vi_anomaly.add(d)
         active_days[vi] = days
-        cross_days[vi] = vi_cross
+        highway_days[vi] = vi_highway
+        anomaly_days[vi] = vi_anomaly
         for d in days:
-            w = weights[vi] * (18 if d in vi_cross else 1)
-            # 指数率抽样打分：score 越小越易入选，入选概率 ∝ 权重
+            w = weights[vi] * (4 if d in vi_highway else 1)
             candidates.append((-math.log(max(RNG.random(), 1e-9)) / w, vi, d))
     candidates.sort(key=lambda x: x[0])
     event_days: dict[int, set] = {}
     for _, vi, d in candidates[:budget]:
         event_days.setdefault(vi, set()).add(d)
-    return active_days, event_days, cross_days
+    return active_days, event_days, highway_days, anomaly_days
 
 
 # 单日事件类型权重（合计 100），按行驶场景区分：
@@ -620,143 +707,214 @@ def _flush_derivatives(cur, plate, identity, events, warn_hits, warn_seq):
 # =====================================================================
 # 5. 主流程
 # =====================================================================
-def build_dataset(mode: str) -> dict:
+def _build_vehicle_list() -> list:
+    """构造车辆元信息列表（不写库），供 dry_run 与建档共用。"""
+    vehicles = []
+    for i in range(500):
+        f = FLEETS[i // 50]
+        local_no = i % 50
+        plate = f"{f['plate']}{_plate_suffix((i // 50) * 800 + local_no)}"
+        vehicles.append({
+            "idx": i, "did": 700001 + i, "fleet": f,
+            "identity": f"DS{i+1:04d}", "plate": plate,
+        })
+    return vehicles
+
+
+def build_dataset(mode: str, dry_run: bool = False) -> dict:
+    """构建标准测试数据集。
+
+    dry_run=True 时不写库、不清空，仅生成轨迹与衍生数据的统计摘要，
+    供用户审批后再正式入库。
+    """
     interval_s = MODES[mode]["interval_s"]
     trip_range = MODES[mode]["trips"]
     warn_seq = 1
     counts = {"vehicles": 500, "points": 0, "events": 0, "warns": 0, "scores": 0}
+    stats = {
+        "vehicles": 500,
+        "trips": {"cross_province": 0, "intra_province": 0, "local": 0,
+                  "night_anomaly": 0, "total": 0},
+        "points_by_hour": {str(h): 0 for h in range(24)},
+        "night_rest_points": 0,        # 22:00~次日05:00 的点数
+        "anomaly_points": 0,           # 02:00~05:00 的点数（异常数据）
+        "vehicle_day_anomaly": 0,      # 含夜间异常行程的车-日数
+        "vehicle_day_total": 0,        # 总车-日数
+        "_pt_count": 0,                # dry_run 累计点数（不入库）
+    }
 
-    _set(running=True, mode=mode, stage="清空旧业务数据", percent=2,
-         counts=counts, error=None,
-         started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), finished_at=None)
-    clear_business_data()
+    if not dry_run:
+        _set(running=True, mode=mode, stage="清空旧业务数据", percent=2,
+             counts=counts, error=None,
+             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+             finished_at=None)
+        clear_business_data()
 
     point_buf, total_points = [], 0
 
     def flush_points():
         nonlocal point_buf, total_points
-        if point_buf:
+        if point_buf and not dry_run:
             insert_gps_points(point_buf)
             total_points += len(point_buf)
             point_buf = []
 
-    vehicles = None
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            _set(stage="建档：公司/车队/车辆/终端/司机", percent=5)
-            vehicles = _seed_mdm(cur)
+    vehicles = _build_vehicle_list()
+    if not dry_run:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                _set(stage="建档：公司/车队/车辆/终端/司机", percent=5)
+                _seed_mdm(cur)
 
-    # 配额制事件排期：事件总量=event_budget，按车辆风险倾向加权、在全月均匀分布
-    active_days, event_days, cross_days = _plan_schedule(
+    active_days, event_days, highway_days, anomaly_days = _plan_schedule(
         vehicles, MODES[mode]["event_budget"])
-    type_filled: dict[str, int] = {}  # 规则类型保底席位已用计数
+    type_filled: dict[str, int] = {}
     type_targets = MODES[mode]["guarantee"]
 
     for vi, v in enumerate(vehicles):
         f = v["fleet"]
         mileage = RNG.uniform(20000, 120000)
         my_event_days = event_days.get(vi, set())
-        my_cross_days = cross_days.get(vi, set())
+        my_highway_days = highway_days.get(vi, set())
+        my_anomaly_days = anomaly_days.get(vi, set())
 
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                for d in active_days[vi]:
-                    day = MONTH_START + timedelta(days=d)
-                    day_points, day_events, day_warn_hits = [], [], []
-                    mileage_start = mileage
-                    ntrips = RNG.randint(*trip_range)
-                    cross_today = d in my_cross_days
-                    hours = sorted(RNG.sample(range(7, 20), min(ntrips, 13)))
+        cur = None
+        conn = None
+        conn_cm = None
+        if not dry_run:
+            conn_cm = get_conn()
+            conn = conn_cm.__enter__()
+            cur = conn.cursor().__enter__()
 
-                    for ti, h in enumerate(hours):
-                        is_cross = cross_today and ti == 0
-                        start_dt = datetime.combine(
-                            day, time(h if not is_cross else RNG.choice([4, 5, 6]),
-                                      RNG.randint(0, 50), RNG.randint(0, 59)))
-                        if is_cross:
-                            corr = CORRIDORS[f["corr"]]
-                            path = _build_path(list(reversed(corr))
-                                              if RNG.random() < 0.5 else corr)
-                            base = RNG.uniform(75, 98)
+        for d in active_days[vi]:
+            day = MONTH_START + timedelta(days=d)
+            day_points, day_events, day_warn_hits = [], [], []
+            mileage_start = mileage
+            ntrips = RNG.randint(*trip_range)
+            is_anomaly_day = d in my_anomaly_days
+            if is_anomaly_day:
+                stats["vehicle_day_anomaly"] += 1
+            stats["vehicle_day_total"] += 1
 
-                            def speed_fn(dist, total, b=base):
-                                ramp = min(dist, max(total - dist, 0)) / 3.0
-                                return max(30, int(b - max(0.0, 1 - ramp) * 35
-                                                  + RNG.uniform(-6, 8)))
-                        else:
-                            path = _build_path(_local_waypoints(f["center"]))
-                            urban = RNG.uniform(28, 62)
+            for ti in range(ntrips):
+                waypoints, ttype = _pick_route(f)
+                stats["trips"][ttype] += 1
+                stats["trips"]["total"] += 1
+                is_highway = ttype in ("cross_province", "intra_province")
+                start_dt = _trip_start_time(day, ti, is_anomaly_day, is_highway)
+                if ti == 0 and is_anomaly_day:
+                    stats["trips"]["night_anomaly"] += 1
 
-                            def speed_fn(dist, total, b=urban):
-                                return max(0, int(b + RNG.uniform(-14, 18)
-                                                  - (6 if dist < 0.4 else 0)))
+                path = _build_path(waypoints)
+                if is_highway:
+                    base = RNG.uniform(70, 96)
 
-                        rows, mileage = _emit_trip_points(
-                            start_dt, path, speed_fn, interval_s, mileage)
-                        for r in rows:
-                            day_points.append({
-                                "identity_code": v["identity"],
-                                "plate_no": v["plate"],
-                                "gps_time": r["time"].strftime("%Y-%m-%d %H:%M:%S"),
-                                "lng": r["lng"], "lat": r["lat"], "speed": r["speed"],
-                                "direction": r["direction"], "altitude": RNG.randint(5, 80),
-                                "alarm_flag": 1 if r["speed"] >= 92 else 0,
-                                "mileage": r["mileage"],
-                            })
-                    if not day_points:
-                        continue
+                    def speed_fn(dist, total, b=base):
+                        ramp = min(dist, max(total - dist, 0)) / 3.0
+                        return max(30, int(b - max(0.0, 1 - ramp) * 32
+                                          + RNG.uniform(-6, 8)))
+                else:
+                    urban = RNG.uniform(28, 60)
 
-                    # 配额制：该车-日被排期时注入恰好 1 起事件（报警随类型成对）
-                    if d in my_event_days:
-                        ev, wh = _make_event_for_day(
-                            v["plate"], v["identity"], day_points,
-                            highway=(d in my_cross_days),
-                            filled=type_filled, targets=type_targets)
-                        day_events.append(ev)
-                        if wh:
-                            day_warn_hits.append(wh)
+                    def speed_fn(dist, total, b=urban):
+                        return max(0, int(b + RNG.uniform(-14, 16)
+                                          - (6 if dist < 0.4 else 0)))
 
-                    warn_seq = _flush_derivatives(
-                        cur, v["plate"], v["identity"], day_events,
-                        day_warn_hits, warn_seq)
-                    counts["events"] += len(day_events)
-                    counts["warns"] = warn_seq - 1
+                rows, mileage = _emit_trip_points(
+                    start_dt, path, speed_fn, interval_s, mileage)
+                for r in rows:
+                    hr = r["time"].hour
+                    stats["points_by_hour"][str(hr)] += 1
+                    if hr >= 22 or hr < 5:
+                        stats["night_rest_points"] += 1
+                    if 2 <= hr < 5:
+                        stats["anomaly_points"] += 1
+                    day_points.append({
+                        "identity_code": v["identity"],
+                        "plate_no": v["plate"],
+                        "gps_time": r["time"].strftime("%Y-%m-%d %H:%M:%S"),
+                        "lng": r["lng"], "lat": r["lat"], "speed": r["speed"],
+                        "direction": r["direction"], "altitude": RNG.randint(5, 80),
+                        "alarm_flag": 1 if r["speed"] >= 92 else 0,
+                        "mileage": r["mileage"],
+                    })
+            if not day_points:
+                continue
 
-                    night_pts = sum(
-                        1 for p in day_points
-                        if datetime.strptime(p["gps_time"][11:19], "%H:%M:%S").hour >= 21)
-                    score = round(max(55.0, min(99.0,
-                        96 - len(day_events) * RNG.uniform(2.5, 6)
-                        - (1.5 if night_pts else 0) + RNG.uniform(-2, 2))), 1)
-                    level = ("A" if score >= 90 else "B" if score >= 80
-                             else "C" if score >= 65 else "D")
-                    features = json.dumps({
-                        "speed_events": sum(1 for e in day_events if "SPEED" in e["event_code"]),
-                        "fatigue_events": sum(1 for e in day_events if "FATIGUE" in e["event_code"]),
-                        "dsm_adas_events": sum(1 for e in day_events
-                                               if e["event_source"] in ("DSM", "ADAS")),
-                        "night_points": night_pts,
-                        "mileage_km": round(mileage - mileage_start, 1),
-                    }, ensure_ascii=False)
-                    psycopg2.extras.execute_values(cur, """
-                        INSERT INTO mon.driver_score
-                            (score_date, driver_id, identity_code, plate_no, dept_id,
-                             score, level, features, sample_points, event_count)
-                        VALUES %s
-                        ON CONFLICT (score_date, driver_id) DO NOTHING
-                    """, [(day, v["did"], v["identity"], v["plate"], f["id"],
-                           score, level, features, len(day_points),
-                           len(day_events))])
-                    counts["scores"] += 1
+            if d in my_event_days:
+                ev, wh = _make_event_for_day(
+                    v["plate"], v["identity"], day_points,
+                    highway=(d in my_highway_days),
+                    filled=type_filled, targets=type_targets)
+                day_events.append(ev)
+                if wh:
+                    day_warn_hits.append(wh)
 
-                    point_buf.extend(day_points)
-                    if len(point_buf) >= 20000:
-                        flush_points()
-                        counts["points"] = total_points
+            if not dry_run:
+                warn_seq = _flush_derivatives(
+                    cur, v["plate"], v["identity"], day_events,
+                    day_warn_hits, warn_seq)
+                counts["warns"] = warn_seq - 1
+            counts["events"] += len(day_events)
 
-        counts["points"] = total_points
-        _set(stage=f"生成轨迹与风险数据（{vi+1}/500，{v['plate']}）",
-             percent=5 + int(88 * (vi + 1) / 500), counts=dict(counts))
+            night_pts = sum(
+                1 for p in day_points
+                if datetime.strptime(p["gps_time"][11:19], "%H:%M:%S").hour >= 21)
+            score = round(max(55.0, min(99.0,
+                96 - len(day_events) * RNG.uniform(2.5, 6)
+                - (1.5 if night_pts else 0) + RNG.uniform(-2, 2))), 1)
+            level = ("A" if score >= 90 else "B" if score >= 80
+                     else "C" if score >= 65 else "D")
+            features = json.dumps({
+                "speed_events": sum(1 for e in day_events if "SPEED" in e["event_code"]),
+                "fatigue_events": sum(1 for e in day_events if "FATIGUE" in e["event_code"]),
+                "dsm_adas_events": sum(1 for e in day_events
+                                       if e["event_source"] in ("DSM", "ADAS")),
+                "night_points": night_pts,
+                "mileage_km": round(mileage - mileage_start, 1),
+            }, ensure_ascii=False)
+            if not dry_run:
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO mon.driver_score
+                        (score_date, driver_id, identity_code, plate_no, dept_id,
+                         score, level, features, sample_points, event_count)
+                    VALUES %s
+                    ON CONFLICT (score_date, driver_id) DO NOTHING
+                """, [(day, v["did"], v["identity"], v["plate"], f["id"],
+                       score, level, features, len(day_points),
+                       len(day_events))])
+            counts["scores"] += 1
+
+            point_buf.extend(day_points)
+            if dry_run:
+                stats["_pt_count"] += len(day_points)
+            if not dry_run and len(point_buf) >= 20000:
+                flush_points()
+                counts["points"] = total_points
+
+        if not dry_run:
+            conn.commit()
+            cur.__exit__(None, None, None)
+            conn_cm.__exit__(None, None, None)
+        else:
+            # dry_run 不保留点明细，避免内存爆炸
+            point_buf = []
+
+        counts["points"] = total_points if not dry_run else stats["_pt_count"]
+        if not dry_run:
+            _set(stage=f"生成轨迹与风险数据（{vi+1}/500，{v['plate']}）",
+                 percent=5 + int(88 * (vi + 1) / 500), counts=dict(counts))
+
+    if dry_run:
+        counts["points"] = stats["_pt_count"]
+        counts["event_types"] = dict(sorted(type_filled.items()))
+        stats["points"] = stats["_pt_count"]
+        stats["events"] = counts["events"]
+        stats["warns"] = counts["warns"]
+        stats["scores"] = counts["scores"]
+        stats["event_types"] = dict(sorted(type_filled.items()))
+        stats.pop("_pt_count", None)
+        return stats
 
     flush_points()
     counts["points"] = total_points
