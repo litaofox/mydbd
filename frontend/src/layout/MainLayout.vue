@@ -1,9 +1,14 @@
 <template>
   <el-container style="height: 100%">
-    <el-aside width="210px" style="background: #111827">
-      <div class="logo">mydbd 北斗业务平台</div>
+    <el-aside :width="asideCollapsed ? '64px' : '210px'" class="aside" style="background: #111827">
+      <div class="logo" :class="{ mini: asideCollapsed }">
+        <span v-if="!asideCollapsed">mydbd 北斗业务平台</span>
+        <span v-else>北斗</span>
+      </div>
       <el-menu
         :default-active="activeMenu"
+        :collapse="asideCollapsed"
+        :collapse-transition="false"
         background-color="#111827"
         text-color="#cbd5e1"
         active-text-color="#60a5fa"
@@ -36,7 +41,20 @@
 
     <el-container>
       <el-header class="header">
-        <div class="title">{{ route.meta.title || '' }}</div>
+        <div class="header-left">
+          <el-icon
+            class="aside-toggle"
+            role="button"
+            :aria-label="asideCollapsed ? '展开导航菜单' : '收起导航菜单'"
+            tabindex="0"
+            @click="toggleAside"
+            @keydown.enter="toggleAside"
+          >
+            <Expand v-if="asideCollapsed" />
+            <Fold v-else />
+          </el-icon>
+          <div class="title">{{ route.meta.title || '' }}</div>
+        </div>
         <div class="header-right">
           <el-tooltip content="监控总览大屏" placement="bottom">
             <el-icon
@@ -176,6 +194,14 @@ const notify = useNotify()
 const { unread: notifyUnread, latest: notifyLatest } = notify
 notify.init()
 
+// ========================= 侧栏折叠 =========================
+const asideCollapsed = ref(localStorage.getItem('mydbd-aside-collapsed') === '1')
+
+function toggleAside() {
+  asideCollapsed.value = !asideCollapsed.value
+  localStorage.setItem('mydbd-aside-collapsed', asideCollapsed.value ? '1' : '0')
+}
+
 // ========================= 多标签页 =========================
 // 固定标签：/monitor 不可关闭（sessionStorage 恢复后缺失则补回）
 tabs.ensureAffix('/monitor', '实时导航监控')
@@ -298,6 +324,35 @@ async function onCommand(command: string) {
   font-weight: 600;
   font-size: 15px;
   border-bottom: 1px solid #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.logo.mini {
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.aside {
+  transition: width 0.25s ease;
+  overflow: hidden;
+}
+
+.aside-toggle {
+  font-size: 18px;
+  color: #4b5563;
+  cursor: pointer;
+  outline: none;
+}
+
+.aside-toggle:hover {
+  color: #2563eb;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .header {
@@ -437,8 +492,8 @@ async function onCommand(command: string) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 12px;
   font-size: 12.5px;
   color: #6b7280;
   cursor: pointer;
@@ -446,24 +501,34 @@ async function onCommand(command: string) {
   white-space: nowrap;
   position: relative;
   outline: none;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
 }
 
 .tab-item:hover {
   color: #2563eb;
+  background: #e8eefb;
 }
 
+/* 激活标签：白底卡片 + 蓝描边 + 加粗蓝字 + 3px 下划线 + 投影，与普通标签强对比 */
 .tab-item.active {
-  color: #2563eb;
+  color: #1d4ed8;
   font-weight: 600;
+  background: #fff;
+  border-color: #93c5fd;
+  box-shadow: 0 -2px 6px rgba(37, 99, 235, 0.1);
+  z-index: 1;
 }
 
 .tab-item.active::after {
   content: '';
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 8px;
+  right: 8px;
   bottom: 0;
-  height: 2px;
+  height: 3px;
   background: #2563eb;
   border-radius: 2px 2px 0 0;
 }

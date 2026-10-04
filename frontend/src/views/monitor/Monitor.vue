@@ -198,6 +198,7 @@ import 'leaflet/dist/leaflet.css'
 import dayjs from 'dayjs'
 import { getLatestPoints, type GpsPoint } from '@/api/traj'
 import { getVehicles, getDeptTree, type Dept, type Vehicle } from '@/api/mdm'
+import { vehicleIconSvg } from '@/config/vehicleIcons'
 import { reverseGeocode, placeSearch, sendCommand } from '@/api/terminal'
 import { useRealtime, type RiskBrief, type AlarmBrief } from '@/composables/useRealtime'
 import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
@@ -214,6 +215,7 @@ interface Vm {
   vehicleId: string | null
   deptId: number | null
   deptName: string
+  vehicleType: string | null
   point: GpsPoint | null
 }
 
@@ -273,6 +275,7 @@ const vmMap = computed(() => {
       vehicleId: v.id != null ? String(v.id) : null,
       deptId: v.deptId ?? null,
       deptName: v.deptName || '未分组',
+      vehicleType: v.vehicleType ?? null,
       point: null
     })
   }
@@ -288,6 +291,7 @@ const vmMap = computed(() => {
         vehicleId: null,
         deptId: null,
         deptName: '未分组',
+        vehicleType: null,
         point: p
       })
     }
@@ -560,9 +564,9 @@ function makeIcon(vm: Vm): L.DivIcon {
   const dir = vm.point?.direction ?? 0
   return L.divIcon({
     className: '',
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${statusText(vm)}" data-plate="${vm.plate}"><span style="display:inline-block;transform:rotate(${dir}deg)">▲</span></div>`
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${vm.vehicleType || '未知类型'}，${statusText(vm)}" data-plate="${vm.plate}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(vm.vehicleType, 20)}</span></div>`
   })
 }
 
@@ -614,7 +618,7 @@ function syncMarkers() {
     const latlng: L.LatLngExpression = [vm.point.lat, vm.point.lng]
     let marker = markerMap.get(vm.plate)
     const newIcon = makeIcon(vm)
-    const sig = `${statusOf(vm)}|${vm.point.direction ?? 0}`
+    const sig = `${statusOf(vm)}|${vm.point.direction ?? 0}|${vm.vehicleType ?? ''}`
     const z = statusOf(vm) === 'alarm' ? 1000 : 0
     if (!marker) {
       marker = L.marker(latlng, { icon: newIcon, zIndexOffset: z })
