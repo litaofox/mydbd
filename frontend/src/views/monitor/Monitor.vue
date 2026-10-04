@@ -28,6 +28,70 @@
           <el-input v-model="keyword" size="small" placeholder="车牌号 / 终端号 / SIM 卡号" clearable>
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
+          <div class="m-search-btns">
+            <button class="tree-btn" title="刷新数据" @click="manualRefresh">
+              <el-icon><Refresh /></el-icon>
+            </button>
+            <el-popover placement="right-start" :width="272" trigger="click">
+              <template #reference>
+                <button class="tree-btn" title="条件筛选（筛选结果自动勾选）">
+                  <el-icon><Filter /></el-icon>
+                </button>
+              </template>
+              <div class="tree-filter-panel">
+                <div class="tf-label">车辆状态</div>
+                <el-select v-model="filterPanel.status" size="small" clearable placeholder="请选择" style="width: 100%">
+                  <el-option value="online" label="在线" />
+                  <el-option value="drive" label="行驶中" />
+                  <el-option value="stop" label="停车" />
+                  <el-option value="offline" label="离线" />
+                  <el-option value="alarm" label="报警" />
+                </el-select>
+                <div class="tf-label">车牌颜色</div>
+                <el-select v-model="filterPanel.plateColor" size="small" clearable placeholder="请选择" style="width: 100%">
+                  <el-option v-for="c in plateColorOptions" :key="c" :value="c" :label="c" />
+                </el-select>
+                <div class="tf-label">车辆类型</div>
+                <el-select v-model="filterPanel.vehicleType" size="small" clearable placeholder="请选择" style="width: 100%">
+                  <el-option v-for="t in vehicleTypeOptions" :key="t" :value="t" :label="t" />
+                </el-select>
+                <div class="tf-btns">
+                  <el-button size="small" @click="resetTreeFilter">重置</el-button>
+                  <el-button type="primary" size="small" @click="applyTreeFilter">确定</el-button>
+                </div>
+              </div>
+            </el-popover>
+            <el-popover placement="right-start" :width="320" trigger="click">
+              <template #reference>
+                <button class="tree-btn" title="车辆树展示设置">
+                  <el-icon><Setting /></el-icon>
+                </button>
+              </template>
+              <div class="tree-set-panel">
+                <div class="tf-title">统计显示</div>
+                <div class="tf-grid">
+                  <el-checkbox v-model="treeSettings.statOnline" size="small">在线统计</el-checkbox>
+                  <el-checkbox v-model="treeSettings.statRunStop" size="small">行停统计</el-checkbox>
+                  <el-checkbox v-model="treeSettings.statNever" size="small">从未上线</el-checkbox>
+                  <el-checkbox v-model="treeSettings.deptStats" size="small">车队统计</el-checkbox>
+                </div>
+                <div class="tf-title">数据显示</div>
+                <div class="tf-grid">
+                  <el-radio v-model="treeSettings.labelMode" value="plate" size="small">车牌号码</el-radio>
+                  <el-radio v-model="treeSettings.labelMode" value="identity" size="small">自编号</el-radio>
+                </div>
+                <div class="tf-grid">
+                  <el-checkbox v-model="treeSettings.showPlateColor" size="small">车牌颜色</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showGpsTime" size="small">定位时间</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showDeviceNo" size="small">设备号</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showVehicleStatus" size="small">车辆状态</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showDriver" size="small">司机姓名</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showSpeed" size="small">行驶速度</el-checkbox>
+                  <el-checkbox v-model="treeSettings.showOfflineDur" size="small">离线时长</el-checkbox>
+                </div>
+              </div>
+            </el-popover>
+          </div>
         </div>
 
         <div class="m-tree">
@@ -38,6 +102,7 @@
             show-checkbox
             :default-expand-all="true"
             :expand-on-click-node="false"
+            :indent="14"
             :filter-node-method="filterNode"
             @check="onTreeCheck"
             @node-contextmenu="onTreeContextMenu"
@@ -45,11 +110,15 @@
             <template #default="{ data }">
               <div v-if="data.nodeType === 'dept'" class="tree-row">
                 <span class="tree-label">{{ data.label }}</span>
-                <span class="tree-count">{{ data.count }}</span>
+                <span v-if="treeSettings.deptStats && data.deptId != null && deptAgg.get(data.deptId)" class="tree-deptstats">
+                  {{ fmtDeptAgg(deptAgg.get(data.deptId!)!) }}
+                </span>
+                <span v-else class="tree-count">{{ data.count }}</span>
               </div>
               <div v-else class="tree-row vehicle" :title="`右键 ${data.label} 打开车辆操作`">
                 <span class="v-dot" :class="'d-' + statusOf(vmMap.get(data.plate))"></span>
                 <span class="tree-label plate">{{ data.label }}</span>
+                <span v-if="vehicleExtText(data.plate!)" class="tree-ext">{{ vehicleExtText(data.plate!) }}</span>
                 <span v-if="statusOf(vmMap.get(data.plate)) === 'alarm'" class="tree-alarm">警</span>
               </div>
             </template>
@@ -61,14 +130,17 @@
           <div class="stat-cell" title="勾选全部车辆" :class="{ active: statFilter === 'all' }" @click="pickStat('all')">
             <span class="stat-dot s-total"></span><span class="stat-num">{{ stats.total }}</span><span class="stat-name">车辆总数</span>
           </div>
-          <div class="stat-cell" title="勾选全部在线车辆（行驶/停车/报警）" :class="{ active: statFilter === 'online' }" @click="pickStat('online')">
+          <div v-if="treeSettings.statOnline" class="stat-cell" title="勾选全部在线车辆（行驶/停车/报警）" :class="{ active: statFilter === 'online' }" @click="pickStat('online')">
             <span class="stat-dot s-online"></span><span class="stat-num" style="color:#16a34a">{{ stats.online }}</span><span class="stat-name">在线</span>
           </div>
-          <div class="stat-cell" title="勾选行驶中车辆" :class="{ active: statFilter === 'drive' }" @click="pickStat('drive')">
+          <div v-if="treeSettings.statRunStop" class="stat-cell" title="勾选行驶中车辆" :class="{ active: statFilter === 'drive' }" @click="pickStat('drive')">
             <span class="stat-dot s-drive"></span><span class="stat-num">{{ stats.drive }}</span><span class="stat-name">行驶中</span>
           </div>
-          <div class="stat-cell" title="勾选停车车辆" :class="{ active: statFilter === 'stop' }" @click="pickStat('stop')">
+          <div v-if="treeSettings.statRunStop" class="stat-cell" title="勾选停车车辆" :class="{ active: statFilter === 'stop' }" @click="pickStat('stop')">
             <span class="stat-dot s-stop"></span><span class="stat-num">{{ stats.stop }}</span><span class="stat-name">停车</span>
+          </div>
+          <div v-if="treeSettings.statNever" class="stat-cell" title="勾选从未上线的车辆" :class="{ active: statFilter === 'never' }" @click="pickStat('never')">
+            <span class="stat-dot s-off"></span><span class="stat-num" style="color:#9ca3af">{{ stats.never }}</span><span class="stat-name">从未上线</span>
           </div>
           <div class="stat-cell" title="勾选离线车辆" :class="{ active: statFilter === 'offline' }" @click="pickStat('offline')">
             <span class="stat-dot s-off"></span><span class="stat-num">{{ stats.offline }}</span><span class="stat-name">离线</span>
@@ -189,16 +261,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Refresh, Search, Filter, Setting } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import dayjs from 'dayjs'
 import { getLatestPoints, type GpsPoint } from '@/api/traj'
 import { getVehicles, getDeptTree, type Dept, type Vehicle } from '@/api/mdm'
-import { vehicleIconSvg } from '@/config/vehicleIcons'
+import { VEHICLE_ICON_COLOR, vehicleIconSvg } from '@/config/vehicleIcons'
 import { reverseGeocode, placeSearch, sendCommand } from '@/api/terminal'
 import { useRealtime, type RiskBrief, type AlarmBrief } from '@/composables/useRealtime'
 import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
@@ -225,8 +297,49 @@ interface TreeNode {
   nodeType: 'dept' | 'vehicle'
   count?: number
   plate?: string
+  deptId?: number
   children?: TreeNode[]
 }
+
+// ========================= 车辆树展示设置（localStorage 持久化） =========================
+interface TreeDisplaySettings {
+  /** 左栏统计格显隐 */
+  statOnline: boolean
+  statRunStop: boolean
+  statNever: boolean
+  /** 车队节点统计后缀 [在线/总数 行:x 停:x 离:x] */
+  deptStats: boolean
+  /** 主标签：车牌号码 / 自编号（自编号作为附加段展示，主键仍为车牌） */
+  labelMode: 'plate' | 'identity'
+  showPlateColor: boolean
+  showGpsTime: boolean
+  showDeviceNo: boolean
+  showVehicleStatus: boolean
+  showDriver: boolean
+  showSpeed: boolean
+  showOfflineDur: boolean
+}
+
+const TREE_SETTINGS_KEY = 'mydbd-tree-display'
+const TREE_SETTINGS_DEFAULT: TreeDisplaySettings = {
+  statOnline: true,
+  statRunStop: true,
+  statNever: false,
+  deptStats: true,
+  labelMode: 'plate',
+  showPlateColor: false,
+  showGpsTime: false,
+  showDeviceNo: false,
+  showVehicleStatus: true,
+  showDriver: false,
+  showSpeed: false,
+  showOfflineDur: false
+}
+const treeSettings = ref<TreeDisplaySettings>({
+  ...TREE_SETTINGS_DEFAULT,
+  ...JSON.parse(localStorage.getItem(TREE_SETTINGS_KEY) || '{}')
+})
+watch(treeSettings, (v) => localStorage.setItem(TREE_SETTINGS_KEY, JSON.stringify(v)), { deep: true })
 
 // ========================= 状态 =========================
 const mapRef = ref<HTMLDivElement>()
@@ -240,8 +353,8 @@ const deptTree = ref<Dept[]>([])
 const keyword = ref('')
 const windowMin = ref(10)
 const activeTab = ref<'all' | 'drive' | 'stop' | 'offline' | 'alarm'>('all')
-// 左栏统计格筛选（比底部标签多一个 'online' 口径）
-const statFilter = ref<'all' | 'online' | 'drive' | 'stop' | 'offline' | 'alarm'>('all')
+// 左栏统计格筛选（比底部标签多 'online' 与 'never' 两个口径）
+const statFilter = ref<'all' | 'online' | 'drive' | 'stop' | 'offline' | 'alarm' | 'never'>('all')
 const checkedPlates = ref<Set<string>>(new Set())
 const followPlate = ref<string | null>(null)
 const bottomCollapsed = ref(false)
@@ -299,6 +412,13 @@ const vmMap = computed(() => {
   return map
 })
 
+// 车牌 → 台账（车牌颜色/司机姓名等台账字段查询用）
+const ledgerMap = computed(() => {
+  const m = new Map<string, Vehicle>()
+  for (const v of ledger.value) m.set(v.vehicleNo, v)
+  return m
+})
+
 // 在线判定以"平台数据时基"（全局最新点时间）为参考：
 // 真实终端在线时该时基≈墙钟，历史数据集演示时同样能正确区分活跃/离线车辆
 const refTime = computed(() => {
@@ -336,17 +456,61 @@ function statusText(vm: Vm): string {
   }
 }
 
+function shortStatus(vm: Vm | undefined): string {
+  switch (statusOf(vm)) {
+    case 'drive': return '行驶'
+    case 'stop': return '停车'
+    case 'alarm': return '报警'
+    default: return '离线'
+  }
+}
+
+/** 离线时长人性化：<1h 显示 x 分钟，<24h 显示 x 小时 y 分，否则 x 天 */
+function fmtOfflineDur(vm: Vm): string {
+  if (!vm.point || !refTime.value) return ''
+  const mins = Math.max(0, dayjs(refTime.value).diff(dayjs(vm.point.gpsTime), 'minute'))
+  if (mins < 60) return `${mins}分钟`
+  if (mins < 1440) return `${Math.floor(mins / 60)}小时${mins % 60}分`
+  return `${Math.floor(mins / 1440)}天${Math.floor((mins % 1440) / 60)}小时`
+}
+
+/** 车辆树节点附加信息段（按展示设置拼接，贴合参考样式"状态·速度·时间"） */
+function vehicleExtText(plate: string): string {
+  const s = treeSettings.value
+  const vm = vmMap.value.get(plate)
+  const parts: string[] = []
+  if (s.labelMode === 'identity') parts.push(vm?.identityCode || '无自编号')
+  if (s.showPlateColor) {
+    const c = ledgerMap.value.get(plate)?.vehiclePlateColor
+    if (c) parts.push(String(c))
+  }
+  if (s.showVehicleStatus) parts.push(shortStatus(vm))
+  if (s.showSpeed && vm?.point) parts.push(`${vm.point.speed ?? 0}km/h`)
+  if (s.showGpsTime && vm?.point) parts.push(dayjs(vm.point.gpsTime).format('HH:mm:ss'))
+  if (s.showDeviceNo && vm?.identityCode) parts.push(vm.identityCode)
+  if (s.showDriver) {
+    const n = ledgerMap.value.get(plate)?.mainDriverName
+    if (n) parts.push(n)
+  }
+  if (s.showOfflineDur && vm && statusOf(vm) === 'offline') {
+    const d = fmtOfflineDur(vm)
+    if (d) parts.push(`离线${d}`)
+  }
+  return parts.join(' · ')
+}
+
 const stats = computed(() => {
-  let total = 0, drive = 0, stop = 0, offline = 0, alarm = 0
+  let total = 0, drive = 0, stop = 0, offline = 0, alarm = 0, never = 0
   for (const vm of vmMap.value.values()) {
     total++
+    if (!vm.point) never++
     const s = statusOf(vm)
     if (s === 'drive') drive++
     else if (s === 'stop') stop++
     else if (s === 'alarm') alarm++
     else offline++
   }
-  return { total, drive, stop, offline, alarm, online: drive + stop + alarm }
+  return { total, drive, stop, offline, alarm, never, online: drive + stop + alarm }
 })
 
 // ========================= 组织树 =========================
@@ -405,6 +569,7 @@ function buildTreeData(): TreeNode[] {
       label: d.deptName,
       nodeType: 'dept',
       count: countDeptVehicles(d, vehiclesByDept),
+      deptId: d.id,
       children
     }
   }
@@ -432,9 +597,80 @@ function countDeptVehicles(d: Dept, map: Map<number, Vm[]>): number {
   return n
 }
 
+// 车队节点实时状态聚合（随 points 每秒更新，仅供节点文本渲染，不重建树结构）
+interface DeptAgg { total: number; drive: number; stop: number; offline: number }
+const deptAgg = computed(() => {
+  const m = new Map<number, DeptAgg>()
+  const deptIds = collectDeptIds(deptTree.value)
+  for (const vm of vmMap.value.values()) {
+    if (vm.deptId == null || !deptIds.has(vm.deptId)) continue
+    let a = m.get(vm.deptId)
+    if (!a) m.set(vm.deptId, (a = { total: 0, drive: 0, stop: 0, offline: 0 }))
+    a.total++
+    const s = statusOf(vm)
+    if (s === 'drive') a.drive++
+    else if (s === 'stop') a.stop++
+    else if (s === 'offline') a.offline++
+  }
+  return m
+})
+
+function fmtDeptAgg(a: DeptAgg): string {
+  return `[${a.total - a.offline}/${a.total} 行:${a.drive} 停:${a.stop} 离:${a.offline}]`
+}
+
+// 条件筛选（附图2）：面板暂存值 + 已应用值，确定后生效
+const filterPanel = reactive({ status: '', plateColor: '', vehicleType: '' })
+const condFilter = reactive({ status: '', plateColor: '', vehicleType: '' })
+const plateColorOptions = computed(() =>
+  [...new Set(ledger.value.map((v) => v.vehiclePlateColor).filter(Boolean))].sort()
+)
+const vehicleTypeOptions = computed(() =>
+  [...new Set(ledger.value.map((v) => v.vehicleType ?? '').filter(Boolean))].sort()
+)
+
+function condMatches(vm: Vm | undefined): boolean {
+  if (!vm) return false
+  const c = condFilter
+  if (c.status) {
+    const s = statusOf(vm)
+    if (c.status === 'online') {
+      if (s === 'offline') return false
+    } else if (s !== c.status) return false
+  }
+  if (c.plateColor || c.vehicleType) {
+    const v = ledgerMap.value.get(vm.plate)
+    if (c.plateColor && (v?.vehiclePlateColor ?? '') !== c.plateColor) return false
+    if (c.vehicleType && (v?.vehicleType ?? '') !== c.vehicleType) return false
+  }
+  return true
+}
+
+/** 确定筛选：树按条件过滤，匹配车辆自动勾选并展开（快照语义，与统计格点击一致） */
+function applyTreeFilter() {
+  Object.assign(condFilter, filterPanel)
+  nextTick(() => {
+    treeRef.value?.filter(keyword.value)
+    const matched = [...vmMap.value.values()].filter((vm) => condMatches(vm))
+    treeRef.value?.setCheckedKeys(matched.map((vm) => 'v' + vm.plate))
+    checkedPlates.value = new Set(matched.map((vm) => vm.plate))
+    nextTick(expandAll)
+  })
+}
+
+function resetTreeFilter() {
+  filterPanel.status = ''
+  filterPanel.plateColor = ''
+  filterPanel.vehicleType = ''
+  Object.assign(condFilter, filterPanel)
+  treeRef.value?.filter(keyword.value)
+}
+
 function filterNode(value: string, data: TreeNode) {
-  if (!value) return true
-  if (data.nodeType === 'vehicle') return data.label.includes(value)
+  if (data.nodeType === 'vehicle') {
+    if (value && !data.label.includes(value)) return false
+    return condMatches(vmMap.value.get(data.plate!))
+  }
   return true // 部门始终保留，保持树结构完整
 }
 watch(keyword, (v) => {
@@ -496,13 +732,15 @@ function pickStat(f: typeof statFilter.value) {
   const plates: string[] = []
   for (const vm of vmMap.value.values()) {
     const s = statusOf(vm)
-    if (f === 'all' || (f === 'online' ? s !== 'offline' : s === f)) plates.push(vm.plate)
+    if (f === 'all') plates.push(vm.plate)
+    else if (f === 'never') { if (!vm.point) plates.push(vm.plate) }
+    else if (f === 'online' ? s !== 'offline' : s === f) plates.push(vm.plate)
   }
   // setCheckedKeys 是程序化操作，不会触发 el-tree 的 check 事件，需手动同步勾选集合
   treeRef.value?.setCheckedKeys(plates.map((p) => 'v' + p))
   checkedPlates.value = new Set(plates)
-  // 底部表格标签联动：在线口径无对应标签，落到"全部"
-  activeTab.value = f === 'online' ? 'all' : f
+  // 底部表格标签联动：在线/从未上线口径无对应标签，落到"全部"
+  activeTab.value = f === 'online' || f === 'never' ? 'all' : f
   // 展开全部车队节点，让勾选结果立即可见
   nextTick(expandAll)
 }
@@ -562,13 +800,30 @@ function fillAddress(container: HTMLElement | undefined, vm: Vm) {
 function makeIcon(vm: Vm): L.DivIcon {
   const s = statusOf(vm)
   const dir = vm.point?.direction ?? 0
+  // 图标统一绿色、16px（矢量 SVG 缩放不损失清晰度）；形状区分车型，状态经树/气泡/表格表达
   return L.divIcon({
     className: '',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
-    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${vm.vehicleType || '未知类型'}，${statusText(vm)}" data-plate="${vm.plate}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(vm.vehicleType, 20)}</span></div>`
+    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${vm.vehicleType || '未知类型'}，${statusText(vm)}" data-plate="${vm.plate}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(vm.vehicleType, 16, VEHICLE_ICON_COLOR)}</span></div>`
   })
 }
+
+/** 车辆气泡按钮图标（内联 SVG，随按钮 currentColor 变色，风格与系统一致） */
+const POP_ICON = {
+  track:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>',
+  detail:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8.5 9h7M8.5 13h7M8.5 17h4"/></svg>',
+  video:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 10.5l6-3v9l-6-3"/></svg>',
+  talk:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>',
+  photo:
+    '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3.2L9 5.5h6L16.8 8H20a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3"/></svg>',
+  more:
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>'
+} as const
 
 function popHtml(plate: string): string {
   const vm = vmMap.value.get(plate)
@@ -593,12 +848,12 @@ function popHtml(plate: string): string {
       <div class="vm-row"><span class="vm-k">位置</span><span class="geo-addr">${addr || '地址解析中…'}</span>${addr ? '' : '<span class="geo-hint">文字地址服务接入后显示</span>'}</div>
     </div>
     <div class="vm-pop-actions">
-      <button class="vm-btn primary" data-vact="track" data-plate="${plate}">📍 轨迹回放</button>
-      <button class="vm-btn" data-vact="detail" data-plate="${plate}">📋 车辆详情</button>
-      <button class="vm-btn soon" data-vact="video" data-plate="${plate}" title="实时视频（预留）">🎥<span class="soon-dot"></span></button>
-      <button class="vm-btn soon" data-vact="talk" data-plate="${plate}" title="语音对讲（预留）">🎙️<span class="soon-dot"></span></button>
-      <button class="vm-btn soon" data-vact="photo" data-plate="${plate}" title="远程抓拍（预留）">📷<span class="soon-dot"></span></button>
-      <button class="vm-btn soon" data-vact="more" data-plate="${plate}" title="更多操作（或右键图标）">···</button>
+      <button class="vm-btn primary" data-vact="track" data-plate="${plate}">${POP_ICON.track}<span>轨迹回放</span></button>
+      <button class="vm-btn" data-vact="detail" data-plate="${plate}">${POP_ICON.detail}<span>车辆详情</span></button>
+      <button class="vm-btn soon" data-vact="video" data-plate="${plate}" title="实时视频（预留）">${POP_ICON.video}<span class="soon-dot"></span></button>
+      <button class="vm-btn soon" data-vact="talk" data-plate="${plate}" title="语音对讲（预留）">${POP_ICON.talk}<span class="soon-dot"></span></button>
+      <button class="vm-btn soon" data-vact="photo" data-plate="${plate}" title="远程抓拍（预留）">${POP_ICON.photo}<span class="soon-dot"></span></button>
+      <button class="vm-btn soon" data-vact="more" data-plate="${plate}" title="更多操作（或右键图标）">${POP_ICON.more}</button>
     </div>
   </div>`
 }
@@ -948,6 +1203,12 @@ onBeforeUnmount(() => {
   mapCardRef.value?.removeEventListener('click', onMapCardClick)
   if (map) map.remove()
 })
+
+// keep-alive 缓存本页：切回标签时容器经历过 display:none，重算地图尺寸；数据与标记
+// 由后台持续的实时推送维持最新，无需重新请求台账/组织树
+onActivated(() => {
+  nextTick(() => map?.invalidateSize())
+})
 </script>
 
 <style scoped>
@@ -996,19 +1257,47 @@ onBeforeUnmount(() => {
   width: 272px; flex: 0 0 272px; background: #fff; border: 1px solid #e5e7eb;
   border-radius: 4px; display: flex; flex-direction: column; min-height: 0;
 }
-.m-search { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+.m-search { padding: 10px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 6px; }
+.m-search-btns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.tree-btn {
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid #e5e7eb; background: #fff; border-radius: 6px;
+  color: #6b7280; cursor: pointer; font-size: 14px; transition: all 0.15s;
+}
+.tree-btn:hover { color: #2563eb; border-color: #93c5fd; background: #eff6ff; }
+.tf-label { font-size: 12px; color: #374151; margin: 8px 0 4px; }
+.tf-label:first-child { margin-top: 0; }
+.tf-title {
+  font-size: 13px; font-weight: 600; color: #111827; margin: 10px 0 6px;
+  padding-left: 8px; border-left: 3px solid #2563eb; line-height: 14px;
+}
+.tf-title:first-child { margin-top: 0; }
+.tf-grid { display: flex; flex-wrap: wrap; row-gap: 2px; }
+.tf-grid .el-checkbox { width: 33.3%; margin-right: 0; }
+.tf-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .m-tree { flex: 1; overflow-y: auto; padding: 6px 8px; }
+/* 紧凑树：节点行高 20px + 12px 复选框（效果图确认方案） */
+.m-tree :deep(.el-tree-node__content) { height: 20px; }
+.m-tree :deep(.el-checkbox__inner) { width: 12px; height: 12px; border-radius: 2px; }
+.m-tree :deep(.el-checkbox__inner::after) {
+  left: 3px; top: 0; height: 6px; width: 2px; border-width: 1.5px;
+}
 .tree-empty { text-align: center; color: #9ca3af; font-size: 12px; padding: 30px 0; }
-.tree-row { display: flex; align-items: center; gap: 6px; line-height: 22px; min-width: 0; }
-.tree-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.tree-row { display: flex; align-items: center; gap: 6px; line-height: 20px; min-width: 0; }
+.tree-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 .tree-label.plate { font-weight: 500; color: #1f2937; }
 .tree-count { margin-left: auto; font-size: 11px; color: #9ca3af; padding-right: 4px; }
+.tree-deptstats { margin-left: auto; font-size: 11px; color: #0891b2; padding-right: 4px; white-space: nowrap; }
+.tree-ext {
+  margin-left: auto; font-size: 11px; color: #9ca3af; padding-right: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%;
+}
 .tree-row.vehicle { cursor: context-menu; }
 .tree-alarm {
   font-size: 10px; color: #fff; background: #dc2626; border-radius: 3px;
-  padding: 0 4px; line-height: 15px; margin-left: 2px;
+  padding: 0 3px; line-height: 13px; margin-left: 2px;
 }
-.v-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+.v-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px; }
 .d-drive { background: #2563eb; }
 .d-stop { background: #9ca3af; }
 .d-offline { background: #d1d5db; }

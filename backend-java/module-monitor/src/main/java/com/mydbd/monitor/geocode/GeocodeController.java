@@ -7,7 +7,6 @@ import com.mydbd.common.api.Result;
 import com.mydbd.common.exception.BizException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -53,11 +52,6 @@ public class GeocodeController {
         factory.setConnectTimeout(3000);
         factory.setReadTimeout(5000);
         this.http = new RestTemplate(factory);
-        // 高德返回 UTF-8，必须替换默认 ISO-8859-1 的 StringHttpMessageConverter
-        List<org.springframework.http.converter.HttpMessageConverter<?>> converters = new ArrayList<>(this.http.getMessageConverters());
-        converters.removeIf(c -> c instanceof StringHttpMessageConverter);
-        converters.add(new StringHttpMessageConverter(StandardCharsets.UTF_8));
-        this.http.setMessageConverters(converters);
     }
 
     /** 逆地理编码：经纬度 → 文字地址 */
@@ -127,13 +121,16 @@ public class GeocodeController {
 
     /** 调用高德并做统一错误归一化；status!=1 视为业务失败 */
     private JsonNode call(URI uri) {
-        String body;
+        // 以 byte[] 接收原始报文再按 UTF-8 解码：高德返回 JSON 对象，若按 String.class
+        // 接收会被 Jackson 转换器选中并因"对象无法反序列化为 String"而抛 RestClientException
+        byte[] raw;
         try {
-            body = http.getForObject(uri, String.class);
+            raw = http.getForObject(uri, byte[].class);
         } catch (RestClientException e) {
             log.warn("高德服务调用失败: {}", e.getMessage());
             throw new BizException(50301, "高德地图服务暂时不可用");
         }
+        String body = raw == null ? "" : new String(raw, StandardCharsets.UTF_8);
         try {
             JsonNode root = objectMapper.readTree(body == null ? "" : body);
             if (!"1".equals(root.path("status").asText())) {

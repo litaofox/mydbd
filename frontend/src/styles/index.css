@@ -59,18 +59,14 @@ body,
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
-/* 监控地图车辆图标：类型 SVG（见 config/vehicleIcons.ts）+ 状态色环 */
+/* 监控地图车辆图标：类型 SVG（见 config/vehicleIcons.ts）+ 统一绿色 + 透明无圆圈 */
 .vm-mk {
   width: 28px;
   height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow:
-    0 0 0 2px #9ca3af,
-    0 1px 4px rgba(0, 0, 0, 0.3);
+  background: transparent;
 }
 
 .vm-mk svg {
@@ -82,41 +78,162 @@ body,
   line-height: 0;
 }
 
-.vm-mk.vm-drive {
-  box-shadow:
-    0 0 0 2px #16a34a,
-    0 1px 4px rgba(0, 0, 0, 0.3);
-}
-
-.vm-mk.vm-stop {
-  box-shadow:
-    0 0 0 2px #2563eb,
-    0 1px 4px rgba(0, 0, 0, 0.3);
-}
-
 .vm-mk.vm-offline {
-  box-shadow:
-    0 0 0 2px #9ca3af,
-    0 1px 4px rgba(0, 0, 0, 0.3);
-  opacity: 0.72;
+  opacity: 0.7;
 }
 
-.vm-mk.vm-alarm {
+.vm-mk.vm-alarm svg {
   animation: vmAlarmPulse 1.2s ease-in-out infinite;
 }
 
 @keyframes vmAlarmPulse {
   0%,
   100% {
-    box-shadow:
-      0 0 0 2px #dc2626,
-      0 0 0 4px rgba(220, 38, 38, 0.35);
+    filter: drop-shadow(0 0 2px rgba(220, 38, 38, 0.9));
   }
   50% {
-    box-shadow:
-      0 0 0 2px #dc2626,
-      0 0 0 8px rgba(220, 38, 38, 0.12);
+    filter: drop-shadow(0 0 5px rgba(220, 38, 38, 0.55));
   }
+}
+
+/* 监控页车辆气泡（Leaflet popup 内容，非 scoped，统一样式放全局） */
+.vm-pop {
+  font-size: 12px;
+  line-height: 1.5;
+  min-width: 248px;
+  color: #303133;
+}
+
+.vm-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.vm-pop-plate {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.vm-tag {
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 9px;
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.vm-tag-drive {
+  background: #16a34a;
+}
+
+.vm-tag-stop {
+  background: #2563eb;
+}
+
+.vm-tag-offline {
+  background: #9ca3af;
+}
+
+.vm-tag-alarm {
+  background: #dc2626;
+}
+
+.vm-pop-body {
+  padding: 8px 12px;
+}
+
+.vm-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.vm-k {
+  color: #909399;
+  flex: none;
+}
+
+.vm-row b {
+  font-weight: 600;
+}
+
+.geo-addr {
+  color: #303133;
+}
+
+.geo-hint {
+  color: #c0c4cc;
+}
+
+.vm-pop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.vm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.vm-btn:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.vm-btn.primary {
+  background: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}
+
+.vm-btn.primary:hover {
+  background: #66b1ff;
+  border-color: #66b1ff;
+  color: #fff;
+}
+
+.vm-btn.soon {
+  border-style: dashed;
+  color: #909399;
+  padding: 0 8px;
+  position: relative;
+}
+
+.vm-btn.soon:hover {
+  color: #409eff;
+}
+
+.soon-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e6a23c;
 }
 
 .stat-card .value {

@@ -2,8 +2,8 @@
   <el-container style="height: 100%">
     <el-aside :width="asideCollapsed ? '64px' : '210px'" class="aside" style="background: #111827">
       <div class="logo" :class="{ mini: asideCollapsed }">
-        <span v-if="!asideCollapsed">mydbd 北斗业务平台</span>
-        <span v-else>北斗</span>
+        <span v-if="!asideCollapsed">北斗业务平台</span>
+        <span v-else>北</span>
       </div>
       <el-menu
         :default-active="activeMenu"
@@ -37,25 +37,70 @@
           </el-menu-item>
         </template>
       </el-menu>
+      <!-- 折叠/展开导航：置于侧栏底部，收起态同样可见可点 -->
+      <div
+        class="aside-foot"
+        role="button"
+        :aria-label="asideCollapsed ? '展开导航菜单' : '收起导航菜单'"
+        tabindex="0"
+        @click="toggleAside"
+        @keydown.enter="toggleAside"
+      >
+        <el-icon><Expand v-if="asideCollapsed" /><Fold v-else /></el-icon>
+        <span v-if="!asideCollapsed">收起菜单</span>
+      </div>
     </el-aside>
 
-    <el-container>
-      <el-header class="header">
-        <div class="header-left">
-          <el-icon
-            class="aside-toggle"
-            role="button"
-            :aria-label="asideCollapsed ? '展开导航菜单' : '收起导航菜单'"
-            tabindex="0"
-            @click="toggleAside"
-            @keydown.enter="toggleAside"
-          >
-            <Expand v-if="asideCollapsed" />
-            <Fold v-else />
-          </el-icon>
-          <div class="title">{{ route.meta.title || '' }}</div>
+    <!-- direction 必须显式声明：无 el-header 子组件时 el-container 会误判为左右布局 -->
+    <el-container direction="vertical">
+      <!-- 顶栏与标签合并：44px 与侧栏 logo 区等高，标签过多时左右箭头滚动 -->
+      <div class="top-band">
+        <el-icon
+          v-show="tabArrow.left"
+          class="band-arrow"
+          role="button"
+          aria-label="向左滚动标签"
+          tabindex="0"
+          @click="scrollTabs(-1)"
+          @keydown.enter="scrollTabs(-1)"
+        ><ArrowLeft /></el-icon>
+        <div ref="tabViewport" class="tab-viewport" @scroll="updateTabArrows">
+          <div class="tab-bar" role="tablist" aria-label="功能标签页">
+            <div
+              v-for="t in tabs.tabs"
+              :key="t.path"
+              class="tab-item"
+              :class="{ active: route.path === t.path, affix: t.affix }"
+              role="tab"
+              :aria-selected="route.path === t.path"
+              :aria-label="`标签页：${t.title}${t.affix ? '（固定）' : ''}`"
+              tabindex="0"
+              @click="activateTab(t)"
+              @keydown.enter="activateTab(t)"
+              @contextmenu.prevent="openTabMenu($event, t)"
+            >
+              <span class="tab-title">{{ t.title }}</span>
+              <el-icon
+                v-if="!t.affix"
+                class="tab-close"
+                role="button"
+                :aria-label="`关闭 ${t.title}`"
+                @click.stop="closeTab(t)"
+                @keydown.enter.stop="closeTab(t)"
+              ><Close /></el-icon>
+            </div>
+          </div>
         </div>
-        <div class="header-right">
+        <el-icon
+          v-show="tabArrow.right"
+          class="band-arrow"
+          role="button"
+          aria-label="向右滚动标签"
+          tabindex="0"
+          @click="scrollTabs(1)"
+          @keydown.enter="scrollTabs(1)"
+        ><ArrowRight /></el-icon>
+        <div class="band-icons">
           <el-tooltip content="监控总览大屏" placement="bottom">
             <el-icon
               class="dash-entry"
@@ -100,56 +145,31 @@
             </div>
           </el-popover>
           <el-dropdown trigger="click" @command="onCommand">
-          <span class="user">
-            <el-icon><UserFilled /></el-icon>
-            <span class="name">{{ auth.realName || auth.username }}</span>
-            <el-tag v-if="mfaOn" size="small" type="warning" effect="plain">动态口令</el-tag>
-            <el-icon><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="profile">
-                <el-icon><Setting /></el-icon>个人中心
-              </el-dropdown-item>
-              <el-dropdown-item command="logout" divided>
-                <el-icon><SwitchButton /></el-icon>退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        </div>
-      </el-header>
-
-      <!-- 多标签栏：一功能一标签（path 唯一），/monitor 固定不可关 -->
-      <div class="tab-bar" role="tablist" aria-label="功能标签页">
-        <div
-          v-for="t in tabs.tabs"
-          :key="t.path"
-          class="tab-item"
-          :class="{ active: route.path === t.path, affix: t.affix }"
-          role="tab"
-          :aria-selected="route.path === t.path"
-          :aria-label="`标签页：${t.title}${t.affix ? '（固定）' : ''}`"
-          tabindex="0"
-          @click="activateTab(t)"
-          @keydown.enter="activateTab(t)"
-          @contextmenu.prevent="openTabMenu($event, t)"
-        >
-          <span class="tab-title">{{ t.title }}</span>
-          <el-icon
-            v-if="!t.affix"
-            class="tab-close"
-            role="button"
-            :aria-label="`关闭 ${t.title}`"
-            @click.stop="closeTab(t)"
-            @keydown.enter.stop="closeTab(t)"
-          ><Close /></el-icon>
+            <span class="user">
+              <el-icon><UserFilled /></el-icon>
+              <span class="name">{{ auth.realName || auth.username }}</span>
+              <el-tag v-if="mfaOn" size="small" type="warning" effect="plain">动态口令</el-tag>
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">
+                  <el-icon><Setting /></el-icon>个人中心
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" divided>
+                  <el-icon><SwitchButton /></el-icon>退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
 
       <el-main style="padding: 0; background: #f0f2f5">
         <router-view v-slot="{ Component }">
-          <component :is="Component" :key="viewKey" />
+          <keep-alive :include="['Monitor']" :max="6">
+            <component :is="Component" :key="viewKey" />
+          </keep-alive>
         </router-view>
       </el-main>
     </el-container>
@@ -175,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
@@ -201,6 +221,46 @@ function toggleAside() {
   asideCollapsed.value = !asideCollapsed.value
   localStorage.setItem('mydbd-aside-collapsed', asideCollapsed.value ? '1' : '0')
 }
+
+// ========================= 标签条溢出导航 =========================
+// 标签过多时顶栏左右出现 ‹ › 箭头，仅滚动标签区，不影响右侧图标
+const tabViewport = ref<HTMLElement | null>(null)
+const tabArrow = reactive({ left: false, right: false })
+
+function updateTabArrows() {
+  const el = tabViewport.value
+  if (!el) {
+    tabArrow.left = false
+    tabArrow.right = false
+    return
+  }
+  tabArrow.left = el.scrollLeft > 2
+  tabArrow.right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+}
+
+function scrollTabs(dir: number) {
+  tabViewport.value?.scrollBy({ left: dir * 180, behavior: 'smooth' })
+}
+
+watch(() => tabs.tabs.length, () => nextTick(updateTabArrows))
+watch(
+  () => route.path,
+  () =>
+    nextTick(() => {
+      updateTabArrows()
+      // 切换标签后把激活标签滚入可视区
+      tabViewport.value
+        ?.querySelector('.tab-item.active')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    })
+)
+// 侧栏折叠改变顶栏可用宽度，需重算箭头
+watch(asideCollapsed, () => nextTick(updateTabArrows))
+onMounted(() => {
+  window.addEventListener('resize', updateTabArrows)
+  nextTick(updateTabArrows)
+})
+onBeforeUnmount(() => window.removeEventListener('resize', updateTabArrows))
 
 // ========================= 多标签页 =========================
 // 固定标签：/monitor 不可关闭（sessionStorage 恢复后缺失则补回）
@@ -317,12 +377,12 @@ async function onCommand(command: string) {
 
 <style scoped>
 .logo {
-  height: 56px;
-  line-height: 56px;
+  height: 44px;
+  line-height: 44px;
   text-align: center;
   color: #f8fafc;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   border-bottom: 1px solid #1f2937;
   white-space: nowrap;
   overflow: hidden;
@@ -333,40 +393,98 @@ async function onCommand(command: string) {
   letter-spacing: 1px;
 }
 
+/* 菜单紧凑化：行高 56→34、子项 30、字号 13、缩进收紧（Element Plus 变量覆盖） */
+.aside :deep(.el-menu) {
+  border-right: none;
+  --el-menu-base-level-padding: 16px;
+  --el-menu-level-padding: 14px;
+  --el-menu-item-height: 34px;
+  --el-menu-sub-item-height: 30px;
+  --el-menu-item-font-size: 13px;
+}
+
+.aside :deep(.el-menu-item .el-icon),
+.aside :deep(.el-sub-menu__title .el-icon) {
+  margin-right: 6px;
+}
+
 .aside {
   transition: width 0.25s ease;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.aside-toggle {
-  font-size: 18px;
-  color: #4b5563;
+/* 侧栏底部折叠按钮：展开/收起两态均可见 */
+.aside-foot {
+  flex-shrink: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #9ca3af;
+  font-size: 12px;
+  border-top: 1px solid #1f2937;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.aside-foot:hover {
+  color: #93c5fd;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ========================= 顶栏（与标签合并，44px） ========================= */
+.top-band {
+  height: 44px;
+  flex-shrink: 0;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+}
+
+.band-arrow {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  border-radius: 4px;
+  color: #6b7280;
   cursor: pointer;
   outline: none;
 }
 
-.aside-toggle:hover {
+.band-arrow:hover {
+  background: #f3f4f6;
   color: #2563eb;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.tab-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.header {
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #e5e7eb;
+.tab-viewport::-webkit-scrollbar {
+  display: none;
 }
 
-.header .title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
+.band-icons {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 26px;
+  padding: 0 14px 0 10px;
+  border-left: 1px solid #f0f0f0;
 }
 
 .user {
@@ -383,14 +501,8 @@ async function onCommand(command: string) {
   font-weight: 600;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
 .bell-badge {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .bell {
@@ -472,28 +584,21 @@ async function onCommand(command: string) {
   border-top: 1px solid #f0f0f0;
 }
 
-/* ========================= 多标签栏 ========================= */
+/* ========================= 多标签栏（44px 顶栏内，垂直居中紧凑标签） ========================= */
 .tab-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
-  padding: 6px 12px 0;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  overflow-x: auto;
-  flex-shrink: 0;
-}
-
-.tab-bar::-webkit-scrollbar {
-  height: 3px;
+  padding: 0 6px;
+  width: max-content;
 }
 
 .tab-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 12px;
+  height: 26px;
+  padding: 0 10px;
   font-size: 12.5px;
   color: #6b7280;
   cursor: pointer;
@@ -503,8 +608,11 @@ async function onCommand(command: string) {
   outline: none;
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 5px;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .tab-item:hover {
@@ -512,25 +620,14 @@ async function onCommand(command: string) {
   background: #e8eefb;
 }
 
-/* 激活标签：白底卡片 + 蓝描边 + 加粗蓝字 + 3px 下划线 + 投影，与普通标签强对比 */
+/* 激活标签：蓝字加粗 + 蓝描边 + 2px 下划线，与普通标签强对比 */
 .tab-item.active {
   color: #1d4ed8;
   font-weight: 600;
-  background: #fff;
+  background: #eff6ff;
   border-color: #93c5fd;
-  box-shadow: 0 -2px 6px rgba(37, 99, 235, 0.1);
+  box-shadow: inset 0 -2px 0 #2563eb;
   z-index: 1;
-}
-
-.tab-item.active::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 0;
-  height: 3px;
-  background: #2563eb;
-  border-radius: 2px 2px 0 0;
 }
 
 .tab-item.affix .tab-title::before {
