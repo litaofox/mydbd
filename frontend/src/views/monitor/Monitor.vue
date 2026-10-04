@@ -23,7 +23,7 @@
 
     <div class="m-workspace">
       <!-- 左栏：搜索 + 组织树 + 状态统计 -->
-      <div class="m-left">
+      <div class="m-left" :style="{ width: leftW + 'px', flexBasis: leftW + 'px' }">
         <div class="m-search">
           <el-input v-model="keyword" size="small" placeholder="车牌号 / 终端号 / SIM 卡号" clearable>
             <template #prefix><el-icon><Search /></el-icon></template>
@@ -150,6 +150,18 @@
           </div>
         </div>
       </div>
+
+      <!-- 左栏与地图之间的拖拽分隔条：拖动调宽（220~420px），双击复位 -->
+      <div
+        class="m-split"
+        :class="{ dragging: draggingTree }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整车辆树宽度"
+        title="拖拽调整宽度，双击恢复默认"
+        @pointerdown="onSplitDown"
+        @dblclick="onSplitDbl"
+      ></div>
 
       <!-- 右区：地图 + 底部车辆表 -->
       <div class="m-right">
@@ -750,6 +762,46 @@ function toggleBottom() {
   setTimeout(() => map?.invalidateSize(), 220)
 }
 
+// ========================= 车辆树宽度拖拽 =========================
+// 分隔条拖动调宽（220~420px），宽度存 localStorage；松手后再让地图重算尺寸防卡顿
+const LEFT_MIN = 220
+const LEFT_MAX = 420
+const LEFT_DEFAULT = 272
+const leftW = ref(Math.min(LEFT_MAX, Math.max(LEFT_MIN, Number(localStorage.getItem('mydbd-tree-width')) || LEFT_DEFAULT)))
+const draggingTree = ref(false)
+let splitStartX = 0
+let splitStartW = 0
+
+function onSplitDown(e: PointerEvent) {
+  splitStartX = e.clientX
+  splitStartW = leftW.value
+  draggingTree.value = true
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onSplitMove)
+  window.addEventListener('pointerup', onSplitUp)
+}
+
+function onSplitMove(e: PointerEvent) {
+  leftW.value = Math.min(LEFT_MAX, Math.max(LEFT_MIN, splitStartW + (e.clientX - splitStartX)))
+}
+
+function onSplitUp() {
+  draggingTree.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', onSplitMove)
+  window.removeEventListener('pointerup', onSplitUp)
+  localStorage.setItem('mydbd-tree-width', String(leftW.value))
+  nextTick(() => map?.invalidateSize())
+}
+
+function onSplitDbl() {
+  leftW.value = LEFT_DEFAULT
+  localStorage.setItem('mydbd-tree-width', String(LEFT_DEFAULT))
+  nextTick(() => map?.invalidateSize())
+}
+
 // ========================= 地图 =========================
 let map: L.Map
 let markerLayer: L.LayerGroup
@@ -1278,9 +1330,11 @@ onActivated(() => {
 .m-tree { flex: 1; overflow-y: auto; padding: 6px 8px; }
 /* 紧凑树：节点行高 20px + 12px 复选框（效果图确认方案） */
 .m-tree :deep(.el-tree-node__content) { height: 20px; }
-.m-tree :deep(.el-checkbox__inner) { width: 12px; height: 12px; border-radius: 2px; }
-.m-tree :deep(.el-checkbox__inner::after) {
-  left: 3px; top: 0; height: 6px; width: 2px; border-width: 1.5px;
+.m-tree :deep(.el-checkbox__inner) {
+  /* 保持 Element Plus 默认 14px 复选框与对勾比例，整体等比缩放为约 12px，
+     对勾位置与官方默认渲染完全一致（不受边框亚像素渲染差异影响） */
+  transform: scale(0.8571);
+  transform-origin: center;
 }
 .tree-empty { text-align: center; color: #9ca3af; font-size: 12px; padding: 30px 0; }
 .tree-row { display: flex; align-items: center; gap: 6px; line-height: 20px; min-width: 0; }
@@ -1303,27 +1357,42 @@ onActivated(() => {
 .d-offline { background: #d1d5db; }
 .d-alarm { background: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 60, .18); }
 
+/* 统计格与车辆树同密度：行高 20px、字号 12px、紧凑间隙 */
 .m-stats {
-  flex: 0 0 auto; border-top: 1px solid #f0f0f0; padding: 10px 8px;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  flex: 0 0 auto; border-top: 1px solid #f0f0f0; padding: 6px 8px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 2px 4px;
 }
 .stat-cell {
-  display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 4px;
-  cursor: pointer; border: 1px solid transparent;
+  display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 20px;
+  border-radius: 4px; cursor: pointer; border: 1px solid transparent;
 }
 .stat-cell:hover { background: #f8fafc; }
 .stat-cell.active { background: #eff6ff; border-color: #bfdbfe; }
-.stat-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+.stat-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px; }
 .s-total { background: #111827; }
 .s-online { background: #16a34a; }
 .s-drive { background: #2563eb; }
 .s-stop { background: #9ca3af; }
 .s-off { background: #d1d5db; }
 .s-alarm { background: #dc2626; }
-.stat-num { font-size: 18px; font-weight: 600; min-width: 34px; color: #1f2937; }
+.stat-num { font-size: 12px; font-weight: 600; min-width: 22px; color: #1f2937; }
 .stat-name { font-size: 12px; color: #6b7280; }
 .stat-alarm-blink { color: #dc2626; animation: alarm-blink 1.6s ease-in-out infinite; }
 @keyframes alarm-blink { 50% { opacity: .45; } }
+
+/* 左栏与地图之间的拖拽分隔条：平时隐形，悬停/拖拽变蓝提示 */
+.m-split {
+  flex: 0 0 6px; cursor: col-resize; border-radius: 3px; position: relative; outline: none;
+  transition: background 0.15s;
+}
+.m-split::after {
+  content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 32px; border-radius: 2px; background: #e5e7eb; transition: background 0.15s;
+}
+.m-split:hover,
+.m-split.dragging { background: rgba(37, 99, 235, 0.12); }
+.m-split:hover::after,
+.m-split.dragging::after { background: #2563eb; }
 
 /* 右区 */
 .m-right { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
@@ -1367,9 +1436,9 @@ onActivated(() => {
 .map-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 3px; }
 .legend-tip { color: #9ca3af; }
 
-/* 底部表 */
+/* 底部表：表头 + 3 行高度（42 + 26表头 + 3×26行），其余滚动，把版面让给上方地图 */
 .m-bottom {
-  flex: 0 0 252px; background: #fff; border: 1px solid #e5e7eb; border-radius: 4px;
+  flex: 0 0 146px; background: #fff; border: 1px solid #e5e7eb; border-radius: 4px;
   display: flex; flex-direction: column; min-height: 0; transition: flex-basis .2s;
 }
 .m-bottom.collapsed { flex-basis: 42px; }
@@ -1385,6 +1454,10 @@ onActivated(() => {
 .bottom-tools { margin-left: auto; display: flex; gap: 6px; }
 .bottom-tools .map-hbtn { box-shadow: none; }
 .tbl-wrap { flex: 1; min-height: 0; }
+/* 表格紧凑化：字号 12、单元格内边距收窄，3 行可见 + 内部滚动 */
+.tbl-wrap :deep(.el-table) { font-size: 12px; }
+.tbl-wrap :deep(.el-table .el-table__cell) { padding: 2px 0; }
+.tbl-wrap :deep(.el-table .cell) { line-height: 20px; }
 .mini-plate { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; color: #1f2937; }
 .state-tag { font-size: 11px; padding: 1px 8px; border-radius: 3px; border: 1px solid; white-space: nowrap; }
 .st-drive { color: #2563eb; background: #eff6ff; border-color: #bfdbfe; }
