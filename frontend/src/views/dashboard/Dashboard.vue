@@ -140,6 +140,7 @@ import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
 import AlarmTicker from './components/AlarmTicker.vue'
 import { HeatLayer } from './components/HeatLayer'
 import { useAdaptive } from './components/useAdaptive'
+import { vehicleIconSvg, VEHICLE_ICON_COLOR } from '@/config/vehicleIcons'
 
 const router = useRouter()
 
@@ -313,13 +314,12 @@ const markerMap = new Map<string, { marker: L.Marker; dir: number }>()
 let firstFit = false
 
 function makeIcon(p: GpsPoint): L.DivIcon {
+  const dir = p.direction ?? 0
   return L.divIcon({
     className: '',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
-    html: `<div class="vehicle-marker ${p.alarmFlag === 1 ? 'alarm' : ''}">
-             <span style="display:inline-block;transform:rotate(${p.direction ?? 0}deg)">&#10148;</span>
-           </div>`
+    html: `<div class="vm-mk ${p.alarmFlag === 1 ? 'vm-alarm' : ''}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(null, 16, VEHICLE_ICON_COLOR)}</span></div>`
   })
 }
 

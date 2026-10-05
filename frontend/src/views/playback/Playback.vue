@@ -58,6 +58,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import dayjs from 'dayjs'
 import { getTrack, getVehicles, type GpsPoint, type VehicleOption } from '@/api/traj'
+import { vehicleIconSvg, VEHICLE_ICON_COLOR } from '@/config/vehicleIcons'
 
 const route = useRoute()
 
@@ -77,8 +78,18 @@ let map: L.Map
 let polyline: L.Polyline
 let movingMarker: L.Marker
 let playTimer: number
+let lastDir = -999
 
 const maxIndex = computed(() => Math.max(0, track.value.length - 1))
+
+function makeIcon(dir: number): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    html: `<div class="vm-mk"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(null, 16, VEHICLE_ICON_COLOR)}</span></div>`
+  })
+}
 const current = computed(() => track.value[index.value])
 // 轨迹接口部分链路返回 ISO 串，统一展示为 yyyy-MM-dd HH:mm:ss
 const currentTime = computed(() => {
@@ -86,13 +97,6 @@ const currentTime = computed(() => {
   if (!t) return '--'
   const d = dayjs(t)
   return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : t
-})
-
-const playbackIcon = L.divIcon({
-  className: '',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-  html: '<div class="playback-marker"></div>'
 })
 
 async function onQuery() {
@@ -127,14 +131,19 @@ function drawTrack() {
     return
   }
   polyline = L.polyline(latLngs, { color: '#2563eb', weight: 4, opacity: 0.8 }).addTo(map)
-  movingMarker = L.marker(latLngs[0], { icon: playbackIcon }).addTo(map)
+  movingMarker = L.marker(latLngs[0], { icon: makeIcon(0) }).addTo(map)
+  lastDir = 0
   map.fitBounds(polyline.getBounds().pad(0.1))
 }
 
 function moveMarker() {
   const p = current.value
-  if (movingMarker && p) {
-    movingMarker.setLatLng([p.lat, p.lng])
+  if (!movingMarker || !p) return
+  movingMarker.setLatLng([p.lat, p.lng])
+  const dir = p.direction ?? 0
+  if (Math.abs(dir - lastDir) > 15) {
+    movingMarker.setIcon(makeIcon(dir))
+    lastDir = dir
   }
 }
 

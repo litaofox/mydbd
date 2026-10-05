@@ -31,34 +31,6 @@ body,
   overflow: hidden;
 }
 
-/* 车辆/轨迹 divIcon */
-.vehicle-marker {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #2563eb;
-  color: #fff;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  font-size: 14px;
-}
-
-.vehicle-marker.alarm {
-  background: #dc2626;
-}
-
-.playback-marker {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #f59e0b;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-
 /* 监控地图车辆图标：类型 SVG（见 config/vehicleIcons.ts）+ 统一绿色 + 透明无圆圈 */
 .vm-mk {
   width: 28px;

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GATEWAY-PLAN-001 mydbd 对接 vps 车载网关改造方案（产品与技术）</title>
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --ok:#1a7f37; --warn:#b3541e; --bad:#c0392b;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .home{color:#fff;text-decoration:none;font-size:14px;opacity:.85;margin-right:18px;white-space:nowrap;}
+.topbar .home:hover{opacity:1;}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:22px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:#fdf3e7;border-left-color:var(--warn);color:#6b431a;}
+blockquote.danger{background:#fdecea;border-left-color:var(--bad);color:#8a2b23;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+code{font-family:Consolas,"Courier New",monospace;font-size:13.5px;
+  background:#eef1f6;color:#b02a5e;padding:2px 6px;border-radius:4px;}
+pre{background:var(--code-bg);color:#d7e0ee;border-radius:10px;padding:18px 20px;
+  overflow-x:auto;line-height:1.55;font-size:13.5px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+pre code{background:none;color:inherit;padding:0;font-size:inherit;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 12px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:8px 12px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+h1 strong,h2 strong,h3 strong{color:inherit;}
+.meta{color:var(--muted);font-size:13.5px;margin-top:6px;}
+.tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;
+  vertical-align:middle;white-space:nowrap;}
+.tag-ok{background:#e7f4ec;color:var(--ok);}
+.tag-part{background:#fdf3e7;color:var(--warn);}
+.tag-no{background:#fdecea;color:var(--bad);}
+.tag-rec{background:#e8f0fe;color:var(--primary);}
+.tag-p0{background:#e8f0fe;color:var(--primary);}
+.tag-p1{background:#e7f4ec;color:var(--ok);}
+.tag-p2{background:#fdf3e7;color:var(--warn);}
+.tag-p3{background:#f0edfa;color:#6d4bb3;}
+.effort{font-weight:700;color:var(--primary-dark);}
+.mono{font-family:Consolas,"Courier New",monospace;font-size:13px;}
+.score{background:linear-gradient(135deg,#1f5fbf,#2f7de0);color:#fff;border-radius:12px;
+  padding:22px 26px;margin:22px 0;}
+.score h3{color:#fff;margin:0 0 8px;}
+.score p{margin:6px 0;}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  pre,table,blockquote{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="toc-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰ 目录</button>
+  <a class="home" href="index.html">← 文档首页</a>
+  <span class="title">GATEWAY-PLAN-001 mydbd 对接 vps 车载网关改造方案（产品与技术）</span>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+<ul>
+<li><a href="#ch0">0. 结论摘要</a></li>
+<li><a href="#ch1">1. 背景、目标与范围</a></li>
+<li><a href="#ch2">2. 现有系统功能盘点（代码实证）</a></li>
+<li><a href="#ch3">3. 对接后的产品功能全景</a></li>
+<li><a href="#ch4">4. 现有功能受影响点与改造清单</a></li>
+<li><a href="#ch5">5. 技术方案</a>
+<ul>
+<li><a href="#ch5-1">5.1 目标架构与原则</a></li>
+<li><a href="#ch5-2">5.2 数据口径对照</a></li>
+<li><a href="#ch5-3">5.3 数据库改造</a></li>
+<li><a href="#ch5-4">5.4 数据面（processing）</a></li>
+<li><a href="#ch5-5">5.5 Java 平台改造</a></li>
+<li><a href="#ch5-6">5.6 前端改造</a></li>
+<li><a href="#ch5-7">5.7 基础设施与配置</a></li>
+</ul></li>
+<li><a href="#ch6">6. 分期实施与交付</a></li>
+<li><a href="#ch7">7. 验证方案</a></li>
+<li><a href="#ch8">8. 风险与对策</a></li>
+<li><a href="#ch9">9. 待审批决策</a></li>
+<li><a href="#chA">附录 A. 代码证据索引</a></li>
+</ul>
+  </div></aside>
+  <main class="content">
+
+<h1>GATEWAY-PLAN-001<br>mydbd 对接 vps 车载网关改造方案</h1>
+<p class="meta">编号：GATEWAY-PLAN-001 ｜ 日期：2026-10-05 ｜ 状态：<strong>待审批（审批通过前不改动业务代码）</strong><br>
+依据：对本仓库实际代码的逐模块盘点 + GATEWAY-REF-001（网关协议分析）+ GATEWAY-CMP-001（对接对比决策稿）</p>
+
+<h2 id="ch0">0. 结论摘要</h2>
+<div class="score">
+<h3>一句话结论</h3>
+<p>mydbd 现有的<strong>轨迹、监控、报警、工单、推送</strong>体系已具备承接真实网关数据的骨架，对接不是另起炉灶，而是"<strong>加一条 Kafka 数据面通道 + 补齐网关特有的标识/字典/附件/指令四类缺口</strong>"。一期数据面可做到现有页面零新增即可看真车、真报警；二期再点亮前端已预留的视频/拍照按钮。</p>
+</div>
+<ul>
+<li><strong>能直接复用</strong>：轨迹点表与轨迹回放、Web 实时推送、车辆面板、风险事件/工单/SLA、CEP 引擎、组织数据权限框架——网关数据按相同口径落库即自动生效。</li>
+<li><strong>必须改造</strong>：① 新增 Kafka 消费通道（processing 服务，现无任何 MQ 依赖）；② 终端双标识（手机号 + 网关 truckId）与未登记车辆隔离；③ 报警类型字典从 5 类扩到网关 29 类，否则报警中心显示"类型 101001"；④ 报警附件落库与平台鉴权查看；⑤ 在线状态口径（现 3 处独立"最近 5 分钟有点"判定，无在线态字段）。</li>
+<li><strong>二期建设</strong>：Java 侧新增指令面模块对接网关 18001（视频/回放/拍照），前端激活已预留的三个按钮并引入 flv.js。</li>
+<li><strong>关键外部依赖</strong>：网关主动拍照无"拍照完成"事件出口，需对方配合（影响二期拍照体验，不影响一期）。</li>
+</ul>
+
+<h2 id="ch1">1. 背景、目标与范围</h2>
+
+<h3 id="ch1-1">1.1 业务背景</h3>
+<p>mydbd 当前定位/报警数据来自<strong>模拟器与 HTTP 推送</strong>（<code>processing-service/app/services/simulator.py</code>、<code>POST /api/ingest/traj</code>），用于演示与算法验证。现场已部署 vps 车载网关，承担真实 JT/T 808 终端接入：实时定位、苏标主动安全报警（ADAS/DSM/盲区/激烈驾驶）、报警图片音视频、终端上下线、远程视频/拍照/TTS 指令。</p>
+<p>本次目标：<strong>让 mydbd 从"演示系统"变为"真实在网车辆监控平台"</strong>，同时不重做已有的组织权限、工单、通知、大屏、评分能力。</p>
+
+<h3 id="ch1-2">1.2 产品目标与验收指标</h3>
+<table>
+<tr><th>产品目标</th><th>验收指标</th></tr>
+<tr><td>真实车辆实时可见</td><td>网关在网车辆位置 ≤5s 上屏；在线/离线准确，离线感知 ≤60s；现有大屏、监控页、回放页直接呈现</td></tr>
+<tr><td>主动安全报警可用</td><td>ADAS/DSM 等 29 类报警自动进入报警中心与风险事件并自动建工单；开始/结束闭环可追踪；类型名/级别正确</td></tr>
+<tr><td>报警有证据</td><td>报警详情可查看关联图片/音视频，经平台鉴权，按归属组织隔离，不暴露网关裸地址</td></tr>
+<tr><td>不重做、不影响现网</td><td>总开关关闭时现有功能 100% 保持；权限仍锚定车辆归属组织，不新增按车牌省份过滤路径</td></tr>
+<tr><td>可规模验证</td><td>500 车 × 0.2Hz 定位持续 30 分钟，消费滞后 &lt;5s、无死信积压</td></tr>
+</table>
+
+<h3 id="ch1-3">1.3 范围分三期</h3>
+<ul>
+<li><span class="tag tag-p0">P0 一期</span> 数据面：真实定位、在线/离线、车辆对照与未登记隔离、接入状态运维。</li>
+<li><span class="tag tag-p1">P1 一期</span> 报警面：29 类报警映射与开闭环、工单去重、报警附件转存与鉴权查看。</li>
+<li><span class="tag tag-p2">P2 二期</span> 指令面：实时视频/历史回放/对讲、远程拍照。</li>
+<li><span class="tag tag-p3">P3 三期</span> 增强：TTS 语音下发联动通知、原始报文留存、接入监控告警。</li>
+</ul>
+
+<h2 id="ch2">2. 现有系统功能盘点（代码实证）</h2>
+<p>以下结论来自对本仓库源码的逐模块核对（路径见<a href="#chA">附录 A</a>），不以设计文档推断。</p>
+
+<h3 id="ch2-1">2.1 现有功能与代码位置</h3>
+<table>
+<tr><th>功能域</th><th>实现位置（关键类/文件）</th><th>现状事实</th></tr>
+<tr><td>实时监控页</td><td><code>views/monitor/Monitor.vue</code>；<code>/api/traj/latest</code>（TrajectoryController）；WS <code>/ws/</code></td><td>Leaflet 地图；车辆弹窗含轨迹回放/详情，<strong>视频/对讲/拍照三个按钮已画好但标"预留"</strong>（reservedCommand 弹提示）</td></tr>
+<tr><td>监控大屏</td><td><code>Dashboard.vue</code>；<code>DashboardController/Service/Mapper</code></td><td>在线数/在线率/当日报警；在线口径=子查询 <code>max(gps_time)</code> 在窗口内</td></tr>
+<tr><td>车辆详情面板</td><td><code>VehiclePanelController/Service/Mapper</code>、<code>VehiclePanelVO</code></td><td>聚合档案+绑定+最新点+当日轨迹+报警 Top5；在线=代码常量最近 5 分钟有点（<code>ONLINE_WINDOW_MINUTES</code>）</td></tr>
+<tr><td>历史轨迹回放</td><td><code>Playback.vue</code>；<code>GET /api/traj/track</code>（identityCode/plateNo+时间）</td><td>直接查 <code>traj_gps_point</code>，<strong>网关点按同口径入库即可零改造复用</strong></td></tr>
+<tr><td>终端报警中心 F17</td><td><code>AlarmController</code>、<code>AlarmService</code>、<code>WarnInfoMapper</code>、<code>AlarmCenter.vue</code></td><td>读写 <code>traj_warn_info</code>；5 处 SQL 均 <strong>LEFT JOIN base_warn_type 取名称/等级</strong>；确认/解除状态机；详情带 ±30 分钟关联风险</td></tr>
+<tr><td>风险预警与工单</td><td><code>mon.risk_event</code>；<code>RiskOrderController</code>；<code>processing/db.insert_risk_events</code></td><td>事件入库即自动建工单+日志、套 SLA 时限；事件码为字符串（DSM_FATIGUE 等）；<code>media_url</code> 单值；前端工单详情媒体是<strong>裸链 <code>&lt;a :href=mediaUrl&gt;</code></strong></td></tr>
+<tr><td>CEP 风控引擎</td><td><code>processing/services/cep_engine.py</code></td><td>点级规则（SPEED/FATIGUE/COMBO/围栏）+ 信号级（SIGNAL 按 event_code 定级）；冷却去重</td></tr>
+<tr><td>终端/车辆/司机档案</td><td><code>module-mdm</code>：Vehicle/Terminal/Driver/Binding/Org Controller</td><td>终端 CRUD，protocolType/equipmentType/status；表中有 sim_account 列；车辆-终端-司机绑定完整；车辆归属 dept_id</td></tr>
+<tr><td>数据权限</td><td><code>DataScopeService</code>（全部/企业/部门树/本部门/自定义）；<code>WsScopeResolver</code></td><td>解析可见 deptIds 后转成"<strong>可见车牌集合</strong>"下推各 SQL（plate_no IN ...）；WS 推送 fail-closed 过滤</td></tr>
+<tr><td>实时推送</td><td><code>RealtimeWebSocketHandler/PushScheduler</code></td><td>每秒全量最新点 + 增量风险/报警游标，按会话车牌范围过滤</td></tr>
+<tr><td>通知</td><td><code>module-notify</code>，扩展点 <code>NotifyChannel{name,enabled,send}</code></td><td>SMS/VOICE/PUSH 占位实现；新增 TTS 渠道有标准扩展点</td></tr>
+<tr><td>评分/画像</td><td><code>module-analysis</code>：ScoreController、ProfileController</td><td>基于 risk_event 等统计；新事件码需在其统计口径中登记，避免漏统</td></tr>
+<tr><td>数据接入</td><td><code>processing/routes/ingest.py</code>、simulator、dataset</td><td>仅 HTTP 批量推送 + 模拟器/样例导入；<strong>requirements 中无任何 Kafka/MQ 库</strong></td></tr>
+<tr><td>系统参数/字典/菜单</td><td><code>sys_config</code>、<code>DictController</code>、各 init SQL 菜单种子</td><td>权限码随菜单种子下发；可承载在线窗口等新参数</td></tr>
+</table>
+
+<h3 id="ch2-2">2.2 与对接直接相关的 6 个代码级事实</h3>
+<ol>
+<li><strong>报警类型字典只有 5 类</strong>：<code>base_warn_type</code> 种子仅 1 超速 / 2 疲劳 / 3 围栏越界 / 4 紧急求助 / 5 设备故障。报警中心列表、滚动、统计、下拉的 SQL 全部 JOIN 此表。网关 typeId=101001…105007 无对应行，页面会退化为"类型 101001"，等级也无法显示。</li>
+<li><strong>在线判定没有状态字段，且散落在 3 处</strong>：<code>DashboardMapper.selectOnline</code>（max(gps_time) 窗口）、<code>WarnInfoMapper.countActiveVehicles</code>（EXISTS 有点）、<code>VehiclePanelService</code>（常量 5 分钟）。网关离线事件只携带 truckId，现有口径无法感知"网关侧已离线但残留旧点"的状态。</li>
+<li><strong>终端标识现以 identity_code 为唯一键</strong>（<code>uk_traj_terminal_identity</code>），另有 <code>sim_account</code> 列存手机号；无网关 truckId 列。</li>
+<li><strong>轨迹点 alarm_flag 是 smallint</strong>：网关 alarmFlag 为 32 位位图 Long，存不下；速度表列为 integer km/h、里程 numeric km，与网关 m/h、米口径不同，必须换算。</li>
+<li><strong>附件体系基本空白</strong>：<code>traj_gps_photo</code> 表已预留但无任何写入入口与接口；<code>risk_event.media_url</code> 为单值 varchar(255)；前端没有图片/视频查看组件（无 flv.js 依赖）。</li>
+<li><strong>网关无应用鉴权的端口有 3 个</strong>：18001 指令、18009 静态附件、20780-82 ws-flv。前端工单详情当前直接打开裸链的做法不能沿用到网关地址。</li>
+</ol>
+
+<h2 id="ch3">3. 对接后的产品功能全景（产品功能视角）</h2>
+
+<h3 id="ch3-1">3.1 目标用户与场景</h3>
+<table>
+<tr><th>角色</th><th>使用场景</th></tr>
+<tr><td>安全监控员</td><td>大屏/监控页看真实车辆在线与位置；报警中心处理 29 类主动安全报警、查看证据图片视频、跟踪工单闭环</td></tr>
+<tr><td>调度员</td><td>选定车辆看实时位置与回放；二期远程拍照、调阅实时视频核实情况</td></tr>
+<tr><td>安全管理员</td><td>按归属组织查看本单位风险；越权车辆的位置/报警/图片/视频均不可见</td></tr>
+<tr><td>系统管理员/运维</td><td>查看网关接入健康（积压、死信、各 topic 处理时间）、处理"未登记终端"清单、维护车辆对照</td></tr>
+<tr><td>平台自动化</td><td>报警自动建工单/SLA 升级/通知；三期经 TTS 向终端语音喊话</td></tr>
+</table>
+
+<h3 id="ch3-2">3.2 功能地图</h3>
+<pre>一期 · 数据看得见、报警管得住
+  F1 真实车辆实时定位     F2 终端在线/离线状态     F3 车辆对照与未登记隔离
+  F4 主动安全报警闭环     F5 报警证据附件查看      F9 网关接入状态（运维）
+二期 · 连得上、拍得到
+  F6 实时视频/回放/对讲   F7 远程拍照
+三期 · 管得深
+  F8 TTS 语音下发         F10 原始报文留存（可选）</pre>
+
+<h3 id="ch3-3">3.3 功能详述</h3>
+
+<h4>F1 真实车辆实时定位 <span class="tag tag-p0">P0</span></h4>
+<ul>
+<li><strong>用户故事</strong>：监控员打开现有监控页/大屏，真实在网车辆按实际上报位置显示，点击可见速度、方向、定位时间；回放页可回放真实历史轨迹。</li>
+<li><strong>业务规则</strong>：消费 <code>jt808_gps_topic</code> 自动入库；速度 m/h÷100→km/h、里程米÷1000→km；坐标保留 WGS-84，出图沿用现有高德转换；补报数据（delay）入库可区分、不顶替最新点；同终端同 trackId 幂等；(0,0)/越界点丢弃计异常。</li>
+<li><strong>入口</strong>：<strong>零新页面</strong>——大屏、实时监控、轨迹回放、车辆面板、WS 推送在数据落库后自动呈现真实数据。</li>
+</ul>
+
+<h4>F2 终端在线/离线状态 <span class="tag tag-p0">P0</span></h4>
+<ul>
+<li><strong>用户故事</strong>：在线/离线一目了然，离线车辆显示最近离线时间，在线率统计真实可信。</li>
+<li><strong>业务规则</strong>：0102 鉴权/0002 心跳→在线；<code>jt808_offline_topic</code>（仅 truckId）→离线；在线态写终端档案；三处读取口径统一切换为"<strong>在线态列优先、最近点兜底</strong>"；网关只发离线不发上线，以 0102 近似上线。</li>
+</ul>
+
+<h4>F3 车辆对照与未登记隔离 <span class="tag tag-p0">P0</span></h4>
+<ul>
+<li><strong>用户故事</strong>：有车在跑却看不到时，运维在"未登记终端"清单找到它，补建档案/绑定后数据自动归位。</li>
+<li><strong>业务规则</strong>：网关标识分层（协议/会话层=终端手机号，业务层=truckId，Kafka key=truckId，离线事件仅 truckId）；平台双锚点——手机号两级解析（identity_code，其次 sim_account）+ 回填 gateway_truck_id，离线事件按 truckId 反查；查不到的消息不入库不丢弃，进隔离区（手机号/truckId/车牌/最近出现/次数）；"终端手机号是否等于 SIM 卡号"列为联调首验项。</li>
+</ul>
+
+<h4>F4 主动安全报警闭环 <span class="tag tag-p1">P1 · 核心</span></h4>
+<ul>
+<li><strong>用户故事</strong>：疲劳、接打电话、前向碰撞等发生时，报警中心出现类型正确、级别正确的报警，同时风险事件自动建工单，监控员确认/解除并闭环。</li>
+<li><strong>业务规则</strong>：消费 <code>jt808_warn_topic</code>，覆盖 ADAS 10 类、DSM 9 类、盲区 3 类、激烈驾驶 7 类；经网关字典映射为平台事件码（101001→ADAS_FCW、102001→DSM_FATIGUE 等）；苏标级别 1高/2低 反转为平台 3高/2中；开始标志建 risk_event+工单（复用现有自动建工单链路），结束标志回填、不重复建单；网关事件固定来源标识，<strong>绕过 CEP 二次判定</strong>，防重复告警/计分；沿用现有双写形态，同时写 traj_warn_info（报警中心）与 risk_event（风险/工单）。</li>
+</ul>
+
+<h4>F5 报警证据附件查看 <span class="tag tag-p1">P1</span></h4>
+<ul>
+<li><strong>用户故事</strong>：打开报警/工单详情，直接看到终端抓拍的图片/音视频作为处置证据。</li>
+<li><strong>业务规则</strong>：消费 <code>jt808_warn_media_topic</code>，仅 fileStatus=完成 转存平台数据卷；按 warnId 与报警关联、支持多附件；平台提供鉴权取图接口并校验归属，不下发光关裸地址；工单详情现有裸链组件同步改为鉴权地址。</li>
+</ul>
+
+<h4>F6 实时视频 / 历史回放 / 对讲 <span class="tag tag-p2">P2</span></h4>
+<ul>
+<li><strong>用户故事</strong>：监控页车辆弹窗点"实时视频"即看、可回放、可对讲；操作全部留痕。前端三个预留按钮本就是为此设计。</li>
+<li><strong>业务规则</strong>：Java 平台经网关 18001 下发（9101/9102 等），视频流经 nginx 反代收敛；flv.js 播放，H265 依赖网关私有增强需实测；接口走 JWT + 权限码 + 归属校验 + 审计。</li>
+</ul>
+
+<h4>F7 远程拍照 <span class="tag tag-p2">P2</span></h4>
+<ul>
+<li><strong>用户故事</strong>：点"立即拍照"，照片回传并在平台查看。</li>
+<li><strong>缺口</strong>：网关有 cameraShot 指令，但<strong>无拍照完成 Kafka 事件</strong>。首选推动网关补事件；过渡期用 gpsType=11 图片点关联，功能标"受限"。</li>
+</ul>
+
+<h4>F8 TTS 语音下发 <span class="tag tag-p3">P3</span></h4>
+<p>复用 NotifyChannel 扩展点新增 JT808_TTS 渠道，经网关 /tts 向终端语音喊话（如疲劳干预）；终端离线回执失败并记录。</p>
+
+<h4>F9 网关接入状态（运维） <span class="tag tag-p0">P0</span></h4>
+<p>服务令牌保护的只读状态：开关、各 topic 最近处理时间/处理数/失败数、消费积压、死信条数、未登记终端入口。配合一个系统管理菜单页。</p>
+
+<h4>F10 原始报文留存 <span class="tag tag-p3">P3 · 可选</span></h4>
+<p>订阅 <code>jt808_raw_hex_topic</code> 落冷存储，供事后排障与协议审计。</p>
+
+<h3 id="ch3-4">3.4 明确不做</h3>
+<ul>
+<li>不自建 JT/T 808/1078 协议栈、不直连车载终端；只对接 vps 网关。</li>
+<li>不改变数据权限模型（不按车牌省份建过滤路径）。</li>
+<li>不改造模拟器/HTTP 入口与既有页面操作习惯；新增事件码一律先登记字典。</li>
+<li>一期不做视频/拍照/TTS。</li>
+</ul>
+
+<h2 id="ch4">4. 现有功能受影响点与改造清单</h2>
+<p>本章以"现有功能点 → 代码证据 → 问题 → 改造方式"组织，是第 5 章技术设计的需求来源。</p>
+
+<h3 id="ch4-1">4.1 功能级改造清单</h3>
+<table>
+<tr><th>#</th><th>现有功能点</th><th>代码证据</th><th>对接后的问题</th><th>改造方式</th><th>阶段</th></tr>
+<tr>
+<td>C1</td><td>数据接入通道</td><td><code>routes/ingest.py</code> 仅 HTTP；requirements 无 MQ 库</td>
+<td>无法消费网关 Kafka</td>
+<td>processing 新增 <code>app/gateway/</code> 子包（消费者+映射+解析+转存），开关控制、默认关闭</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C2</td><td>实时监控/大屏/回放/推送</td><td>traj_gps_point；WS PushScheduler；/api/traj/track</td>
+<td>口径差异：速度、里程、alarmFlag、无效点</td>
+<td>入库前换算与清洗；落库后<strong>页面零改造自动生效</strong>；验证 500 车下每秒全量推送负载</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C3</td><td>在线状态（3 处判定）</td><td>DashboardMapper、WarnInfoMapper.countActiveVehicles、VehiclePanelService L51-52</td>
+<td>无在线态字段；离线事件无法体现；口径重复实现</td>
+<td>终端表增在线态列；3 处 SQL/代码改"在线态优先、最近点兜底"；宽限时间走 sys_config</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C4</td><td>终端档案</td><td>TerminalController/Service/Entity；TerminalList.vue；表有 sim_account</td>
+<td>无网关 truckId、手机号录入/展示不完整、看不到在线态</td>
+<td>实体/表单/列表增 simAccount（手机号）、gatewayTruckId、在线状态、最近心跳/上下线时间（后三项只读）</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C5</td><td>车辆对照</td><td>BindingService 车辆-终端绑定；网关 vps_base_truck</td>
+<td>网关车辆需建档并绑定归属组织，数据才有权限锚点</td>
+<td>一次性对照同步（网关清单导出→建档/绑定脚本或管理端导入）；未登记进隔离区</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C6</td><td>终端报警中心（类型/等级）</td><td>WarnInfoMapper 5 处 SQL JOIN base_warn_type；种子仅 5 类</td>
+<td>网关 29 类显示"类型 101001"、无等级、下拉缺失、统计归并不了</td>
+<td>报警类型字典扩 29 类（以网关 typeId 为 id，等级用平台口径），SQL 无需改 JOIN；级别反转在入库前完成；列表增来源列</td>
+<td><span class="tag tag-p1">P1</span></td>
+</tr>
+<tr>
+<td>C7</td><td>报警开闭环</td><td>traj_warn_info 状态机；AlarmService confirm/resolve</td>
+<td>网关一次报警发开始+结束两条</td>
+<td>按 source_id=warnId upsert：开始插入，结束回填结束字段，处置状态沿用现有 0/1/2</td>
+<td><span class="tag tag-p1">P1</span></td>
+</tr>
+<tr>
+<td>C8</td><td>风险事件与自动工单</td><td>db.insert_risk_events（事件+工单+日志+SLA）；RiskOrderController</td>
+<td>需防止网关报警重复建单、绕过 CEP</td>
+<td>开始标志事件复用 insert_risk_events 落库（source=jt808、source_id=warnId 唯一去重）；不经过 CEP</td>
+<td><span class="tag tag-p1">P1</span></td>
+</tr>
+<tr>
+<td>C9</td><td>报警/工单附件</td><td>traj_gps_photo 预留无入口；risk_event.media_url 单值；OrderDetailDrawer 裸链</td>
+<td>网关多附件无处落、无权查看通道、裸链不合规</td>
+<td>新增 warn_media 表与消费转存；报警详情 VO 增附件列表；新增鉴权取图接口；前端改图片画廊与鉴权 URL</td>
+<td><span class="tag tag-p1">P1</span></td>
+</tr>
+<tr>
+<td>C10</td><td>接入运维</td><td>无</td>
+<td>黑盒接入，故障不可见</td>
+<td>/api/gateway/status + 系统管理菜单页（统计/积压/死信/未登记终端）</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C11</td><td>视频/对讲/拍照入口</td><td>Monitor.vue 三个"预留"按钮；无指令模块；无 flv.js</td>
+<td>按钮无功能；网关指令端口无鉴权</td>
+<td>新增 Java module-gateway（RestClient 封装 18001）；nginx ws 反代；前端激活按钮+flv.js；权限码+审计</td>
+<td><span class="tag tag-p2">P2</span></td>
+</tr>
+<tr>
+<td>C12</td><td>通知</td><td>NotifyChannel（SMS/VOICE/PUSH 占位）</td>
+<td>无车端语音通道</td>
+<td>新增 JT808_TTS 渠道（接口下沉 common，gateway 模块实现）</td>
+<td><span class="tag tag-p3">P3</span></td>
+</tr>
+<tr>
+<td>C13</td><td>评分/画像/统计</td><td>module-analysis 读 risk_event；风险预警页</td>
+<td>新增 29 个事件码可能漏统或误统</td>
+<td>事件码登记评分特征映射并回归；风险预警页可加"来源"维度（jt808/CEP/模拟器）</td>
+<td><span class="tag tag-p1">P1</span></td>
+</tr>
+<tr>
+<td>C14</td><td>权限码与菜单</td><td>init SQL 菜单/权限种子</td>
+<td>新页面/按钮无权限载体</td>
+<td>新增：接入状态/未登记终端、视频调阅、远程拍照等权限码与菜单种子</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+<tr>
+<td>C15</td><td>网关路由</td><td>portal.conf 显式 location 前缀转 processing</td>
+<td>/api/gateway/ 会被兜底转到 Java</td>
+<td>nginx 新增 /api/gateway/ 显式转发（status、media）；二期增 ws 反代</td>
+<td><span class="tag tag-p0">P0</span></td>
+</tr>
+</table>
+
+<h3 id="ch4-2">4.2 不需要改的部分（重要）</h3>
+<ul>
+<li>轨迹回放、车辆面板聚合、WS 推送机制、数据权限框架、工单/SLA/日志链路、登录审计、高德地图链路：<strong>机制不动</strong>，只喂真实数据。</li>
+<li><code>insert_gps_points</code> 等现有函数签名保持不变；模拟器、HTTP 推送、样例导入不受开关影响。</li>
+</ul>
+
+<h2 id="ch5">5. 技术方案</h2>
+
+<h3 id="ch5-1">5.1 目标架构与原则</h3>
+<pre>                         ┌──────────────────────────── mydbd ────────────────────────────┐
+ vps Kafka 集群 ─────────▶│ processing-app: app/gateway（新增子包，开关控制，默认关闭）     │
+  gps/warn/warn_media/    │   consumer(长轮询守护线程) → mappers(单位/码表/级别换算)        │
+  heartbeat/offline/      │     → 复用 db.insert_gps_points / cep_engine.evaluate_points   │
+  command(0102上线)        │     → 新增写：报警开闭环 / 终端在线态 / 附件 / 死信            │
+                          │   media_store：从 18009/static 流式转存 /data/media            │
+ vps 18001 REST ◀─────────│ platform-app: module-gateway（二期新增）                       │
+   视频/回放/拍照/TTS      │   RestClient + Controller(JWT/权限码/审计/归属校验)            │
+ vps 2078x ws-flv ───────▶│ portal-nginx 新增反代（二期，收敛暴露面）                      │
+                          └────────────────────────────────────────────────────────────────┘</pre>
+<p>原则：① 开关驱动，不配 Kafka 全功能行为不变；② 数据面（Python，复用入库/CEP/工单）与指令面（Java，复用鉴权/权限/审计）分离；③ 权限锚点保持车辆归属组织；④ 幂等（trackId/warnId）+ 手动位点 + 毒消息死信不阻塞；⑤ 不重复建设协议栈。</p>
+<p>部署形态：数据面消费者内置于 processing 同进程守护线程（复用已验证入库契约，避免新增容器；384M 内存下用纯 Python 客户端、批量插入、有界流式下载），子包不依赖 FastAPI，未来可平移独立服务。</p>
+
+<h3 id="ch5-2">5.2 数据口径对照（契约摘要，详见 REF-001）</h3>
+<table>
+<tr><th>项</th><th>网关口径</th><th>平台处理</th></tr>
+<tr><td>速度</td><td>m/h（km/h×100）</td><td>÷100，integer km/h</td></tr>
+<tr><td>里程</td><td>米</td><td>÷1000，numeric km，保留 2 位</td></tr>
+<tr><td>报警标志</td><td>32 位位图 Long</td><td>alarm_flag smallint→bigint（无损），原值直存，其余位存 ext</td></tr>
+<tr><td>报警级别</td><td>苏标 1高 2低</td><td>反转 3高 2中</td></tr>
+<tr><td>时间/坐标</td><td>GMT+8 字符串；WGS-84 已为度</td><td>直接解析；4326 原样入库，出图走高德转换</td></tr>
+<tr><td>终端标识</td><td>协议层手机号（报文头 BCD）/ 业务层 truckId；Kafka key=truckId；离线仅 truckId</td><td>双锚点：手机号两级解析 + 回填 gateway_truck_id</td></tr>
+<tr><td>附件</td><td>fileType=image/audio/video；fileStatus 0未传1传中2完成3异常</td><td>0图1音2视4其他；仅 2 转存</td></tr>
+</table>
+
+<h3 id="ch5-3">5.3 数据库改造（新增 18 号迁移脚本，幂等可重复执行）</h3>
+<ul>
+<li><code>traj_gps_point</code>：alarm_flag→bigint；新增 <code>ext jsonb</code>（trackId/gpsType/delay/status/recordSpeed/additions 等原始字段）；部分唯一索引 <code>(identity_code, ext->>'trackId')</code> 幂等。</li>
+<li><code>traj_terminal</code>：gateway_truck_id、online_status、last_heartbeat_time、last_online_time、last_offline_time。</li>
+<li><code>traj_gps_photo</code>：warn_id、media_type、file_status、source（gpsType=11 图片点复用）。</li>
+<li>新表：<code>traj_warn_media</code>（报警附件，warn_id+file_name 唯一）、<code>gateway_event_map</code>（29 类映射种子）、<code>gateway_dlq</code>（死信）、<code>gateway_ingest_stat</code>（消费统计）、<code>gateway_unknown_terminal</code>（未登记隔离）。</li>
+<li><code>mon.risk_event</code> 增 source_id（warnId 去重锚点）+ 部分唯一索引，防重复建单。</li>
+<li><code>base_warn_type</code> 补 29 类种子（id=网关 typeId，grade_level 用平台口径），使报警中心现有 JOIN 直接生效；事件码映射同时落 gateway_event_map 供消费者使用。</li>
+<li>菜单/权限种子：接入状态页、未登记终端、（二期）视频/拍照权限码。</li>
+<li>init 目录仅对新库生效；<strong>已部署库手工执行脚本并备份验证</strong>（写入发布说明）。</li>
+</ul>
+
+<h3 id="ch5-4">5.4 数据面改造（processing-service，P0/P1 主体）</h3>
+<ul>
+<li>依赖：<code>kafka-python&gt;=2.0</code>（纯 Python，适配 slim 镜像与 384M 限制；消费逻辑接口隔离，可替换客户端）。</li>
+<li>新增 <code>app/gateway/</code>：
+<ul>
+<li><code>mappers.py</code>：纯函数映射（GPS/Warn/Media/Offline/心跳指令），单位换算、级别反转、无效点过滤、时间解析，可离线表驱动单测；</li>
+<li><code>terminal_resolver.py</code>：手机号两级查找 + TTL 缓存 + truckId 回填 + 未登记隔离；truckId 反查供离线事件；</li>
+<li><code>media_store.py</code>：local（流式有界下载到 /data/media）与 proxy（只记 URL）两策略；</li>
+<li><code>consumer.py/runner.py</code>：守护线程长轮询、按 topic 分发、手动提交、异常入 DLQ 跳过、统计、自恢复。</li>
+</ul></li>
+<li><code>db.py</code> 只增不改：带 ext 批量写点、在线态 upsert、warn 开闭环 upsert、附件写入、死信/统计/字典加载（60s 缓存）；<strong>现有函数签名不变</strong>。</li>
+<li><code>main.py</code> lifespan 按开关启停；新增路由 <code>GET /api/gateway/status</code>（X-Service-Token）、<code>GET /api/gateway/media/{id}</code>（归属校验后 FileResponse/302）。</li>
+<li>报警落库：开始标志→构造行调用 insert_risk_events（event_source='jt808'）自动建工单，<strong>不再过 CEP</strong>；结束标志仅回填。</li>
+</ul>
+
+<h3 id="ch5-5">5.5 Java 平台改造（backend-java）</h3>
+<ul>
+<li><strong>P0</strong>：① DashboardMapper、WarnInfoMapper.countActiveVehicles、VehiclePanelService 三处在线口径切换；② Terminal 实体/VO/保存请求与在线字段只读透出；③ 未登记终端与接入状态查询接口（建议落 module-monitor，运维权限码）。</li>
+<li><strong>P1</strong>：④ AlarmVO/详情增附件列表（按 warn_id 查 traj_warn_media，经 canSee 车牌归属校验）；⑤ 报警列表类型/等级随字典扩展自动生效，来源列透出；⑥ module-analysis 新事件码口径回归。</li>
+<li><strong>P2</strong>：⑦ 新增 <code>module-gateway</code>：GatewayProperties、GatewayCommandClient（实时/停止/回放/停止/资源检索/拍照/TTS DTO + 超时离线异常）、Controller 加 @RequiresPerm 与 @AuditLog，归属校验复用 mdm 绑定；根 pom 与 platform-boot 注册。</li>
+<li><strong>P3</strong>：⑧ platform-common 定义 GatewayTtsPort，module-gateway 实现，module-notify 新增 JT808_TTS 渠道（避免反向依赖）。</li>
+</ul>
+
+<h3 id="ch5-6">5.6 前端改造（frontend，Vue3 + Element Plus）</h3>
+<ul>
+<li><strong>P0</strong>：TerminalList 增手机号/网关 ID/在线状态/最近心跳列与搜索；系统管理增"网关接入"页（状态+未登记终端）；大屏/面板在线显示随接口自动更新。</li>
+<li><strong>P1</strong>：报警详情增附件图片画廊（鉴权接口）；工单详情 <code>OrderDetailDrawer</code> 裸链改鉴权 URL；风险预警页增事件来源列/筛选（可选）。</li>
+<li><strong>P2</strong>：Monitor 弹窗三个预留按钮去预留态接真实接口；新增 flv.js 依赖与实时/回放播放器组件（先验证 H265）；拍照结果展示。</li>
+</ul>
+
+<h3 id="ch5-7">5.7 基础设施与配置</h3>
+<ul>
+<li>docker-compose：processing 增 GATEWAY_ENABLED/KAFKA_BOOTSTRAP_SERVERS/KAFKA_GROUP_ID/GATEWAY_FILE_BASE_URL/GATEWAY_MEDIA_STRATEGY 等（默认空/关）；platform-app 二期增 GATEWAY_BASE_URL/TOKEN/VIDEO_WS_BASE。</li>
+<li>新增 <code>dev-infra</code> profile 受控的单节点 KRaft Kafka（默认不启动，供本地联调）。</li>
+<li>.env.example 补变量说明（不含真实口令）。</li>
+<li>portal.conf：一期增 <code>/api/gateway/</code> → processing；二期增 <code>/gateway-ws/</code> upgrade 反代。</li>
+<li>生产优先直连网关既有 Kafka（独立消费组 mydbd-ingest + 只读 ACL）。</li>
+<li>同步更新总体架构、DDL 文档与 CHANGELOG（实施阶段）。</li>
+</ul>
+
+<h2 id="ch6">6. 分期实施与交付</h2>
+<table>
+<tr><th>阶段</th><th>产品交付</th><th>主要工作</th><th>验收</th></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td>F1 F2 F3 F9</td><td>18 脚本；消费骨架与 GPS 映射入库；在线态三处切换；终端双标识与隔离区；状态接口与菜单；车辆对照；nginx/compose</td><td>真实/仿真定位 ≤5s 上屏；离线 ≤60s；开关关闭回归全绿</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td>F4 F5（+C13）</td><td>29 类字典种子；warn 开闭环；risk_event+工单去重；附件消费转存；鉴权取图与前端画廊；评分回归</td><td>一条 ADAS 报警全链路：报警中心+事件+工单+附件可见，不重复告警</td></tr>
+<tr><td><span class="tag tag-p2">P2</span></td><td>F6 F7</td><td>module-gateway；nginx ws；flv.js 与预留按钮激活；拍照链路（依赖网关补事件）</td><td>9101 播放→9102 停止；回放/拍照可用并留痕；越权拒绝</td></tr>
+<tr><td><span class="tag tag-p3">P3</span></td><td>F8 F10</td><td>TTS 通道；raw_hex 冷存；接入监控告警</td><td>TTS 触达留痕；消费异常有告警</td></tr>
+</table>
+<blockquote class="warn"><strong>外部联调依赖</strong>：① 网关 Kafka broker 通告地址对消费者网络可达（联调第一项）；② 只读 ACL 与消费组；③ 18001/18009/2078x 内网白名单；④ 推动网关补拍照完成事件；⑤ 现网终端手机号=SIM 卡号核验。</blockquote>
+
+<h2 id="ch7">7. 验证方案</h2>
+<ul>
+<li><strong>映射单测</strong>：真实 JSON 样例表驱动断言（速度÷100、里程÷1000、级别反转、29 类映射、时间解析、无效点、未知终端分流、附件状态过滤）。</li>
+<li><strong>集成测试</strong>（dev-infra Kafka 灌数）：各表落位、在线态、报警开闭环与工单、附件文件存在；重复投递幂等；杀进程位点不丢不乱序。</li>
+<li><strong>回归</strong>：开关关闭时 compose 全栈行为与现网一致（模拟器/样例/CEP/大屏/报警/评分）；alarm_flag bigint 后 Java 读取正常；报警中心 5 类历史类型显示正常。</li>
+<li><strong>端到端</strong>（真实/仿真终端）：注册鉴权→上线可见；报警 9208→附件→事件→工单→图片打开；视频 9101→9102；回放/拍照/TTS；受限账号越权拒绝（含附件与 ws）。</li>
+<li><strong>性能</strong>：500 车 × 0.2Hz × 30 分钟，滞后 &lt;5s、无死信；观察 WS 每秒全量推送与 384M 内存占用，超限则优化推送增量或剥离媒体转存。</li>
+</ul>
+
+<h2 id="ch8">8. 风险与对策</h2>
+<table>
+<tr><th>风险</th><th>对策</th></tr>
+<tr><td>直连生产 Kafka 影响网关</td><td>独立消费组、只读 ACL、先接测试环境、可限速</td></tr>
+<tr><td>终端标识口径不一致致数据无归属</td><td>双锚点两级解析；对照表人工核对；未登记数据隔离不丢；联调首验手机号/SIM 一致性</td></tr>
+<tr><td>报警被 CEP 重复判定/计分</td><td>网关事件固定 source=jt808 绕过 CEP；warnId 唯一去重；评分按事件码+时窗去重回归</td></tr>
+<tr><td>报警字典扩展影响历史显示</td><td>仅新增字典行，不改 1-5 历史行；grade_level 口径以脚本注释固定并回归报警中心</td></tr>
+<tr><td>processing 384M 内存</td><td>纯 Python 客户端、批量插入、流式有界下载；压测实测，超限剥离媒体转存</td></tr>
+<tr><td>网关拍照无事件出口</td><td>推动网关补事件（首选）；过渡期 gpsType=11 关联并标受限</td></tr>
+<tr><td>网关端口无鉴权</td><td>内网+白名单；浏览器只走平台鉴权中转/反代；推动网关加服务令牌</td></tr>
+<tr><td>已部署库升级</td><td>18 号脚本手工执行、备份验证；全部变更幂等</td></tr>
+<tr><td>WS 全量推送随车辆数加压</td><td>500 车压测；必要时改为增量/降频，不影响一期入库架构</td></tr>
+</table>
+
+<h2 id="ch9">9. 待审批决策</h2>
+<ol>
+<li><strong>Kafka 部署</strong>：直连网关既有集群+独立消费组只读 ACL（推荐）／平台自建 broker 要求网关改投递。</li>
+<li><strong>终端标识口径</strong>：双锚点——新终端以手机号为 identity_code、存量经 sim_account 两级解析，并回填 gateway_truck_id（推荐）／保留 TERM_xxx 仅反查。</li>
+<li><strong>附件存储</strong>：首期转存 mydbd-data 卷、平台鉴权接口提供（推荐）／仅反代 18009／上 MinIO。</li>
+<li><strong>主动拍照出口</strong>：协调网关补拍照完成事件（推荐）／接受过渡关联并标受限。</li>
+<li><strong>实施范围</strong>：先做 P0+P1 数据面闭环（推荐）／P0–P2 连续推进。</li>
+<li><strong>Kafka 客户端</strong>：纯 Python kafka-python（推荐）／confluent-kafka（需系统依赖）。</li>
+<li><strong>报警字典承载方式</strong>：base_warn_type 直接扩 29 类（推荐，现有 JOIN 零改动）／单独维护网关字典并改 5 处 SQL。</li>
+</ol>
+
+<blockquote>请审核。确认或调整上述决策后再进入实施；审批通过前不改动任何业务代码。</blockquote>
+
+<h2 id="chA">附录 A. 代码证据索引</h2>
+<table>
+<tr><th>结论</th><th>证据位置</th></tr>
+<tr><td>报警 SQL 全部 JOIN base_warn_type（5 类种子）</td><td>module-monitor …/mapper/WarnInfoMapper.java（pageAlarms/selectLatestPending/selectDetail/countByType/selectAlarmTypes）；infra/postgres/init/02-traj-tables.sql 种子 L260-267</td></tr>
+<tr><td>在线判定三处实现</td><td>module-monitor …/dashboard/mapper/DashboardMapper.java L37-43；WarnInfoMapper.countActiveVehicles L38-52；panel/service/VehiclePanelService.java L51-52</td></tr>
+<tr><td>终端表标识与在线字段缺失</td><td>02-traj-tables.sql L61-81（identity_code 唯一、sim_account）</td></tr>
+<tr><td>轨迹点口径（alarm_flag smallint、speed km/h、mileage km）</td><td>02-traj-tables.sql L3-28；processing db.insert_gps_points</td></tr>
+<tr><td>附件表预留无入口、事件媒体单值</td><td>02-traj-tables.sql traj_gps_photo L183-201；03-mon-tables.sql risk_event L4-24</td></tr>
+<tr><td>事件自动建工单/SLA</td><td>processing/app/db.py insert_risk_events L97-166</td></tr>
+<tr><td>前端视频/对讲/拍照预留按钮、媒体裸链</td><td>frontend/src/views/monitor/Monitor.vue L905-907、L1084-1090；views/risk/OrderDetailDrawer.vue L42-43</td></tr>
+<tr><td>WS 全量+增量推送与车牌范围过滤</td><td>module-monitor …/websocket/RealtimePushScheduler.java L22-86；WsScopeResolver</td></tr>
+<tr><td>数据权限按 dept→车牌下推</td><td>module-iam …/service/DataScopeService.java L33-80；各 Mapper plates 条件</td></tr>
+<tr><td>通知扩展点</td><td>module-notify …/channel/NotifyChannel.java</td></tr>
+<tr><td>无 MQ 依赖、仅 HTTP 接入</td><td>processing-service/requirements.txt；app/routes/（health/simulator/ingest/dataset/analysis）</td></tr>
+<tr><td>网关标识分层</td><td>vps 仓库：TerminalMessage.java（手机号 BCD 解码）、TerminalSessionManager.java（会话按手机号）、TruckService.java+BaseTruckDao.xml（vps_base_truck，truck_id 主键、identity_code 业务键）、KafkaSender（key=truckId；OfflineInfo 仅 truckId）、CommandController（{phone} 寻址）</td></tr>
+</table>
+
+<p class="meta">本方案由对仓库实际代码的盘点整合而成；网关契约引自 GATEWAY-REF-001 / GATEWAY-CMP-001。</p>
+
+  </main>
+</div>
+</body>
+</html>
