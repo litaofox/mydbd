@@ -133,6 +133,12 @@ const routes: RouteRecordRaw[] = [
         name: 'analysis-profiles',
         component: () => import('@/views/analysis/RiskProfile.vue'),
         meta: { title: '风险趋势与画像', perm: 'analysis:profile:view' }
+      },
+      {
+        // 查询分析占位：菜单挂全部规划功能，点击进入"功能建设中"
+        path: 'analysis/coming/:code',
+        name: 'analysis-coming',
+        component: () => import('@/views/analysis/ComingSoon.vue')
       }
     ]
   }

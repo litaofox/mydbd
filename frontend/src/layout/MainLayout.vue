@@ -15,12 +15,13 @@
         router
       >
         <template v-for="m in auth.menus" :key="m.id">
-          <!-- 目录 -->
-          <el-sub-menu v-if="m.menuType === 1 && visibleChildren(m).length" :index="'g' + m.id">
+          <!-- 目录（支持：直接菜单 / 二级分组目录 → 菜单） -->
+          <el-sub-menu v-if="m.menuType === 1 && hasVisibleNode(m)" :index="'g' + m.id">
             <template #title>
               <el-icon v-if="m.icon"><component :is="m.icon" /></el-icon>
               <span>{{ m.menuName }}</span>
             </template>
+            <!-- 直接子菜单 -->
             <el-menu-item
               v-for="c in visibleChildren(m)"
               :key="c.id"
@@ -29,6 +30,21 @@
               <el-icon v-if="c.icon"><component :is="c.icon" /></el-icon>
               <span>{{ c.menuName }}</span>
             </el-menu-item>
+            <!-- 二级分组目录 -->
+            <el-sub-menu v-for="g in visibleGroups(m)" :key="g.id" :index="'g' + g.id">
+              <template #title>
+                <el-icon v-if="g.icon"><component :is="g.icon" /></el-icon>
+                <span>{{ g.menuName }}</span>
+              </template>
+              <el-menu-item
+                v-for="c in visibleChildren(g)"
+                :key="c.id"
+                :index="c.path || ''"
+              >
+                <el-icon v-if="c.icon"><component :is="c.icon" /></el-icon>
+                <span>{{ c.menuName }}</span>
+              </el-menu-item>
+            </el-sub-menu>
           </el-sub-menu>
           <!-- 单菜单（无层级） -->
           <el-menu-item v-else-if="m.menuType === 2 && m.visible !== 0 && m.path" :index="m.path">
@@ -205,6 +221,7 @@ import { readAll } from '@/api/notify'
 import type { MenuNode } from '@/api/auth'
 import type { NotifyMessage } from '@/api/notify'
 import ProfileDialog from '@/components/ProfileDialog.vue'
+import { comingTitle } from '@/views/analysis/ComingSoon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,7 +291,8 @@ watch(
   () => route.fullPath,
   () => {
     if (route.path === '/login' || route.path === '/dashboard') return
-    tabs.visit(route.path, route.fullPath, (route.meta.title as string) || route.path)
+    const title = (route.meta.title as string) || comingTitle(route.path) || route.path
+    tabs.visit(route.path, route.fullPath, title)
   },
   { immediate: true }
 )
@@ -350,6 +368,18 @@ const mfaOn = computed(() => auth.profile?.mfaEnabled === 1)
 
 function visibleChildren(m: MenuNode): MenuNode[] {
   return (m.children || []).filter((c) => c.menuType === 2 && c.visible !== 0 && !!c.path)
+}
+
+/** 二级分组目录（menuType=1），仅当其下存在可见菜单时返回 */
+function visibleGroups(m: MenuNode): MenuNode[] {
+  return (m.children || []).filter(
+    (c) => c.menuType === 1 && c.visible !== 0 && visibleChildren(c).length > 0
+  )
+}
+
+/** 目录是否有任一可见节点（直接菜单或分组目录） */
+function hasVisibleNode(m: MenuNode): boolean {
+  return visibleChildren(m).length > 0 || visibleGroups(m).length > 0
 }
 
 async function onCommand(command: string) {

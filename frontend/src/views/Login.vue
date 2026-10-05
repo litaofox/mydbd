@@ -41,6 +41,24 @@
         </el-form>
       </div>
 
+      <!-- 测试账号快捷填充 -->
+      <div v-if="step === 1" class="quick">
+        <div class="quick-head">测试账号（点击自动填充）</div>
+        <div v-for="g in testAccounts" :key="g.group" class="quick-group">
+          <span class="quick-label">{{ g.group }}</span>
+          <button
+            v-for="a in g.accounts"
+            :key="a.username"
+            type="button"
+            class="quick-chip"
+            :class="{ active: form.username === a.username }"
+            @click="fillAccount(a)"
+          >
+            {{ a.label }}
+          </button>
+        </div>
+      </div>
+
       <div class="tip">默认管理员：admin / admin123（首次登录请及时修改密码）</div>
     </el-card>
   </div>
@@ -62,6 +80,54 @@ const form = reactive({ username: 'admin', password: 'admin123' })
 const totpCode = ref('')
 const mfaToken = ref('')
 const loading = ref(false)
+
+/** 测试账号清单（与 16/17 号种子一致；省份账号密码统一 test123456） */
+interface TestAccount {
+  username: string
+  password: string
+  label: string
+}
+const PROV_PWD = 'test123456'
+const testAccounts: { group: string; accounts: TestAccount[] }[] = [
+  {
+    group: '管理员',
+    accounts: [{ username: 'admin', password: 'admin123', label: 'admin 超管' }]
+  },
+  {
+    group: '上海',
+    accounts: [
+      { username: 'shanghai_disp', password: PROV_PWD, label: 'shanghai_disp 调度员' },
+      { username: 'shanghai_capt', password: PROV_PWD, label: 'shanghai_capt 车队长' }
+    ]
+  },
+  {
+    group: '山东',
+    accounts: [
+      { username: 'shandong_disp', password: PROV_PWD, label: 'shandong_disp 调度员' },
+      { username: 'shandong_capt', password: PROV_PWD, label: 'shandong_capt 车队长' }
+    ]
+  },
+  {
+    group: '江苏',
+    accounts: [
+      { username: 'jiangsu_disp', password: PROV_PWD, label: 'jiangsu_disp 调度员' },
+      { username: 'jiangsu_capt', password: PROV_PWD, label: 'jiangsu_capt 车队长' }
+    ]
+  },
+  {
+    group: '安徽',
+    accounts: [
+      { username: 'anhui_disp', password: PROV_PWD, label: 'anhui_disp 调度员' },
+      { username: 'anhui_capt', password: PROV_PWD, label: 'anhui_capt 车队长' }
+    ]
+  }
+]
+
+/** 点击测试账号：自动填入用户名与密码 */
+function fillAccount(a: TestAccount) {
+  form.username = a.username
+  form.password = a.password
+}
 
 async function onLogin() {
   if (!form.username || !form.password) {
@@ -151,5 +217,55 @@ function goLanding() {
   color: #9ca3af;
   font-size: 12px;
   margin-top: 14px;
+}
+
+/* 测试账号快捷填充区 */
+.quick {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.quick-head {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.quick-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.quick-label {
+  flex: none;
+  width: 38px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.quick-chip {
+  border: 1px solid #dcdfe6;
+  background: #f4f4f5;
+  color: #606266;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quick-chip:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+
+.quick-chip.active {
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  color: #fff;
 }
 </style>
