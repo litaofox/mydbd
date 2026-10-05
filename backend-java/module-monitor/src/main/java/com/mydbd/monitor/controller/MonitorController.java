@@ -2,6 +2,8 @@ package com.mydbd.monitor.controller;
 
 import com.mydbd.common.api.PageData;
 import com.mydbd.common.api.Result;
+import com.mydbd.common.audit.AuditLog;
+import com.mydbd.common.security.RequiresPerm;
 import com.mydbd.monitor.entity.RiskEvent;
 import com.mydbd.monitor.entity.VideoAnalysis;
 import com.mydbd.monitor.entity.WarnInfo;
@@ -48,8 +50,11 @@ public class MonitorController {
         return Result.ok(monitorService.pageRisks(page, size, eventSource, riskLevel, handleStatus, ruleId, plateNo, cityCode));
     }
 
-    /** 处置风险事件 */
+    /** 处置风险事件（功能权限与工单处置同码：风险闭环的轻量入口） */
     @PostMapping("/risks/{id}/handle")
+    @RequiresPerm("risk:order:handle")
+    @AuditLog(module = "MONITOR", action = "HANDLE", actionName = "处置风险事件",
+            objectType = "RISK_EVENT", objectId = "#id")
     public Result<Void> handle(@PathVariable Long id, @RequestBody HandleRequest request) {
         monitorService.handleRisk(id, request.remark());
         return Result.ok();

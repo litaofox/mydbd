@@ -38,7 +38,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        log.warn("WS transport error for session {}: {}", session.getId(), exception.getMessage());
+        log.warn("WS transport error for session {}", session.getId(), exception);
         sessionRegistry.remove(session);
     }
 }

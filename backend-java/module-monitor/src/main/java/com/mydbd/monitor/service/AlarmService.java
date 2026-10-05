@@ -9,6 +9,7 @@ import com.mydbd.common.security.UserInfo;
 import com.mydbd.monitor.dto.AlarmQuery;
 import com.mydbd.monitor.dto.ResolveRequest;
 import com.mydbd.monitor.entity.WarnInfo;
+import com.mydbd.monitor.dashboard.mapper.DashboardMapper;
 import com.mydbd.monitor.mapper.RiskEventMapper;
 import com.mydbd.monitor.mapper.WarnInfoMapper;
 import com.mydbd.monitor.vo.AlarmVO;
@@ -42,28 +43,38 @@ public class AlarmService {
 
     private final WarnInfoMapper warnInfoMapper;
     private final RiskEventMapper riskEventMapper;
+    private final DashboardMapper dashboardMapper;
 
-    /** §4.1 分页：size 钳制 1~100，时间非法 40001 */
+    /** §4.1 分页：size 钳制 1~100，时间非法 40001；按当前用户数据范围过滤 */
     public PageData<AlarmVO> page(AlarmQuery q) {
         long size = Math.min(Math.max(q.getSize(), 1), 100);
         long page = Math.max(q.getPage(), 1);
+        List<String> plates = currentPlates();
+        if (plates != null && plates.isEmpty()) {
+            return new PageData<>(0L, page, size, List.of());
+        }
         Page<AlarmVO> result = warnInfoMapper.pageAlarms(
                 new Page<>(page, size),
                 StringUtils.hasText(q.getPlateNo()) ? q.getPlateNo().trim() : null,
                 q.getTypeId(),
                 q.getHandleStatus(),
                 parseTime(q.getBeginTime(), "beginTime"),
-                parseTime(q.getEndTime(), "endTime"));
+                parseTime(q.getEndTime(), "endTime"),
+                plates);
         return new PageData<>(result.getTotal(), result.getCurrent(), result.getSize(), result.getRecords());
     }
 
-    /** §4.2 待处理滚动：limit 钳制 1~50（越界不报错） */
+    /** §4.2 待处理滚动：limit 钳制 1~50（越界不报错）；按当前用户数据范围过滤 */
     public List<AlarmVO> latest(Integer limit) {
         int n = limit == null ? 10 : Math.min(Math.max(limit, 1), 50);
-        return warnInfoMapper.selectLatestPending(n);
+        List<String> plates = currentPlates();
+        if (plates != null && plates.isEmpty()) {
+            return List.of();
+        }
+        return warnInfoMapper.selectLatestPending(n, plates);
     }
 
-    /** §4.3 统计：缺省=今日 00:00 至当前 */
+    /** §4.3 统计：缺省=今日 00:00 至当前；按当前用户数据范围口径 */
     public Map<String, Object> stats(String start, String end) {
         LocalDateTime begin = parseTime(start, "start");
         LocalDateTime finish = parseTime(end, "end");
@@ -73,17 +84,24 @@ public class AlarmService {
         if (finish == null) {
             finish = LocalDateTime.now();
         }
+        List<String> plates = currentPlates();
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("total", warnInfoMapper.countInRange(begin, finish));
-        data.put("byType", warnInfoMapper.countByType(begin, finish));
-        data.put("byStatus", warnInfoMapper.countByStatus(begin, finish));
+        if (plates != null && plates.isEmpty()) {
+            data.put("total", 0L);
+            data.put("byType", List.of());
+            data.put("byStatus", List.of());
+            return data;
+        }
+        data.put("total", warnInfoMapper.countInRange(begin, finish, plates));
+        data.put("byType", warnInfoMapper.countByType(begin, finish, plates));
+        data.put("byStatus", warnInfoMapper.countByStatus(begin, finish, plates));
         return data;
     }
 
-    /** §4.5 详情：不存在 40401；附带 ±30min 同车牌关联风险前 5 条 */
+    /** §4.5 详情：不存在或越权均 40401（不泄露存在性）；附带 ±30min 同车牌关联风险前 5 条 */
     public AlarmVO detail(Long id) {
         AlarmVO vo = warnInfoMapper.selectDetail(id);
-        if (vo == null) {
+        if (vo == null || !canSee(vo.getPlateNo())) {
             throw new BizException(ErrorCode.NOT_FOUND, "报警不存在");
         }
         if (StringUtils.hasText(vo.getPlateNo()) && vo.getStartWarnTime() != null) {
@@ -131,9 +149,34 @@ public class AlarmService {
 
     private void requireExists(Long id) {
         WarnInfo raw = warnInfoMapper.selectById(id);
-        if (raw == null) {
+        if (raw == null || !canSee(raw.getPlateNo())) {
+            // 不存在与越权同一口径，避免借处置接口探测存在性
             throw new BizException(ErrorCode.NOT_FOUND, "报警不存在");
         }
+    }
+
+    /** 当前用户是否可见指定车牌（null 车牌对受限用户不可见） */
+    private boolean canSee(String plateNo) {
+        List<String> plates = currentPlates();
+        if (plates == null) {
+            return true;
+        }
+        return !plates.isEmpty() && plateNo != null && plates.contains(plateNo);
+    }
+
+    /**
+     * 当前用户可见车牌：null=不限制；空列表=不可见任何数据；非空=可见车牌。
+     */
+    private List<String> currentPlates() {
+        UserInfo user = UserContext.get();
+        if (user == null || user.allData()) {
+            return null;
+        }
+        java.util.Set<Long> scope = user.deptScope();
+        if (scope == null || scope.isEmpty()) {
+            return List.of();
+        }
+        return dashboardMapper.selectVehicleNosByDeptScope(scope);
     }
 
     /** handler = realName（空回退 username），varchar(30) 截断防御 */

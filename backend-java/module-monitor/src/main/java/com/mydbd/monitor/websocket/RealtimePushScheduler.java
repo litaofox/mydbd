@@ -5,6 +5,7 @@ import com.mydbd.monitor.entity.RiskEvent;
 import com.mydbd.monitor.entity.WarnInfo;
 import com.mydbd.monitor.mapper.RiskEventMapper;
 import com.mydbd.monitor.mapper.WarnInfoMapper;
+import com.mydbd.traj.entity.GpsPoint;
 import com.mydbd.traj.service.TrajectoryService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -14,10 +15,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 实时推送调度器：每秒推位置全量，增量推风险事件与终端报警。
+ * 三类消息均按各会话用户的部门数据范围过滤后发送（fail-closed）。
  */
 @Slf4j
 @Component
@@ -28,6 +31,7 @@ public class RealtimePushScheduler {
     private final TrajectoryService trajectoryService;
     private final RiskEventMapper riskEventMapper;
     private final WarnInfoMapper warnInfoMapper;
+    private final WsScopeResolver wsScopeResolver;
 
     private final AtomicLong lastRiskId = new AtomicLong(0);
     private final AtomicLong lastAlarmId = new AtomicLong(0);
@@ -64,20 +68,24 @@ public class RealtimePushScheduler {
         }
     }
 
-    /** 全量位置快照广播 */
+    /** 全量位置快照：按各会话数据范围过滤后发送 */
     public void pushPoints() {
         if (sessionRegistry.size() == 0) {
             return;
         }
-        sessionRegistry.broadcast("POINTS", trajectoryService.listLatestPoints());
+        List<GpsPoint> points = trajectoryService.listLatestPointsForPush();
+        sessionRegistry.broadcastScoped("POINTS", points,
+                GpsPoint::getPlateNo, wsScopeResolver::allowedPlates);
     }
 
-    /** 新连接首帧位置 */
+    /** 新连接首帧位置：按该会话数据范围过滤 */
     public void pushPointsOnce(WebSocketSession session) {
-        sessionRegistry.sendTo(session, "POINTS", trajectoryService.listLatestPoints());
+        List<GpsPoint> points = trajectoryService.listLatestPointsForPush();
+        Set<String> scope = wsScopeResolver.allowedPlates(session);
+        sessionRegistry.sendScoped(session, "POINTS", points, GpsPoint::getPlateNo, scope);
     }
 
-    /** 增量风险事件（按 id 游标） */
+    /** 增量风险事件（按 id 游标）：全局游标不变，按各会话范围过滤发送 */
     private int pushRisks() {
         long since = lastRiskId.get();
         List<RiskEvent> list = riskEventMapper.selectList(
@@ -93,11 +101,12 @@ public class RealtimePushScheduler {
                 lastRiskId.set(e.getId());
             }
         }
-        sessionRegistry.broadcast("RISK", list);
+        sessionRegistry.broadcastScoped("RISK", list,
+                RiskEvent::getPlateNo, wsScopeResolver::allowedPlates);
         return list.size();
     }
 
-    /** 增量终端报警（按 id 游标） */
+    /** 增量终端报警（按 id 游标）：全局游标不变，按各会话范围过滤发送 */
     private int pushAlarms() {
         long since = lastAlarmId.get();
         List<WarnInfo> list = warnInfoMapper.selectList(
@@ -113,7 +122,8 @@ public class RealtimePushScheduler {
                 lastAlarmId.set(w.getId());
             }
         }
-        sessionRegistry.broadcast("ALARM", list);
+        sessionRegistry.broadcastScoped("ALARM", list,
+                WarnInfo::getPlateNo, wsScopeResolver::allowedPlates);
         return list.size();
     }
 }

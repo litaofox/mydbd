@@ -14,22 +14,42 @@ import java.util.Map;
 
 public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
 
-    /** 今日终端报警数 */
-    @Select("SELECT count(*) FROM traj.traj_warn_info WHERE start_warn_time::date = CURRENT_DATE")
-    long countTodayWarnings();
+    /**
+     * 今日终端报警数。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回 0
+     */
+    @Select("""
+            <script>
+            SELECT count(*) FROM traj.traj_warn_info
+             WHERE start_warn_time::date = CURRENT_DATE
+            <if test="plates != null">
+              AND plate_no IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
+            </script>
+            """)
+    long countTodayWarnings(@Param("plates") java.util.Collection<String> plates);
 
     /**
      * 有轨迹的在途车辆数（监控域直接读取 traj schema，避免跨模块依赖）
      * 性能：终端表驱动 + EXISTS 索引探测，避免 count(DISTINCT) 全量扫描轨迹表。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回 0
      */
     @Select("""
+            <script>
             SELECT count(*)
               FROM traj.traj_terminal t
              WHERE t.valid_mark = 1
                AND EXISTS (SELECT 1 FROM traj.traj_gps_point g
-                            WHERE g.identity_code = t.identity_code LIMIT 1)
+                            WHERE g.identity_code = t.identity_code
+            <if test="plates != null">
+                              AND g.plate_no IN
+                              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
+                            LIMIT 1)
+            </script>
             """)
-    long countActiveVehicles();
+    long countActiveVehicles(@Param("plates") java.util.Collection<String> plates);
 
     /**
      * F17 分页列表（MOD-MON-004 §4.1）：LEFT JOIN base_warn_type 取名称/等级，
@@ -69,6 +89,10 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
                <if test="endTime != null">
                  AND w.start_warn_time &lt; #{endTime}
                </if>
+               <if test="plates != null">
+                 AND w.plate_no IN
+                 <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+               </if>
              </where>
              ORDER BY w.start_warn_time DESC NULLS LAST, w.id DESC
             </script>
@@ -78,10 +102,15 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
                              @Param("typeId") Integer typeId,
                              @Param("handleStatus") Integer handleStatus,
                              @Param("beginTime") LocalDateTime beginTime,
-                             @Param("endTime") LocalDateTime endTime);
+                             @Param("endTime") LocalDateTime endTime,
+                             @Param("plates") java.util.Collection<String> plates);
 
-    /** F17 大屏/面板待处理滚动（§4.2）：只取 handle_status=0（COALESCE 归一） */
+    /**
+     * F17 大屏/面板待处理滚动（§4.2）：只取 handle_status=0（COALESCE 归一）。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回
+     */
     @Select("""
+            <script>
             SELECT w.id, w.plate_no AS "plateNo", w.identity_code AS "identityCode",
                    w.type_id AS "typeId",
                    COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
@@ -98,10 +127,16 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
               FROM traj.traj_warn_info w
               LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
              WHERE COALESCE(w.handle_status, 0) = 0
+            <if test="plates != null">
+              AND w.plate_no IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
              ORDER BY w.start_warn_time DESC NULLS LAST, w.id DESC
              LIMIT #{limit}
+            </script>
             """)
-    List<AlarmVO> selectLatestPending(@Param("limit") int limit);
+    List<AlarmVO> selectLatestPending(@Param("limit") int limit,
+                                      @Param("plates") java.util.Collection<String> plates);
 
     /** 详情单条（§4.5）：含 source_id、rule_id、create_date 等展示列，不存在返回 null */
     @Select("""
@@ -124,35 +159,68 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
             """)
     AlarmVO selectDetail(@Param("id") Long id);
 
-    /** 按类型统计（§4.3）：时间窗口 [begin,end)，JOIN 名称/等级 */
+    /**
+     * 按类型统计（§4.3）：时间窗口 [begin,end)，JOIN 名称/等级。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回
+     */
     @Select("""
+            <script>
             SELECT w.type_id AS "typeId",
                    COALESCE(t.name, '类型 ' || w.type_id) AS "typeName",
                    t.grade_level AS "gradeLevel",
                    count(*) AS "count"
               FROM traj.traj_warn_info w
               LEFT JOIN traj.base_warn_type t ON t.id = w.type_id
-             WHERE w.start_warn_time >= #{begin} AND w.start_warn_time < #{end}
+             WHERE w.start_warn_time &gt;= #{begin} AND w.start_warn_time &lt; #{end}
+            <if test="plates != null">
+              AND w.plate_no IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
              GROUP BY w.type_id, t.name, t.grade_level
              ORDER BY count(*) DESC
+            </script>
             """)
     List<Map<String, Object>> countByType(@Param("begin") LocalDateTime begin,
-                                          @Param("end") LocalDateTime end);
+                                          @Param("end") LocalDateTime end,
+                                          @Param("plates") java.util.Collection<String> plates);
 
-    /** 按状态统计（§4.3）：COALESCE 归一 */
+    /**
+     * 按状态统计（§4.3）：COALESCE 归一。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回
+     */
     @Select("""
+            <script>
             SELECT COALESCE(w.handle_status, 0) AS "handleStatus", count(*) AS "count"
               FROM traj.traj_warn_info w
-             WHERE w.start_warn_time >= #{begin} AND w.start_warn_time < #{end}
+             WHERE w.start_warn_time &gt;= #{begin} AND w.start_warn_time &lt; #{end}
+            <if test="plates != null">
+              AND w.plate_no IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
              GROUP BY COALESCE(w.handle_status, 0)
              ORDER BY 1
+            </script>
             """)
     List<Map<String, Object>> countByStatus(@Param("begin") LocalDateTime begin,
-                                            @Param("end") LocalDateTime end);
+                                            @Param("end") LocalDateTime end,
+                                            @Param("plates") java.util.Collection<String> plates);
 
-    /** 窗口内总数（§4.3） */
-    @Select("SELECT count(*) FROM traj.traj_warn_info WHERE start_warn_time >= #{begin} AND start_warn_time < #{end}")
-    long countInRange(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end);
+    /**
+     * 窗口内总数（§4.3）。
+     * @param plates 可见车牌：null=不限制；空集合调用方提前返回 0
+     */
+    @Select("""
+            <script>
+            SELECT count(*) FROM traj.traj_warn_info
+             WHERE start_warn_time &gt;= #{begin} AND start_warn_time &lt; #{end}
+            <if test="plates != null">
+              AND plate_no IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
+            </script>
+            """)
+    long countInRange(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
+                      @Param("plates") java.util.Collection<String> plates);
 
     /** 报警类型下拉（§4.5）：base_warn_type 有效行 */
     @Select("""

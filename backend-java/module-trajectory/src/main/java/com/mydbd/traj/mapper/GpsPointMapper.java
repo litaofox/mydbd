@@ -3,8 +3,10 @@ package com.mydbd.traj.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.mydbd.traj.entity.GpsPoint;
 import com.mydbd.traj.entity.VehicleOption;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface GpsPointMapper extends BaseMapper<GpsPoint> {
@@ -13,8 +15,11 @@ public interface GpsPointMapper extends BaseMapper<GpsPoint> {
      * 在途车辆（有轨迹点的终端，按设备去重）
      * 性能：终端表驱动 + LATERAL 逐台取最新点（索引探测 500 次），
      * 避免 DISTINCT 全量扫描轨迹表（890 万行约 19s → 亚秒级）。
+     *
+     * @param plates 可见车牌集合：null=不限制（全部数据）；空集合调用方提前返回，不入 SQL
      */
     @Select("""
+            <script>
             SELECT p."identityCode", p."plateNo"
               FROM traj.traj_terminal t
               CROSS JOIN LATERAL (
@@ -25,15 +30,23 @@ public interface GpsPointMapper extends BaseMapper<GpsPoint> {
                      LIMIT 1
               ) p
              WHERE t.valid_mark = 1
+            <if test="plates != null">
+              AND p."plateNo" IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
              ORDER BY p."identityCode"
+            </script>
             """)
-    List<VehicleOption> listActiveVehicles();
+    List<VehicleOption> listActiveVehicles(@Param("plates") Collection<String> plates);
 
     /**
      * 每个终端的最新轨迹点
      * 性能：同上，终端表驱动 + LATERAL（DISTINCT ON 全量扫索引约 53s → 0.5s）。
+     *
+     * @param plates 可见车牌集合：null=不限制；空集合调用方提前返回
      */
     @Select("""
+            <script>
             SELECT p.*
               FROM traj.traj_terminal t
               CROSS JOIN LATERAL (
@@ -46,6 +59,11 @@ public interface GpsPointMapper extends BaseMapper<GpsPoint> {
                      LIMIT 1
               ) p
              WHERE t.valid_mark = 1
+            <if test="plates != null">
+              AND p."plateNo" IN
+              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
+            </script>
             """)
-    List<GpsPoint> listLatestPoints();
+    List<GpsPoint> listLatestPoints(@Param("plates") Collection<String> plates);
 }
