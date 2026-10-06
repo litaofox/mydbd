@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-008 风控规则引擎 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-008 风控规则引擎 · 规则配置、CEP 实时评估、边缘信号分级与引擎概览</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与"边缘触发"口径</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 配置面与评估面的分工</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 引擎概览页</a></li>
+            <li><a href="#s3-2">3.2 新建/编辑规则</a></li>
+            <li><a href="#s3-3">3.3 风险预警分析页</a></li>
+            <li><a href="#s3-4">3.4 视频分析任务（演示链路）</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 规则模型与校验</a></li>
+            <li><a href="#s7-2">7.2 内置 8 条规则种子</a></li>
+            <li><a href="#s7-3">7.3 北斗点评估：超速/疲劳/组合</a></li>
+            <li><a href="#s7-4">7.4 边缘信号评估：SIGNAL 规则</a></li>
+            <li><a href="#s7-5">7.5 冷却去重</a></li>
+            <li><a href="#s7-6">7.6 事件落库与自动建单</a></li>
+            <li><a href="#s7-7">7.7 视频分析占位识别</a></li>
+            <li><a href="#s7-8">7.8 规则热加载</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 定时任务与后台行为</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-008 风控规则引擎</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-008<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F18
+    </p>
+    <p class="cover-meta">事实基准：2026-10-05 源代码（module-risk / module-monitor / processing-service）与 <code>07-risk-tables.sql</code>、<code>03-mon-tables.sql</code></p>
+    <p class="cover-meta">主要代码锚点：<code>RiskRuleController</code> / <code>RiskRuleService</code> / <code>RiskRule</code> / <code>EngineController</code> / <code>EngineStatsService</code>（Java）；<code>cep_engine.py</code> / <code>db.py</code> / <code>risk_engine.py</code> / <code>routes/analysis.py</code>（Python）；前端 <code>RiskRuleList.vue</code> / <code>risk/RiskEvents.vue</code></p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与"边缘触发"口径</h3>
+    <p>风控规则引擎（CEP，Complex Event Processing）把两类输入加工为统一的<strong>风险事件</strong>（<code>mon.risk_event</code>）：</p>
+    <ul>
+      <li><strong>北斗轨迹点</strong>：processing-service 对实时入库的轨迹点做速度/连续驾驶/组合条件评估，产出超速、疲劳、疲劳叠加超速事件；</li>
+      <li><strong>终端边缘信号</strong>：DSM/ADAS 危险动作在<strong>北斗终端侧（边缘计算）</strong>识别完成，平台只接收信号码并按启用规则分级，产出终端信号类事件。</li>
+    </ul>
+    <blockquote class="danger">
+      <p><strong>平台不做全量视频分析。</strong><code>processing-service/app/services/risk_engine.py</code> 模块 docstring 明确"边缘识别+按需调阅，平台不做全量视频分析"。其中的 <code>recognize()</code> 是<strong>确定性占位实现</strong>（按 task_id 字符和派生事件码、固定置信度），仅用于打通演示链路，不是真实视觉模型。真实 DSM/ADAS 事件以终端上报信号为准。该业务规则已于 2026-10-02 由用户确认。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>规则配置 CRUD</td><td>4 类规则（SPEED/FATIGUE/SIGNAL/COMBO），参数 jsonb、冷却、启停、内置保护、软删</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>引擎概览统计</td><td>启用/全部规则数、启用/全部围栏数、今日事件及等级分布、规则事件 TOP5</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>北斗点实时评估</td><td>超速取批内最大速度；疲劳用 LAG 窗口切会话；组合事件查窗口内疲劳事件</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>边缘信号分级</td><td>evaluate_signal 匹配启用 SIGNAL 规则，冷却后落事件，event_source=上报通道</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>事件自动建单</td><td>事件落库同事务建 PENDING 工单 + CREATE 日志（见 MOD-009）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>规则/围栏 TTL 热加载</td><td>risk_cache_sec 默认 30 秒，改配置无需重启处理服务</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>视频分析占位链路</td><td>POST /api/analysis/video：建任务 → 占位识别 → 信号评估 → 回写结论</td><td><span class="badge amber">演示占位</span></td></tr>
+        <tr><td>真实视频模型推理</td><td>终端侧边缘识别；平台不承载全量推理</td><td><span class="badge gray">不在平台范围</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 配置面与评估面的分工</h3>
+    <p>与电子围栏相同，规则模块也是"<strong>Java 配置、Python 评估、共享数据库</strong>"：</p>
+    <ul>
+      <li>Java（module-risk）：<code>/api/risk/rules</code> 配置管理、<code>/api/risk/engine/summary</code> 概览统计；不做任何事件判定。</li>
+      <li>Python（processing-service）：<code>cep_engine.evaluate_points</code> 与 <code>evaluate_signal</code> 是唯一的事件产生入口；规则以 TTL 缓存从 <code>mon.risk_rule</code> 读取。</li>
+      <li>Java（module-monitor）：<code>/api/monitor/risks</code> 负责事件的查询与人工处置，不产生事件。</li>
+    </ul>
+    <blockquote class="warn">
+      <p><strong>编号沿革提示：</strong><code>07-risk-tables.sql</code> 与 Java/Python 注释中"F18"同时涵盖规则与围栏（脚本标题为"F18 风控规则引擎（CEP）：规则配置、电子围栏……"）。现行编号中 F18 仅指规则引擎（本模块），围栏为 F13（MOD-007）。</p>
+    </blockquote>
+
+    <h3 id="s1-4">1.4 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:180px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>风险事件 risk_event</td><td>引擎唯一产出物，落 <code>mon.risk_event</code>；北斗规则事件、终端信号事件、围栏事件与视频占位事件共用该表。</td></tr>
+        <tr><td>规则 risk_rule</td><td><code>mon.risk_rule</code> 一行配置：规则类型 SPEED/FATIGUE/SIGNAL/COMBO、事件码、jsonb 参数阈值、等级与冷却；内置 8 条 + 可自定义。</td></tr>
+        <tr><td>边缘触发</td><td>DSM/ADAS 事件在终端侧识别，平台只接收信号码（evaluate_signal），不在平台侧跑视频模型。</td></tr>
+        <tr><td>事件码 eventCode</td><td>事件业务编码（SPEED_GENERAL、ADAS_FCW 等）；SIGNAL 规则的 ruleCode 与 eventCode 相同；驾驶评分按 8 个白名单码聚合扣分。</td></tr>
+        <tr><td>冷却 cooldownSec</td><td>同车 × 同规则的最小产出间隔；以 <code>mon.risk_event</code> 的 <code>MAX(event_time)</code> 为权威（<code>last_rule_event_times</code> 一条 SQL 查多规则），处理服务重启后去重语义不变。围栏冷却另走状态表时间戳。</td></tr>
+        <tr><td>每批至多一条 + 冷却</td><td>SPEED/FATIGUE 在同一轨迹批内每车每规则至多产 1 个候选（SPEED 取批内最大速度点）；跨批能否再产取决于距上一条事件是否已过冷却，而非持续记录"在阈上/阈下"状态。</td></tr>
+        <tr><td>驾驶中断</td><td>FATIGUE 评估中相邻轨迹点间隔超过 max_gap_minutes（默认 10 分钟）即认为驾驶中断，连续驾驶计时清零。</td></tr>
+        <tr><td>组合事件 COMBO</td><td>30 分钟窗口内已有疲劳事件、且当前批最大速度达到速度阈值时追加的高风险事件。</td></tr>
+        <tr><td>规则热加载</td><td>Python 侧 <code>_rules()</code> TTL 缓存（risk_cache_sec，默认 30 秒），配置改后无需重启即生效。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">分级超速阈值管理</div>
+        <div class="sc-desc">保留内置"一般超速 ≥100km/h（中风险、冷却 5 分钟）"与"严重超速 ≥120km/h（高风险、冷却 3 分钟）"，也可按企业制度调整阈值或新增自定义超速规则。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">疲劳驾驶制度落地</div>
+        <div class="sc-desc">内置规则按连续驾驶 240 分钟、点间隔超 10 分钟视为中断判定；命中即高风险事件并自动建单，冷却 30 分钟，坐席须按 SLA 15 分钟（高风险）处置。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">终端 DSM/ADAS 信号接警</div>
+        <div class="sc-desc">终端识别疲劳、分心、前向碰撞、车道偏离后上报信号码；平台仅对启用中规则对应信号落事件并定级，坐席在风险预警分析页统一接警。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">疲劳叠加超速组合预警</div>
+        <div class="sc-desc">内置 COMBO 规则：30 分钟窗口内已发生疲劳事件、且当前批最大速度 ≥100km/h，再产一条高风险组合事件，用于识别最危险的驾驶状态。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">平台运维/演示</div>
+        <div class="sc-name">引擎运行态势一览</div>
+        <div class="sc-desc">风控规则页顶部 4 张卡：启用/全部规则、启用/全部围栏、今日事件（按等级着色）、规则事件 TOP5，用于演示与日常巡检引擎是否在产出事件。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+
+    <h3 id="s3-1">3.1 引擎概览页</h3>
+    <p>菜单路径：<strong>系统管理 → 风控规则</strong>（菜单 id=904，父菜单 900，路由 <code>/system/rules</code>，权限 <code>risk:rule:view</code>；维护按钮 id=913 <code>risk:rule:edit</code>）。</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入页面</div>
+        <div class="s-desc">RiskRuleList.vue 挂载即并发拉取引擎概览与规则分页。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">查看四张统计卡</div>
+        <div class="s-desc">启用规则数/全部规则数、启用围栏/全部围栏、今日事件总数与等级文字、规则触发 TOP5。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">筛选规则</div>
+        <div class="s-desc">按规则编码、名称、类型（4 类）、状态组合过滤。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">阅读触发条件</div>
+        <div class="s-desc">列表"触发条件"列由 paramsText 把 jsonb 参数翻译为自然语言（如"速度 ≥ 100 km/h"），内置规则带"内置"标签。</div>
+      </div>
+    </div>
+    <h4>引擎概览（EngineSummaryVO）七字段</h4>
+    <table>
+      <thead><tr><th>字段</th><th>含义</th><th>口径</th></tr></thead>
+      <tbody>
+        <tr><td><code>ruleEnabled / ruleTotal</code></td><td>启用规则数 / 全部有效规则数</td><td>mon.risk_rule，valid_mark=1</td></tr>
+        <tr><td><code>fenceEnabled / fenceTotal</code></td><td>启用围栏数 / 全部有效围栏数</td><td>mon.risk_geo_fence（MOD-007）</td></tr>
+        <tr><td><code>todayEventCount</code></td><td>今日事件总数</td><td>event_time &gt;= CURRENT_DATE，含围栏事件</td></tr>
+        <tr><td><code>todayLevelCount</code></td><td>今日事件按等级分组计数</td><td>前端按 1/2/3 着色展示</td></tr>
+        <tr><td><code>ruleTop5</code></td><td>规则事件触发 TOP5</td><td>按 rule_id 分组；围栏事件 rule_id 为 NULL，不计入</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s3-2">3.1 新建/编辑规则</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">打开表单抽屉</div>
+        <div class="s-desc">「新增规则」按钮受 v-perm risk:rule:edit 控制；编码正则 ^[A-Z][A-Z0-9_]{2,39}$。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">选择类型</div>
+        <div class="s-desc">SPEED 速度阈值 / FATIGUE 连续驾驶 / SIGNAL 终端信号 / COMBO 组合事件；表单按类型动态切换参数输入（DEFAULT_PARAMS 与 8 条种子同值）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">SIGNAL 选信号码</div>
+        <div class="s-desc">SIGNAL 类型编码为下拉四选一：DSM_FATIGUE / DSM_DISTRACTION / ADAS_FCW / ADAS_LDW；创建时 eventCode 自动等于 ruleCode。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">设置等级与冷却</div>
+        <div class="s-desc">riskLevel 1/2/3；cooldownSec 0~86400 秒；可先停用保存（status=0）稍后启用。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">保存与热加载</div>
+        <div class="s-desc">编码/类型/事件码创建后不可变（编辑仅可改名称、等级、params、冷却、状态、备注）；内置规则 built_in=1 禁删，删除为 valid_mark=0 软删；约 30 秒后评估面生效。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 风险预警分析页</h3>
+    <p>菜单路径：<strong>实时监控 → 风险预警分析</strong>（菜单 id=13，路由 <code>/risk</code>，页面 <code>risk/RiskEvents.vue</code>，权限 <code>risk:view</code>）。</p>
+    <ul>
+      <li><strong>概览</strong>：4 张统计卡 + F21 漏斗卡（事件总数 → 工单数 → 干预工单数 → 闭环数，以及干预率/闭环率，口径见 MOD-009）。</li>
+      <li><strong>筛选</strong>：事件来源（DSM/ADAS/national/vendor/北斗）、等级、处置状态、命中规则（下拉来自 <code>/rules/all</code>，含停用项供历史筛选；无权限时静默降级）、车牌、城市钻取 tag（时间窗支持 query 恢复）。</li>
+      <li><strong>处理</strong>：每行"去处理"先调 <code>POST /api/risk/orders/ensure/{eventId}</code> 确保工单存在，再打开 <code>OrderDetailDrawer</code>（见 MOD-009）。</li>
+      <li><strong>图表</strong>：ECharts 事件类型饼图；页面还含视频分析任务表（展示 /api/analysis/video 任务记录）。</li>
+    </ul>
+
+    <h3 id="s3-4">3.4 视频分析任务（演示链路）</h3>
+    <p>风险预警分析页的视频分析任务表展示 <code>mon.video_analysis</code> 记录。该链路由 <code>POST /api/analysis/video</code>（服务令牌）驱动：先 upsert RUNNING 任务 → 占位识别 → evaluate_signal → 回写 SUCCESS 结论与事件数。<strong>产品上不提供"上传视频做 AI 分析"的用户操作</strong>，该接口面向终端/联调方。</p>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <div class="shot">
+      <div class="sh-icon">⚙️</div>
+      <div class="sh-t">截图 4-1：风控规则配置页（系统管理 → 风控规则，/system/rules）</div>
+      <div class="sh-p">应截：顶部 4 卡（启用/全部规则、启用/全部围栏、今日事件含等级文字、TOP 规则）；筛选区；规则列表含"触发条件"自然语言列与"内置"标签；右上新增规则按钮。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📝</div>
+      <div class="sh-t">截图 4-2：规则编辑抽屉（SPEED / FATIGUE / SIGNAL / COMBO 四张参数形态）</div>
+      <div class="sh-p">应截：类型选择后切换的参数表单——SPEED 速度阈值数字框；FATIGUE 连续分钟+中断间隔；SIGNAL 四信号码下拉；COMBO 窗口分钟+速度阈值；以及等级、冷却秒数、状态开关。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🚨</div>
+      <div class="sh-t">截图 4-3：风险预警分析页（实时监控 → 风险预警分析，/risk）</div>
+      <div class="sh-p">应截：4 概览卡 + F21 漏斗卡；来源/等级/处置状态/命中规则/车牌筛选条与城市钻取 tag；事件列表行与"去处理"按钮；事件类型饼图；视频分析任务表。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🎬</div>
+      <div class="sh-t">截图 4-4：视频分析任务结论（占位链路）</div>
+      <div class="sh-p">应截：任务表一行 SUCCESS 记录，result_summary 形如"检出 终端信号·疲劳（DSM_FATIGUE），按规则定级 3 级，已生成风险事件"或"未匹配启用规则或处于冷却窗口"。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <ul>
+      <li><strong>策略可调不改代码</strong>：阈值、等级、冷却全部配置化，安全管理员当天即可把新制度推到评估面（≤30 秒热加载）。</li>
+      <li><strong>一类事件一套出口</strong>：北斗点算出的事件与终端边缘信号事件同表同结构，坐席只面对一个风险列表与一套工单流程。</li>
+      <li><strong>噪声受控</strong>：同车同规则冷却窗口去重 + 首见不补报，事件流可被坐席真正消费，而不是被海量重复点淹没。</li>
+      <li><strong>责任可溯</strong>：事件带 rule_id/fence_id 与 title 中文名快照，规则事后改名不影响历史事件语义；误报可在闭环环节标记 FALSE_ALARM 并从评分中剔除（MOD-010）。</li>
+      <li><strong>边缘架构省带宽</strong>：平台不接全量视频流，只接信号与按需调阅片段，符合已确认的视频预警处理规则。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端</div>
+        <div class="al-body">
+          <span class="node"><b>RiskRuleList.vue</b> 规则配置 + 引擎概览</span>
+          <span class="node"><b>risk/RiskEvents.vue</b> 事件查询/漏斗/处理入口</span>
+          <span class="node"><b>api/risk.ts</b> 规则、引擎、围栏、工单 API 封装</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">配置面<br>module-risk</div>
+        <div class="al-body">
+          <span class="node"><b>RiskRuleController</b> /api/risk/rules</span>
+          <span class="node"><b>RiskRuleService</b> 类型白名单/参数范围/不可变字段/软删</span>
+          <span class="node"><b>RiskRule</b> mon.risk_rule（params jsonb + JacksonTypeHandler）</span>
+          <span class="node"><b>EngineController</b> GET /api/risk/engine/summary</span>
+          <span class="node"><b>EngineStatsService + RiskStatsMapper</b> 概览统计 SQL</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">查询处置面<br>module-monitor</div>
+        <div class="al-body">
+          <span class="node"><b>MonitorController</b> GET /api/monitor/risks、POST /risks/{id}/handle、GET /risks/type-stats</span>
+          <span class="node"><b>MonitorService</b> 按 deptScope 车牌集过滤；handleRisk fail-closed</span>
+          <span class="node"><b>RiskEventMapper.relatedRisks</b> 同车牌 ±30 分钟关联事件</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">评估面<br>processing-service</div>
+        <div class="al-body">
+          <span class="node"><b>cep_engine.evaluate_points</b> SPEED/FATIGUE/COMBO + 围栏</span>
+          <span class="node"><b>cep_engine.evaluate_signal</b> SIGNAL 信号匹配</span>
+          <span class="node"><b>risk_engine.recognize</b> 视频占位识别（非真实模型）</span>
+          <span class="node"><b>db</b> 规则/冷却/会话/事件+建单 SQL</span>
+          <span class="node"><b>routes/ingest.py · routes/analysis.py</b> 两个事件入口（服务令牌）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层</div>
+        <div class="al-body">
+          <span class="node"><b>mon.risk_rule</b> 规则配置</span>
+          <span class="node"><b>mon.risk_event</b> 风险事件（含 rule_id/fence_id/title 扩展列）</span>
+          <span class="node"><b>mon.video_analysis</b> 视频分析任务</span>
+          <span class="node"><b>mon.risk_work_order / _log / _sla</b> 自动建单（MOD-009）</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><strong>风控规则页 RiskRuleList.vue</strong>：顶部 4 张概览卡（启用/全部规则、启用/全部围栏、今日事件分级着色、规则触发 TOP5），下方规则分页表；挂载时并发请求 summary 与 page，互不阻塞。</li>
+      <li><strong>动态参数表单</strong>：按 ruleType 渲染不同参数输入，默认值取前端 DEFAULT_PARAMS（与 8 条种子同值）；"触发条件"列由 paramsText 把 jsonb 参数翻译为中文自然语言。</li>
+      <li><strong>SIGNAL 下拉锁定</strong>：SIGNAL 类型的编码只能从 DSM_FATIGUE/DSM_DISTRACTION/ADAS_FCW/ADAS_LDW 四选一；内置规则行显示"内置"标签且编码输入禁用。</li>
+      <li><strong>事件页 RiskEvents.vue</strong>：来源/等级/状态/规则/车牌/城市筛选 + 类型饼图；行内"去处理"对无工单事件调用 ensureOrder 后跳工单；相关事件抽屉用 relatedRisks（同车牌 ±30 分钟）。</li>
+      <li><strong>权限渲染</strong>：维护按钮 v-perm risk:rule:edit；事件处置按钮 v-perm risk:order:handle；菜单 904/913 种子授权。</li>
+    </ul>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 规则模型与校验</h3>
+    <p><code>RiskRule</code>（<code>@TableName("mon.risk_rule")</code>）字段：ruleCode、ruleName、ruleType、eventCode、riskLevel(1/2/3)、params（jsonb，<code>JacksonTypeHandler</code> 映射 <code>Map&lt;String,Object&gt;</code>）、cooldownSec、status、builtIn、validMark、remark + 审计四字段。</p>
+    <table>
+      <thead><tr><th>校验点</th><th>规则（RiskRuleService + RuleSaveRequest）</th></tr></thead>
+      <tbody>
+        <tr><td>ruleType 白名单</td><td>仅 SPEED / FATIGUE / SIGNAL / COMBO 四种</td></tr>
+        <tr><td>ruleCode 形态</td><td>正则 <code>^[A-Z][A-Z0-9_]{2,39}$</code>；有效规则内唯一（部分唯一索引 uk_risk_rule_code WHERE valid_mark=1）</td></tr>
+        <tr><td>SIGNAL 编码</td><td>必须 ∈ {DSM_FATIGUE, DSM_DISTRACTION, ADAS_FCW, ADAS_LDW}；创建时 eventCode=ruleCode</td></tr>
+        <tr><td>不可变字段</td><td>编码、类型、事件码创建后不可修改（update 仅改名称/等级/params/冷却/状态/备注）</td></tr>
+        <tr><td>SPEED 参数</td><td>speedKmh ∈ [1,220]</td></tr>
+        <tr><td>FATIGUE 参数</td><td>continuousMin ∈ [1,1440]；gapMin ∈ [1,120]</td></tr>
+        <tr><td>COMBO 参数</td><td>windowMin ∈ [1,720]；speedKmh ∈ [1,220]</td></tr>
+        <tr><td>SIGNAL 参数</td><td>无阈值参数（params 为空对象即可）</td></tr>
+        <tr><td>冷却</td><td>cooldownSec ∈ [0,86400]</td></tr>
+        <tr><td>删除保护</td><td>built_in=1 禁删；删除=valid_mark=0 软删</td></tr>
+      </tbody>
+    </table>
+
+    <h4>规则保存接口（POST/PUT）请求体字段</h4>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>要求</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td><code>ruleCode</code></td><td>string</td><td>必填；^[A-Z][A-Z0-9_]{2,39}$；有效规则唯一</td><td>创建后不可改；SIGNAL 时即事件码四选一</td></tr>
+        <tr><td><code>ruleName</code></td><td>string</td><td>必填</td><td>写入事件 title 快照</td></tr>
+        <tr><td><code>ruleType</code></td><td>enum</td><td>SPEED/FATIGUE/SIGNAL/COMBO</td><td>创建后不可改</td></tr>
+        <tr><td><code>eventCode</code></td><td>string</td><td>SIGNAL 必须等于 ruleCode；其他类型按业务码</td><td>创建后不可改</td></tr>
+        <tr><td><code>riskLevel</code></td><td>int</td><td>1/2/3</td><td>决定工单 SLA 档位与评分扣分</td></tr>
+        <tr><td><code>params</code></td><td>object</td><td>按类型白名单键 + 取值区间校验；SIGNAL 传 {}</td><td>jsonb 落库</td></tr>
+        <tr><td><code>cooldownSec</code></td><td>int</td><td>0~86400</td><td>0 表示不去重（不建议）</td></tr>
+        <tr><td><code>status</code></td><td>int</td><td>0/1</td><td>停用后最长 30 秒退出评估</td></tr>
+        <tr><td><code>remark</code></td><td>string</td><td>可空</td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-2">7.2 内置 8 条规则种子</h3>
+    <p><code>07-risk-tables.sql</code> §7.5 幂等插入（built_in=1，<code>WHERE NOT EXISTS</code> 防重复）：</p>
+    <table>
+      <thead><tr><th>rule_code</th><th>名称</th><th>类型</th><th>等级</th><th>params</th><th>冷却(秒)</th></tr></thead>
+      <tbody>
+        <tr><td>SPEED_GENERAL</td><td>一般超速</td><td>SPEED</td><td>2 中</td><td>{"speedKmh":100}</td><td>300</td></tr>
+        <tr><td>SPEED_SEVERE</td><td>严重超速</td><td>SPEED</td><td>3 高</td><td>{"speedKmh":120}</td><td>180</td></tr>
+        <tr><td>FATIGUE_DRIVE</td><td>疲劳驾驶</td><td>FATIGUE</td><td>3 高</td><td>{"continuousMin":240,"gapMin":10}</td><td>1800</td></tr>
+        <tr><td>DSM_FATIGUE</td><td>终端信号·疲劳</td><td>SIGNAL</td><td>3 高</td><td>{}</td><td>600</td></tr>
+        <tr><td>DSM_DISTRACTION</td><td>终端信号·分心</td><td>SIGNAL</td><td>2 中</td><td>{}</td><td>600</td></tr>
+        <tr><td>ADAS_FCW</td><td>终端信号·前向碰撞风险</td><td>SIGNAL</td><td>3 高</td><td>{}</td><td>300</td></tr>
+        <tr><td>ADAS_LDW</td><td>终端信号·车道偏离</td><td>SIGNAL</td><td>2 中</td><td>{}</td><td>300</td></tr>
+        <tr><td>COMBO_FATIGUE_SPEED</td><td>疲劳叠加超速</td><td>COMBO</td><td>3 高</td><td>{"windowMin":30,"speedKmh":100}</td><td>1800</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-3">7.3 北斗点评估：超速/疲劳/组合</h3>
+    <p><code>evaluate_points(rows)</code> 在轨迹点入库后执行，先按 identity_code（缺省 plate_no）分组、按 gps_time 排序，然后逐车评估：</p>
+    <h4>超速（SPEED）</h4>
+    <ul>
+      <li>取<strong>本批最大速度点</strong>，对每条启用 SPEED 规则判 <code>max_speed &gt;= speedKmh</code>；同批内同规则至多落一条事件，事件点取最大速度点。</li>
+    </ul>
+    <h4>疲劳（FATIGUE）</h4>
+    <ul>
+      <li>调 <code>db.latest_driving_session</code>：仅取 speed&gt;0 的点，用 SQL <code>LAG</code> 窗口按 gapMin 间隔切分会话；回看 continuousMin+gapMin 分钟；</li>
+      <li>命中条件：会话时长 ≥ continuousMin <strong>且末点未中断</strong>（仍在驾驶）；每车每批每规则至多 1 个候选。</li>
+    </ul>
+    <h4>组合（COMBO）</h4>
+    <ul>
+      <li>窗口内存在 FATIGUE_DRIVE 事件：库内查 <code>db.has_recent_rule_event(plate, FATIGUE_RULE_ID, since)</code>，或本批内存 batch_events 中已有疲劳事件；</li>
+      <li><strong>且</strong>当前批最大速度 ≥ 规则 speedKmh，两个条件同时满足才产出。</li>
+    </ul>
+
+    <h3 id="s7-4">7.4 边缘信号评估：SIGNAL 规则</h3>
+    <p><code>evaluate_signal(channel, event_code, plate_no, identity_code, lng, lat, speed, media_url, confidence)</code>：</p>
+    <ol>
+      <li>从启用规则缓存中找 <code>rule_type='SIGNAL' AND event_code = 入参</code> 的规则；找不到返回 None（不落事件）；</li>
+      <li>冷却判定通过后落事件：<code>event_source</code>=channel 大写并截断 16 字符（如 DSM/ADAS）；<code>confidence</code> 用传入值，缺省 0.88；media_url 随事件保存（按需调阅的截图/片段地址）；</li>
+      <li>事件 title=rule_name 快照，risk_level 取规则等级。</li>
+    </ol>
+
+    <h3 id="s7-5">7.5 冷却去重</h3>
+    <p><code>db.last_rule_event_times(plate, rule_ids)</code> 一条 SQL 查 <code>mon.risk_event</code> 中同车牌各 rule_id 的 <code>MAX(event_time)</code>；<code>_cooled(last_time, point_time, cooldown_sec)</code> 判定是否已出窗口。围栏冷却另走 <code>risk_fence_state</code> 的 last_enter_time/last_exit_time（见 MOD-007）。这保证同车同规则在冷却窗口内无论来多少批点都只产生一条事件。</p>
+
+    <h3 id="s7-6">7.6 事件落库与自动建单</h3>
+    <p><code>db.insert_risk_events(rows)</code> 是规则事件与围栏事件的<strong>共同落库函数</strong>，在同一数据库事务内完成：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">插入事件</div>
+        <div class="s-desc">INSERT mon.risk_event（event_source='北斗'、confidence=1.00、title=规则/围栏中文名快照）RETURNING id、risk_level、event_time。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">读取 SLA</div>
+        <div class="s-desc">读 mon.risk_order_sla（进程内 60 秒缓存；缺省高 60 分/中 30 分等待遇由 SLA 种子实际为 15/60/240）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">创建工单</div>
+        <div class="s-desc">INSERT mon.risk_work_order：order_no=mon.fmt_order_no()、status=PENDING、deadline=event_time+limit_min、creator='cep-engine'。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">写流转日志</div>
+        <div class="s-desc">INSERT risk_order_log：action='CREATE'、operator='CEP'、remark='风险事件自动建单'。</div>
+      </div>
+    </div>
+    <blockquote class="tip">
+      <p>事件与工单在同一事务里提交，不存在"有事件无工单"的中间态；唯一约束 <code>uk_risk_order_event(event_id)</code> 兜底重复建单（Java 侧 ensureOrder 捕获 DuplicateKeyException 返回既有单）。</p>
+    </blockquote>
+
+    <h3 id="s7-7">7.7 视频分析占位识别</h3>
+    <p><code>routes/analysis.py</code> 的 <code>POST /api/analysis/video</code>（整路由挂 <code>verify_service_token</code>）：</p>
+    <ol>
+      <li>组装 task（taskId 缺省 VA+uuid 前缀），<code>db.upsert_video_analysis</code> 置 RUNNING；</li>
+      <li><code>risk_engine.recognize(task_id, channel, event_code)</code>：若请求显式带 eventCode 则优先采用；否则按 task_id 字符和<strong>确定性派生</strong>。内置候选 <code>_PROFILES</code>：DSM → DSM_FATIGUE(0.91)/DSM_DISTRACTION(0.84)；ADAS → ADAS_FCW(0.88)/ADAS_LDW(0.82)；</li>
+      <li>候选交 <code>evaluate_signal</code> 走与真实终端信号完全相同的匹配/冷却/落事件路径；</li>
+      <li>更新任务 SUCCESS：落事件时 summary="检出 X，按规则定级 N 级，已生成风险事件"，event_count=1；否则为"未匹配启用规则或处于冷却窗口"，event_count=0。</li>
+    </ol>
+    <p><code>/api/ingest/load-sample</code> 还会幂等导入 <code>samples/driver_events.json</code> 的当日事件（等级取 extra.dsm_level，默认 2），同一天只导一次（<code>count_risk_events_on</code> 判重）。</p>
+
+    <h3 id="s7-8">7.8 规则热加载</h3>
+    <p><code>cep_engine._rules()</code> 与 <code>_fences()</code> 共用 TTL 缓存（<code>settings.risk_cache_sec</code> 默认 <strong>30 秒</strong>），到期后 <code>db.load_enabled_rules()</code> 重查全部 status=1 且 valid_mark=1 的规则（含 params jsonb）。规则调整无需重启、无刷新接口。</p>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>引擎有两条事件产生路径，在"落 mon.risk_event + 自动建单"处汇合：</p>
+    <div class="branch">
+      <div class="arm">
+        <div class="arm-h">路径 A：北斗轨迹点 → 规则事件（已上线主链路）</div>
+        <div class="arm-b">
+          终端/模拟器 <code>POST /api/ingest/traj</code> → 轨迹分片入库 → <code>evaluate_points</code> 分组排序 → SPEED（批内最大速度）/ FATIGUE（LAG 会话）/ COMBO（窗口疲劳+当前超速）→ 冷却 SQL → insert risk_event + 建 PENDING 单。
+        </div>
+      </div>
+      <div class="arm alt">
+        <div class="arm-h">路径 B：边缘信号 → SIGNAL 事件（终端为主，视频接口为占位）</div>
+        <div class="arm-b">
+          终端边缘识别 DSM/ADAS → 平台接收信号（演示由 <code>POST /api/analysis/video</code> 的 recognize 占位产生候选）→ <code>evaluate_signal</code> 匹配启用 SIGNAL 规则 → 冷却 → 同一 insert_risk_events 落事件建单；video_analysis 任务回写 SUCCESS。
+        </div>
+      </div>
+    </div>
+    <p>汇合之后：<strong>风险预警分析页</strong>查询（按数据范围过滤）→ 坐席"去处理"ensure 工单 → 工单中心认领/分派/闭环（MOD-009）→ 通知中心推送（MOD-011）；事件同时供评分（MOD-010，FALSE_ALARM 闭环会被排除）与画像统计。</p>
+
+    <h3 id="s8-1">8.1 异常与降级路径</h3>
+    <table>
+      <thead><tr><th>异常情形</th><th>系统行为</th><th>影响面</th></tr></thead>
+      <tbody>
+        <tr><td>evaluate_points 评估异常</td><td>ingest.py try/except 捕获并 print 堆栈</td><td>本批轨迹正常入库，本批不产任何事件（含围栏）</td></tr>
+        <tr><td>疲劳 LAG 会话查询失败</td><td>异常向上抛入同一 try/except</td><td>本批 SPEED/FATIGUE/COMBO 评估整体跳过</td></tr>
+        <tr><td>SIGNAL 无匹配启用规则</td><td>evaluate_signal 返回 None</td><td>不落事件不建单；视频任务记 event_count=0 与原因文案</td></tr>
+        <tr><td>处于冷却窗口</td><td>候选被 _cooled 拦截</td><td>不落事件；视频任务 summary 标明"冷却窗口"</td></tr>
+        <tr><td>建单事务失败</td><td>事件与工单整事务回滚</td><td>下一批重新评估时冷却未命中，会再次尝试产出</td></tr>
+        <tr><td>SLA 缓存过期瞬间 SLA 表异常</td><td>建单流程随事务失败回滚</td><td>无降级 SLA 兜底写库（默认值仅在加载逻辑内）</td></tr>
+        <tr><td>规则参数键被误改</td><td>Python 侧 .get 缺省值兜底</td><td>规则可能按代码缺省阈值评估；配置评审需对照参数契约</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/索引</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mon.risk_rule</code></td>
+          <td>规则配置</td>
+          <td>rule_code/rule_type/event_code/risk_level/params jsonb/cooldown_sec/status/built_in/valid_mark；uk_risk_rule_code 部分唯一索引；idx_risk_rule_type</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_rule">DDL · tbl-mon_risk_rule</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_event</code></td>
+          <td>风险事件统一落点</td>
+          <td>event_code/event_source/plate_no/identity_code/event_time/lng/lat/speed/risk_level/confidence/media_url/handle_status/handle_remark；07 脚本 ALTER 增加 rule_id、fence_id、title（中文名快照）；time/level/status/rule 索引</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_event">DDL · tbl-mon_risk_event</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.video_analysis</code></td>
+          <td>视频分析任务记录（演示链路）</td>
+          <td>task_id、plate_no、channel、clip_url、status(RUNNING/SUCCESS)、result_summary、event_count</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_video_analysis">DDL · tbl-mon_video_analysis</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>事件自动建单写入的 <code>mon.risk_work_order</code> / <code>mon.risk_order_log</code> / <code>mon.risk_order_sla</code> 详见 MOD-009。</p>
+
+    <h3 id="s9-1">9.1 risk_event 来源与字段取值速查</h3>
+    <table>
+      <thead><tr><th>来源链路</th><th>event_source</th><th>confidence</th><th>rule_id / fence_id</th><th>title 快照</th></tr></thead>
+      <tbody>
+        <tr><td>北斗 SPEED/FATIGUE/COMBO</td><td>北斗</td><td>1.00</td><td>rule_id 有值 / fence_id NULL</td><td>规则中文名</td></tr>
+        <tr><td>终端 SIGNAL（DSM/ADAS）</td><td>channel 大写截断 16 字符</td><td>传入值，缺省 0.88</td><td>rule_id 有值 / fence_id NULL</td><td>规则中文名</td></tr>
+        <tr><td>视频占位接口</td><td>同上（走 evaluate_signal）</td><td>固定 0.91/0.84/0.88/0.82</td><td>rule_id 有值</td><td>规则中文名</td></tr>
+        <tr><td>围栏进出（MOD-007）</td><td>北斗</td><td>1.00</td><td>rule_id NULL / fence_id 有值</td><td>进入/离开围栏·{围栏名}</td></tr>
+        <tr><td>样例导入</td><td>取 driver_events.json</td><td>取样例值</td><td>按样例字段</td><td>取样例标题</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p><strong>评分/画像的口径差异（与 MOD-010 一致）：</strong>驾驶评分只认 8 个白名单事件码，且同码当日取 MAX(risk_level) 扣一次，并排除 FALSE_ALARM 闭环事件；画像趋势、黑点、排行则对全部事件统计，不做白名单过滤。排查"事件有、评分没扣"时先核对这三点。</p>
+    </blockquote>
+
+    <h2 id="s10">10 接口清单</h2>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限/鉴权</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/risk/rules</code></td><td>规则分页（ruleCode/ruleName/ruleType/status）</td><td>risk:rule:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-rule">grp-risk-rule</a></td></tr>
+        <tr><td>GET <code>/api/risk/rules/all</code></td><td>全部有效行（含停用，供事件页历史筛选）</td><td>risk:rule:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-rule">grp-risk-rule</a></td></tr>
+        <tr><td>GET/POST/PUT/DELETE <code>/api/risk/rules…</code></td><td>详情/新建/编辑/状态/软删</td><td>写操作 risk:rule:edit + @AuditLog</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-rule">grp-risk-rule</a></td></tr>
+        <tr><td>GET <code>/api/risk/engine/summary</code></td><td>引擎概览（EngineSummaryVO 七字段）</td><td>risk:rule:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+        <tr><td>GET <code>/api/monitor/risks</code></td><td>事件分页（来源/等级/状态/ruleId/车牌/城市；按 deptScope 过滤）</td><td>登录态 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+        <tr><td>POST <code>/api/monitor/risks/{id}/handle</code></td><td>事件直接处置（fail-closed 404）</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+        <tr><td>GET <code>/api/monitor/risks/type-stats</code></td><td>事件类型统计（饼图）</td><td>登录态 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+        <tr><td>POST <code>/api/ingest/traj</code>（Python）</td><td>轨迹推送，路径 A 触发</td><td>服务令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+        <tr><td>POST <code>/api/analysis/video</code>（Python）</td><td>视频分析占位链路，路径 B 触发</td><td>服务令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-engine">grp-risk-engine</a></td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p><strong>鉴权双轨：</strong>Java 端点走用户登录态 + <code>@RequiresPerm</code>（risk:rule:view/edit、risk:order:handle）与数据范围；Python 两个触发入口（/api/ingest/traj、/api/analysis/video）只认 <code>verify_service_token</code> 服务令牌，不区分用户，调用方负责身份真实性，因此生产上必须限制在可信内网。</p>
+    </blockquote>
+
+    <h2 id="s11">11 定时任务与后台行为</h2>
+    <p>规则引擎本身<strong>没有定时扫描任务</strong>——事件完全由数据到达驱动（轨迹批或信号请求）。相关后台行为：</p>
+    <table>
+      <thead><tr><th>行为</th><th>机制</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>规则/围栏缓存</td><td>TTL 30 秒懒加载</td><td>进程内存，无主动推送</td></tr>
+        <tr><td>SLA 读取缓存</td><td>db._load_sla 60 秒进程缓存</td><td>自动建单算 deadline 用；SLA 调整后最多 60 秒延迟（仅影响新单）</td></tr>
+        <tr><td>样例事件导入</td><td>load-sample 请求内</td><td>当日 driver_events.json 幂等导入，非定时</td></tr>
+        <tr><td>引擎概览统计</td><td>实时 SQL</td><td>今日事件 count(event_time&gt;=CURRENT_DATE)、等级分组、规则 TOP5（rule_id NULL 的围栏事件被排除在规则 TOP 外）</td></tr>
+        <tr><td>存活探针</td><td>GET /health（Python）</td><td>仅返回 {"status":"UP"}，无 CEP 处理指标</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>规则配置与评估引擎分进程</strong>：配置面走 Java/MyBatis-Plus 事务与权限体系，评估面在数据接入最近的 Python 服务内执行，两者独立伸缩、独立故障域，靠 mon.risk_rule 表解耦。</li>
+      <li><strong>params 使用 jsonb</strong>：4 类规则参数结构不同且会演进，jsonb + JacksonTypeHandler 避免频繁加列；校验规则放在 Service 白名单内，保证 JSON 不会"配什么算什么"。</li>
+      <li><strong>疲劳判定用 SQL LAG 窗口会话切分</strong>：连续驾驶本质是会话问题（gap 断档），窗口函数在库内完成排序与分段，比把全部历史点拉进应用层更省内存，也天然覆盖跨批历史。</li>
+      <li><strong>冷却以事件表 MAX(event_time) 为权威</strong>：不在内存记冷却状态，处理服务重启后去重语义不变；一条 SQL 取多规则最近事件时间，开销低。</li>
+      <li><strong>边缘信号与北斗点共用落库/建单函数</strong>：insert_risk_events 统一出口保证两类事件的工单、通知、评分行为完全一致。</li>
+      <li><strong>视频识别做成可替换的占位</strong>：recognize 与 evaluate_signal 之间以 (channel,eventCode,confidence) 三元组为契约，终端真实信号接入后只换来源不改规则与事件结构（risk_engine.py docstring 已声明此演进意图）。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>证据</th><th>影响</th><th>对策</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>占位视觉识别被误认为真实 AI</td>
+          <td>recognize 按 task_id 字符和确定性派生，固定置信度</td>
+          <td>演示结论不代表模型能力；误用会产生"假检出"</td>
+          <td>文档与 UI 明确"演示占位"；生产关闭 /api/analysis/video 或仅放通终端侧来源；接入真实边缘信号后下线该入口</td>
+        </tr>
+        <tr>
+          <td>评估异常仅 print</td>
+          <td>ingest.py try/except 后 print 堆栈</td>
+          <td>引擎停摆无平台侧告警</td>
+          <td>日志采集 + 失败率监控；补 CEP 层面的健康指标（当前只有 /health 进程存活）</td>
+        </tr>
+        <tr>
+          <td>热加载 30 秒窗口</td>
+          <td>risk_cache_sec 默认 30</td>
+          <td>紧急停用规则后短时间仍出事件</td>
+          <td>运行手册注明；必要时缩短 TTL 或增加主动失效</td>
+        </tr>
+        <tr>
+          <td>规则参数与评估代码强耦合</td>
+          <td>params 键名（speedKmh/continuousMin/gapMin/windowMin）在 Python 端硬编码读取</td>
+          <td>改参数键名需双端发版；配置无法支持任意自定义规则类型</td>
+          <td>新增规则类型走开发流程；在文档固化参数契约；未来引入表达式/Drools 类规则再放开</td>
+        </tr>
+        <tr>
+          <td>批内超速只取最大速度点</td>
+          <td>evaluate_points 每批每规则至多 1 候选</td>
+          <td>一批内多次超速只产 1 条（冷却语义可接受，但统计次数偏少）</td>
+          <td>作为既定口径记录；如需次数型统计改为逐点评估或增加事件计数列</td>
+        </tr>
+        <tr>
+          <td>批量导入路径不跑 CEP</td>
+          <td>load-sample 直接批量 insert</td>
+          <td>历史数据无超速/疲劳事件，演示需靠 driver_events.json 或在线模拟器</td>
+          <td>需要时提供离线重放工具按时间轴重放轨迹</td>
+        </tr>
+        <tr>
+          <td>规则 TOP5 不含围栏事件</td>
+          <td>RiskStatsMapper 按 rule_id 分组，围栏事件 rule_id 为 NULL</td>
+          <td>概览卡低估围栏事件量</td>
+          <td>概览口径已在前端区分"规则 TOP"；如需要另出围栏触发统计</td>
+        </tr>
+        <tr>
+          <td>参数缺省值分散在两端</td>
+          <td>前端 DEFAULT_PARAMS、种子 SQL、Python .get 缺省三处各持一份默认值</td>
+          <td>调整默认阈值时可能漏改某一处，演示与实际口径漂移</td>
+          <td>以 07 脚本种子为唯一事实源；变更三处同改并补验收</td>
+        </tr>
+        <tr>
+          <td>等级边界三处耦合</td>
+          <td>评分等级边界 90/75/60/40 同时出现在 ScoreConstants、14 脚本字典注释、ProfileConstants</td>
+          <td>调整等级口径需多点同步，漏改导致评分与画像展示不一致</td>
+          <td>等级调整走统一变更清单（MOD-010 风险节有同样记录）</td>
+        </tr>
+        <tr>
+          <td>视频占位入口暴露在服务网络</td>
+          <td>/api/analysis/video 仅服务令牌保护，无用户权限概念</td>
+          <td>持有服务令牌的调用方可人为制造"检出"事件</td>
+          <td>生产环境网络隔离该端点；接入真实边缘信号后下线占位实现</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-007-电子围栏.html">MOD-007 电子围栏</a></td><td>同属 CEP：共用 evaluate_points 旁路、30 秒 TTL 缓存机制与 insert_risk_events 落库/建单事务；rule_id 与 fence_id 互斥区分两类事件</td><td>cep_engine.py、db.py</td></tr>
+        <tr><td><a href="MOD-DBD-009-处置工单与坐席干预.html">MOD-009 处置工单</a></td><td>每条规则事件同事务自动建 PENDING 工单；坐席误报闭环（closeResult=FALSE_ALARM）会反向影响评分口径</td><td>insert_risk_events、risk_order_log</td></tr>
+        <tr><td><a href="MOD-DBD-010-驾驶评分与风险画像.html">MOD-DBD-010 评分/画像</a></td><td>评分白名单 8 个事件码与内置种子一一对应；当日同码多事件按 MAX(risk_level) 扣一次；NOT EXISTS 排除 FALSE_ALARM 闭环事件。画像趋势/黑点/排行全量统计本模块事件</td><td>ScoreConstants、ScoreCalcService、ProfileEventMapper</td></tr>
+        <tr><td>MOD-005 实时监控</td><td>风险预警分析页 /api/monitor/risks 是规则事件的主要查询与人工处置入口；type-stats 供饼图；deptScope 数据范围在查询侧追加</td><td>MonitorController</td></tr>
+        <tr><td><a href="MOD-DBD-011-通知中心与多渠道预警.html">MOD-011 通知中心</a></td><td>引擎不直接发通知；事件工单的新建/超时升级/分派/闭环经工单模块触发站内信与 WebSocket</td><td>RiskOrderScheduler → NotifyService</td></tr>
+        <tr><td><a href="MOD-DBD-012-系统配置与数据字典.html">MOD-012 系统配置</a></td><td>事件码与等级中文名由 risk_event_code、risk_level、alarm_type 字典提供（前端筛选项与画像事件名解析依赖）</td><td>09-system-config.sql 种子</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">修改规则阈值后多久生效？</div><div class="vv">最长约 30 秒。Python 侧规则缓存 TTL（risk_cache_sec）到期后重新加载，无需重启；已经落库的历史事件等级/标题不回改。</div></div>
+      <div class="kv"><div class="k">可以自定义任意参数的规则吗？</div><div class="vv">不可以。只能在 4 种类型内按白名单键配阈值（speedKmh/continuousMin/gapMin/windowMin），参数键由评估代码硬编码读取；SIGNAL 规则事件码四选一。新规则类型需要开发。</div></div>
+      <div class="kv"><div class="k">一批点里多次超过 120，为什么只有一条事件？</div><div class="vv">SPEED 每批每车每规则只取批内最大速度点产 1 个候选，再经冷却去重；这是既定口径，事件次数因此偏保守，风险表 s13 已记录。</div></div>
+      <div class="kv"><div class="k">导入历史轨迹为什么没有超速/疲劳事件？</div><div class="vv">/api/ingest/load-sample 只批量 insert 轨迹，不调用 CEP；历史事件通过样例 driver_events.json 幂等导入，或由在线模拟器实时产生。</div></div>
+      <div class="kv"><div class="k">视频分析接口是真实 AI 识别吗？</div><div class="vv">不是。risk_engine.recognize 是按 task_id 字符和确定性派生事件码与固定置信度的占位实现，仅打通演示链路；真实 DSM/ADAS 以终端边缘上报信号为准，平台不做全量视频分析。</div></div>
+      <div class="kv"><div class="k">终端上报了信号为什么没有事件？</div><div class="vv">evaluate_signal 只在存在 status=1 且 valid_mark=1 的同事件码 SIGNAL 规则时才落事件；规则停用、事件码不在四选一范围内、或处于冷却窗口时均不落事件（视频任务 summary 会写明原因）。</div></div>
+      <div class="kv"><div class="k">停用或删除规则会影响历史事件吗？</div><div class="vv">不会。事件的 title、risk_level 是落库时的快照；内置规则 built_in=1 禁止删除（可停用），自定义规则为软删 valid_mark=0。</div></div>
+      <div class="kv"><div class="k">疲劳驾驶的 240 分钟如何计算？</div><div class="vv">仅统计 speed&gt;0 的点，用 LAG 窗口按相邻点间隔 gapMin（默认 10 分钟）切分会话；回看 continuousMin+gapMin 分钟，会话连续驾驶 ≥240 分钟且末点仍在驾驶才命中；停车/掉线超 10 分钟视为中断。</div></div>
+      <div class="kv"><div class="k">COMBO 事件会不会和疲劳事件重复扣分？</div><div class="vv">驾驶评分按事件码分别计分：FATIGUE_DRIVE 与 COMBO_FATIGUE_SPEED 是两个白名单码，各自按当日 MAX(risk_level) 扣一次，组合事件确实叠加扣分，体现"最危险状态"的设计意图。</div></div>
+      <div class="kv"><div class="k">规则事件为什么一产生就有工单？</div><div class="vv">insert_risk_events 在同一数据库事务内插事件、按 risk_order_sla 算 deadline 建工单并写 CREATE 日志；uk_risk_order_event 唯一约束兜底，不会出现重复工单。</div></div>
+      <div class="kv"><div class="k">事件上的 confidence 有什么用？</div><div class="vv">北斗规则事件与围栏事件固定 1.00（确定性判定）；SIGNAL/视频占位事件保留终端或占位给出的置信度，仅作信息展示，不参与规则匹配、评分扣分或 SLA 计算。</div></div>
+      <div class="kv"><div class="k">media_url 存的是视频吗？</div><div class="vv">是按需调阅的截图/片段地址，随 SIGNAL 事件透传落库；平台不落地全量视频，地址来源依赖终端/对象存储侧（待核实）。</div></div>
+      <div class="kv"><div class="k">为什么有的事件在评分里找不到？</div><div class="vv">三种常见原因：事件码不在 8 个评分白名单内（如围栏事件）；工单被以 FALSE_ALARM 闭环（评分 NOT EXISTS 排除）；当天样本点不足 200 或驾驶不足 30 分钟（整天不评分，见 MOD-010）。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>菜单与权限</td><td>风控规则菜单对授权角色可见；无 risk:rule:edit 时新增/编辑/删除按钮不可见、接口直调拒绝</td><td>多角色登录</td></tr>
+        <tr><td>2</td><td>内置种子</td><td>8 条 built_in=1 规则存在且参数/冷却与 §7.2 一致；重复执行 SQL 不重复插入</td><td>查 mon.risk_rule</td></tr>
+        <tr><td>3</td><td>内置规则保护</td><td>内置规则不可删除、编码/类型/事件码不可改；可改阈值/等级/冷却/停用</td><td>界面与接口直调</td></tr>
+        <tr><td>4</td><td>参数校验</td><td>越界 speedKmh/continuousMin/gapMin/windowMin、非法编码、SIGNAL 非四选一均被拒绝</td><td>表单提交 + 错误码</td></tr>
+        <tr><td>5</td><td>SPEED 事件</td><td>模拟器速度越过阈值产生对应等级事件，事件点为批内最大速度点</td><td>risk_event 联查</td></tr>
+        <tr><td>6</td><td>FATIGUE 事件</td><td>连续驾驶达阈值且未中断产生疲劳事件；gap 超 10 分钟后计时清零</td><td>构造长会话轨迹</td></tr>
+        <tr><td>7</td><td>COMBO 事件</td><td>30 分钟窗口内有疲劳事件且当前批超速，产生组合事件；缺一条件不产生</td><td>两条件分别摘除验证</td></tr>
+        <tr><td>8</td><td>SIGNAL 匹配</td><td>视频占位接口对启用码落事件；停用对应规则后再调返回 event_count=0 且 summary 说明未匹配</td><td>/api/analysis/video</td></tr>
+        <tr><td>9</td><td>冷却去重</td><td>冷却窗口内连续多批只落一条；窗口后恢复；重启 processing-service 后口径不变</td><td>连续推点 + 重启验证</td></tr>
+        <tr><td>10</td><td>同事务建单</td><td>每条规则事件有且仅有一个 PENDING 工单与 CREATE 日志，deadline 符合 SLA</td><td>risk_work_order 联查</td></tr>
+        <tr><td>11</td><td>热加载</td><td>紧急停用规则后 30 秒内不再产出该规则事件</td><td>计时验证</td></tr>
+        <tr><td>12</td><td>引擎概览</td><td>4 张卡数据与库内一致；规则 TOP5 不含围栏事件（rule_id NULL）</td><td>SQL 对账</td></tr>
+        <tr><td>13</td><td>事件查询数据范围</td><td>非全数据权限角色只能看到本部门车辆事件</td><td>deptScope 对账</td></tr>
+        <tr><td>14</td><td>误报闭环联动</td><td>事件工单以 FALSE_ALARM 闭环后，次日评分不再为该事件扣分</td><td>评分重算核对</td></tr>
+        <tr><td>15</td><td>服务令牌鉴权</td><td>Python 两个触发入口无令牌/错令牌返回 401，不泄露任何评估信息</td><td>接口直调</td></tr>
+        <tr><td>16</td><td>样例幂等</td><td>同日重复调 load-sample 不重复导入 driver_events.json 事件</td><td>count_risk_events_on 判重</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中证据不足或依赖运行环境，按"待核实"标注：</p>
+    </blockquote>
+    <ul>
+      <li><strong>引擎可观测性</strong>：processing-service 仅有 GET /health 返回 UP，CEP 评估耗时、候选数、冷却拦截数、失败率均无指标暴露，生产监控方案待补。</li>
+      <li><strong>多实例下的冷却竞争</strong>：冷却以事件表 MAX(event_time) 为权威可跨实例正确去重，但同批并发下的事务隔离与重复候选行为未在多实例部署中验证（当前单实例）。</li>
+      <li><strong>SIGNAL 真实终端协议</strong>：evaluate_signal 的入参契约已就绪，但终端边缘信号以何种报文/网关写入该入口、media_url 的对象存储来源，属接入侧待核实内容。</li>
+      <li><strong>历史重放工具</strong>：批量导入不跑 CEP，按时间轴离线重放轨迹补算事件的工具尚未提供，数据回填方案待确认。</li>
+      <li><strong>risk_cache_sec 与 SLA 60 秒缓存的可配置性</strong>：两个 TTL 目前为 processing-service 配置/代码常量，未进入 sys_config 后台参数，运营侧是否需要可调待确认。</li>
+      <li><strong>事件量增长后的保留策略</strong>：risk_event 与 video_analysis 未见分区、归档或清理任务，长期在线运行后的表膨胀与查询性能需要容量规划结论。</li>
+      <li><strong>SIGNAL 四码之外的国标码</strong>：评分/画像兜底事件名已预留 V_LDW/V_HMW/V_FCW/V_PCW、BEIDOU_SPEED 及国标数字码 1~7，但规则配置 UI 与 SIGNAL 匹配仍只开放四码，终端实际码表待对接确认。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>初版。基于源代码固化：4 类规则与校验范围、8 条内置种子参数与冷却、SPEED/FATIGUE/COMBO/SIGNAL 评估算法、事件同事务自动建单、recognize 占位性质、30 秒热加载；明确"平台不做全量视频分析"的边缘触发口径。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-008 风控规则引擎 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

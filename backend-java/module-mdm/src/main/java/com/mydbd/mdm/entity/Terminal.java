@@ -6,6 +6,8 @@ import com.mydbd.common.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 终端档案（对应 traj.traj_terminal）
  */
@@ -35,6 +37,21 @@ public class Terminal extends BaseEntity {
 
     /** 1=正常 2=维修停用 3=报废 */
     private Integer status;
+
+    /** vps 网关车辆主键 truckId（离线事件锚点，可编辑） */
+    private Long gatewayTruckId;
+
+    /** 在线状态：0 离线 1 在线（网关心跳/鉴权/离线事件维护，只读透出） */
+    private Integer onlineStatus;
+
+    /** 最近心跳时间（网关维护，只读透出） */
+    private LocalDateTime lastHeartbeatTime;
+
+    /** 最近上线时间（网关维护，只读透出） */
+    private LocalDateTime lastOnlineTime;
+
+    /** 最近离线时间（网关维护，只读透出） */
+    private LocalDateTime lastOfflineTime;
 
     private String remark;
 

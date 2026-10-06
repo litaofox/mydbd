@@ -31,7 +31,9 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
     long countTodayWarnings(@Param("plates") java.util.Collection<String> plates);
 
     /**
-     * 有轨迹的在途车辆数（监控域直接读取 traj schema，避免跨模块依赖）
+     * 在线/在途车辆数（监控域直接读取 traj schema，避免跨模块依赖）。
+     * 在线口径（GATEWAY-PLAN-001）：经车辆-终端绑定 join，绑定终端 online_status=1 优先；
+     * 无绑定终端或状态未知（NULL）时回退"有轨迹点"原口径（EXISTS 索引探测）。
      * 性能：终端表驱动 + EXISTS 索引探测，避免 count(DISTINCT) 全量扫描轨迹表。
      * @param plates 可见车牌：null=不限制；空集合调用方提前返回 0
      */
@@ -39,14 +41,24 @@ public interface WarnInfoMapper extends BaseMapper<WarnInfo> {
             <script>
             SELECT count(*)
               FROM traj.traj_terminal t
+              LEFT JOIN traj.traj_vehicle_terminal vt
+                     ON vt.terminal_id = t.id AND vt.status = 1 AND vt.valid_mark = 1
+              LEFT JOIN traj.traj_vehicle v ON v.id = vt.vehicle_id AND v.valid_mark = 1
              WHERE t.valid_mark = 1
-               AND EXISTS (SELECT 1 FROM traj.traj_gps_point g
-                            WHERE g.identity_code = t.identity_code
+               AND ((vt.id IS NOT NULL AND t.online_status = 1
             <if test="plates != null">
-                              AND g.plate_no IN
-                              <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+                     AND v.vehicle_no IN
+                     <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
             </if>
-                            LIMIT 1)
+                    )
+                 OR ((vt.id IS NULL OR t.online_status IS NULL)
+                     AND EXISTS (SELECT 1 FROM traj.traj_gps_point g
+                                  WHERE g.identity_code = t.identity_code
+            <if test="plates != null">
+                                    AND g.plate_no IN
+                                    <foreach collection="plates" item="x" open="(" separator="," close=")">#{x}</foreach>
+            </if>
+                                  LIMIT 1)))
             </script>
             """)
     long countActiveVehicles(@Param("plates") java.util.Collection<String> plates);

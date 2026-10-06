@@ -24,6 +24,9 @@ public record TerminalSaveRequest(
         @Size(max = 32)
         String simAccount,
 
+        /** vps 网关车辆主键 truckId（可空） */
+        Long gatewayTruckId,
+
         @Size(max = 8)
         String protocolType,
 

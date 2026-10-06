@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>USER-DBD-001 系统功能使用手册 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">USER-DBD-001 系统功能使用手册</div>
+  <div class="right"><a href="../index.html">返回文档中心</a></div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#quick">一、5 分钟快速上手</a></li>
+      <li><a href="#login">二、登录与账号</a></li>
+      <li><a href="#monitor">三、实时监控</a>
+        <ul>
+          <li><a href="#m-dashboard">监控总览大屏</a></li>
+          <li><a href="#m-monitor">实时导航监控</a></li>
+          <li><a href="#m-playback">历史轨迹回放</a></li>
+          <li><a href="#m-alarm">终端报警中心</a></li>
+        </ul>
+      </li>
+      <li><a href="#risk">四、风险预警与处置</a>
+        <ul>
+          <li><a href="#r-events">风险预警分析</a></li>
+          <li><a href="#r-orders">处置工单</a></li>
+          <li><a href="#r-rules">风控规则配置</a></li>
+          <li><a href="#r-fence">电子围栏</a></li>
+        </ul>
+      </li>
+      <li><a href="#mdm">五、主数据管理</a>
+        <ul>
+          <li><a href="#d-org">组织架构</a></li>
+          <li><a href="#d-vehicle">车辆档案与绑定管理</a></li>
+          <li><a href="#d-terminal">终端档案</a></li>
+          <li><a href="#d-driver">驾驶员档案</a></li>
+        </ul>
+      </li>
+      <li><a href="#analysis">六、分析决策</a>
+        <ul>
+          <li><a href="#a-score">驾驶评分</a></li>
+          <li><a href="#a-profile">风险趋势与画像</a></li>
+          <li><a href="#a-coming">报表查询与统计分析（19 项建设中）</a></li>
+        </ul>
+      </li>
+      <li><a href="#system">七、系统管理</a>
+        <ul>
+          <li><a href="#s-user">用户管理</a></li>
+          <li><a href="#s-role">角色管理</a></li>
+          <li><a href="#s-audit">操作审计</a></li>
+          <li><a href="#s-dict">数据字典</a></li>
+          <li><a href="#s-config">系统参数与测试数据</a></li>
+          <li><a href="#s-msg">消息中心</a></li>
+        </ul>
+      </li>
+      <li><a href="#perm">八、角色与数据权限</a></li>
+      <li><a href="#faq">九、常见问题</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>系统功能使用手册</h1>
+    <p class="cover-meta">文档编号：USER-DBD-001<span class="sep">|</span>版本：v1.0.0<span class="sep">|</span>更新日期：2026-10-05</p>
+    <p>本手册面向调度坐席、安全管理员、车队队长、系统管理员等业务用户，介绍北斗导航数据业务平台每个页面"是干什么的、谁来用、怎么操作、要注意什么"。全部操作步骤均以 2026-10-05 的线上系统为准。功能清单与建设规划见 <a href="../guide/FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001 功能清单与建设规划</a>。</p>
+    <blockquote class="tip"><p>阅读建议：第一次使用请先看完<a href="#quick">第一章「5 分钟快速上手」</a>并跟着操作一遍；日常工作中可直接从左侧目录跳转到对应功能。</p></blockquote>
+
+    <h2 id="quick">一、5 分钟快速上手</h2>
+    <p>本平台面向营运车辆的北斗监控与安全风险处置：车辆位置与报警实时上图，平台自动识别风险并驱动"预警 → 工单 → 干预 → 闭环"，同时沉淀驾驶评分与风险画像。演示/培训环境可用内置样例数据在 5 分钟内走完全流程。</p>
+
+    <div class="flow">
+      <div class="step"><div class="s-title">① 登录平台</div><div class="s-d">打开系统地址，用 admin/admin123 或四省测试账号登录，需要时输入二次验证码</div></div>
+      <div class="step"><div class="s-title">② 加载样例数据</div><div class="s-d">系统管理 → 系统参数，点"加载标准测试集"，并打开模拟器开关</div></div>
+      <div class="step"><div class="s-title">③ 看实时监控</div><div class="s-d">打开"实时导航监控"或"监控总览大屏"，车辆位置秒级刷新</div></div>
+      <div class="step"><div class="s-title">④ 查报警</div><div class="s-d">打开"终端报警中心"，点开报警详情核实并确认、解除</div></div>
+      <div class="step"><div class="s-title">⑤ 办工单</div><div class="s-d">打开"处置工单"，认领、分派、记录干预并闭环</div></div>
+    </div>
+
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">演示/培训环境</div>
+        <div class="sc-name">样例数据从哪里来？</div>
+        <div class="sc-d">系统管理 → 系统参数页面顶部的"测试数据与模拟器"卡片：可一键加载 4 公司 / 10 车队 / 500 车的标准测试集，打开模拟器后约每 15 秒产生新的轨迹与报警。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">所有用户</div>
+        <div class="sc-name">看到的数据为什么"是昨天的"？</div>
+        <div class="sc-d">样例数据的定位时间（数据时基）可能滞后当前墙钟十几小时，这是正常现象。平台的"在线"判定以最新定位时间为基准，而不是你电脑上的当前时间。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">所有用户</div>
+        <div class="sc-name">菜单为什么和同事不一样？</div>
+        <div class="sc-d">左侧菜单与按钮均按角色权限与数据范围显示，只能看到自己有权访问的功能和归属范围内的车辆。</div>
+      </div>
+    </div>
+
+    <h2 id="login">二、登录与账号</h2>
+    <h3>2.1 这个页面能做什么</h3>
+    <p>登录页是进入平台的唯一入口，支持账号密码登录、登录二次验证（MFA），并在页面下方提供测试账号一键填充，方便演示与培训。</p>
+    <h3>2.2 谁会用</h3>
+    <p>所有用户。新账号由超级管理员在"用户管理"中创建。</p>
+    <h3>2.3 操作步骤</h3>
+    <ol>
+      <li>浏览器打开平台地址，进入登录页（登录页已默认填好 <code>admin / admin123</code>）。</li>
+      <li>输入或在下方"测试账号"区点击账号自动填充用户名与密码，点击<strong>登录</strong>。</li>
+      <li>若账号开启了二次验证，页面出现验证码输入框，打开身份验证器 App 获取 6 位动态码，填入后点<strong>确认</strong>完成登录。</li>
+      <li>登录成功后进入实时导航监控页；登录态失效时会自动跳回登录页，重新登录即可继续。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">页面位置：登录页（/login，浏览器直接打开平台地址）</div>
+      <div class="sh-p">登录表单 + 登录按钮下方"测试账号"快捷区，按"管理员 / 上海 / 山东 / 江苏 / 安徽"分组展示。</div>
+    </div>
+    <h3>2.4 内置测试账号</h3>
+    <table>
+      <thead><tr><th>分组</th><th>用户名</th><th>密码</th><th>角色 / 数据范围</th></tr></thead>
+      <tbody>
+        <tr><td>管理员</td><td><code>admin</code></td><td><code>admin123</code></td><td>超级管理员，全部功能、全部数据</td></tr>
+        <tr><td>上海</td><td><code>shanghai_disp</code> / <code>shanghai_capt</code></td><td><code>test123456</code></td><td>调度监控员（本部门）/ 企业车队长（本企业）</td></tr>
+        <tr><td>山东</td><td><code>shandong_disp</code> / <code>shandong_capt</code></td><td><code>test123456</code></td><td>调度监控员 / 企业车队长</td></tr>
+        <tr><td>江苏</td><td><code>jiangsu_disp</code> / <code>jiangsu_capt</code></td><td><code>test123456</code></td><td>调度监控员 / 企业车队长</td></tr>
+        <tr><td>安徽</td><td><code>anhui_disp</code> / <code>anhui_capt</code></td><td><code>test123456</code></td><td>调度监控员 / 企业车队长</td></tr>
+      </tbody>
+    </table>
+    <h3>2.5 注意事项</h3>
+    <ul>
+      <li>连续输错密码可能导致账号被锁定，需联系管理员在"用户管理"中解锁。</li>
+      <li>测试账号仅供演示与联调使用，正式环境请修改默认密码并按人建号。</li>
+      <li>登录、登录失败、MFA 验证等动作都会记入操作审计。</li>
+    </ul>
+
+    <h2 id="monitor">三、实时监控</h2>
+    <p>实时监控域回答"此刻车队在发生什么"：车辆在哪、是否在线、报了什么警，一屏掌握。</p>
+
+    <h3 id="m-dashboard">3.1 监控总览大屏</h3>
+    <p><strong>用途：</strong>投墙值守的全屏驾驶舱，中央是实时车辆地图与风险热力，四周是在线率、今日里程、工单积压、报警态势、最新报警滚动条、车队/区域 TOP8、风险飘条等分区。</p>
+    <p><strong>谁会用：</strong>调度监控员、安全管理员、值班领导。</p>
+    <div class="flow">
+      <div class="step"><div class="s-title">进入大屏</div><div class="s-d">侧边栏 实时监控 → 监控总览大屏（独立全屏页，无侧边栏）</div></div>
+      <div class="step"><div class="s-title">看态势</div><div class="s-d">车辆位置每秒刷新，统计分区每 30 秒校正</div></div>
+      <div class="step"><div class="s-title">点单车</div><div class="s-d">点击地图车辆图标查看简要信息</div></div>
+      <div class="step"><div class="s-title">全屏 / 退出</div><div class="s-d">右上按钮切换全屏；点"退出大屏"返回系统</div></div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 监控总览大屏（路由 /dashboard）</div>
+      <div class="sh-p">1920/4K 自适应；在线率统计窗口为最近 5 分钟有定位的车辆。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>大屏是纯展示页面，确认报警、办工单等处置操作请回到对应业务页面。</li>
+      <li>"今日里程"为里程表差值的近似口径，逐点精确里程在后续版本提供。</li>
+      <li>在线率以"最近 5 分钟有定位点"判定；样例数据时基滞后时，大屏按数据时基而非墙钟展示。</li>
+    </ul>
+
+    <h3 id="m-monitor">3.2 实时导航监控</h3>
+    <p><strong>用途：</strong>日常值守主工作台：Leaflet 地图上实时显示全部可见车辆，支持搜索、筛选、跟踪、查看车辆详情，并通过 WebSocket 秒级刷新位置与弹窗提示新报警。</p>
+    <p><strong>谁会用：</strong>调度监控员（主要使用者）、车队长、安全管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>实时监控 → 实时导航监控</strong>进入，地图自动加载归属范围内的车辆。</li>
+      <li>左上角车辆树中用搜索框按车牌查找；用筛选条件（组织、在线状态等）缩小范围；点"展示设置"选择树上显示的字段。</li>
+      <li>顶部"在线判定窗口"下拉可切换 <strong>10 / 30 / 60 / 1440 分钟</strong>（默认 10 分钟）：最新定位时间距"平台数据时基"在窗口内的车辆计为在线。</li>
+      <li>点击顶部状态统计格（在线/离线/报警等数量）可勾选只看某一类车辆。</li>
+      <li><strong>左键点地图车辆图标</strong>弹出信息气泡：显示车牌、速度、方向、定位时间，气泡内提供"轨迹回放""车辆详情"等按钮，"视频/对讲/拍照"为预留按钮（暂不可用）。</li>
+      <li><strong>右键点车辆</strong>弹出菜单：车辆详情、开始跟踪等；跟踪状态下地图会跟随该车辆移动。</li>
+      <li>右上"地点搜索"可按地名定位地图视角。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 实时导航监控（路由 /monitor，登录后默认首页）</div>
+      <div class="sh-p">左侧车辆树 + 顶部筛选/统计 + 中央地图 + 车辆气泡。</div>
+    </div>
+    <blockquote class="warn"><p><strong>重要口径：</strong>在线/离线以<strong>平台数据时基（全局最新一个定位点的时间）</strong>为参照，不是本机墙钟。当样例数据滞后墙钟十几小时时，车辆不会因此全部显示离线；不要用"现在几点"去判断在离线。</p></blockquote>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>位置每秒自动推送，无需手动刷新；网络波动时自动重连。</li>
+      <li>树上和地图上只出现你数据范围内的车辆；范围外的车牌即使知道车牌也搜不到。</li>
+      <li>"视频""对讲""拍照"按钮为 JT/T 1078 对接预留，当前点击仅提示功能预留。</li>
+    </ul>
+
+    <h3 id="m-playback">3.3 历史轨迹回放</h3>
+    <p><strong>用途：</strong>选定车辆和时间段，在地图上回放历史行驶轨迹，支持多倍速与时间轴拖动，用于核实行驶路线、停留点与报警时的现场情况。</p>
+    <p><strong>谁会用：</strong>调度监控员、安全管理员、车队长。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>实时监控 → 历史轨迹回放</strong>。</li>
+      <li>在车辆选择框中输入车牌搜索并选中车辆（列表同时显示终端标识 identityCode，避免同车牌混淆）。</li>
+      <li>选择开始时间与结束时间，点击<strong>查询</strong>，地图绘制轨迹并列出轨迹点。</li>
+      <li>用播放控件开始回放：速度支持 <strong>1 / 2 / 4 / 8 倍速</strong>；拖动时间轴滑块可快速定位到任意时刻。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 历史轨迹回放（路由 /playback）</div>
+      <div class="sh-p">顶部选车 + 起止时间 + 查询；底部播放控制条。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>从其他页面跳转时可携带车牌、终端标识与日期参数，页面会自动发起查询。</li>
+      <li>时间范围过大、轨迹点过多时加载变慢，建议单次查询不超过数小时。</li>
+      <li>只能回放归属范围内车辆的轨迹，越权查询无结果。</li>
+    </ul>
+
+    <h3 id="m-alarm">3.4 终端报警中心</h3>
+    <p><strong>用途：</strong>终端上报报警（超速、疲劳、紧急求助、设备故障等）的集中处理台：四张 KPI 卡概览态势，列表实时更新，每条报警可查看详情（含小地图与前后 30 分钟关联风险），并完成"确认 → 解除"闭环。</p>
+    <p><strong>谁会用：</strong>调度监控员（一线处置）、安全管理员（督办）。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>实时监控 → 终端报警中心</strong>。</li>
+      <li>页面默认查询<strong>今日 00:00 ~ 23:59</strong> 的报警；点"重置"也会回到今日窗口。需要查历史报警时手动改时间范围。</li>
+      <li>用顶部筛选（车牌、报警类型、等级、状态、时间）过滤列表；新报警实时置顶。</li>
+      <li>点击任意一行打开<strong>详情抽屉</strong>：查看报警位置小地图、车辆信息，以及报警时刻前后各 30 分钟内的关联风险事件。</li>
+      <li>核实后点<strong>确认</strong>，报警状态变为处理中，表示已有人接手。</li>
+      <li>处置完成后点<strong>解除</strong>：选择解除结论——<strong>属实（00）/ 误报（01）/ 未知（02）</strong>，可填写不超过 200 字的说明，提交后闭环。</li>
+      <li>详情抽屉中的"监控""轨迹"快捷按钮可直接跳到实时监控或该时段轨迹回放。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 终端报警中心（路由 /alarms）</div>
+      <div class="sh-p">四张 KPI 卡 + 筛选条 + 报警列表 + 右侧详情抽屉。</div>
+    </div>
+    <blockquote class="warn"><p>默认只显示<strong>今日（按墙钟自然日）</strong>报警。演示数据时基若不在今天，列表会是空的，属正常现象——把开始时间改到样例数据日期（如 2026-10-03）即可看到数据。</p></blockquote>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>两人同时处理同一条报警时，后提交者会收到状态变化提示，刷新后按最新状态操作即可。</li>
+      <li>确认与解除操作均写入审计日志，请勿随意点选。</li>
+      <li>报警类型名称与等级由数据字典翻译；若出现"类型 + 数字编码"，说明该类型尚未维护字典，请联系管理员。</li>
+    </ul>
+
+    <h2 id="risk">四、风险预警与处置</h2>
+    <p>本域回答"风险如何变成一件被管到底的事"：规则引擎产出风险事件 → 自动/手动建工单 → 分派与干预 → 闭环留痕。</p>
+
+    <h3 id="r-events">4.1 风险预警分析</h3>
+    <p><strong>用途：</strong>平台风控规则引擎（CEP）与外部信号产出的全部风险事件的分析台：四张 KPI 卡加"感知 → 预警 → 干预 → 闭环"漏斗，支持多维度筛选，并可对未建工单的事件直接发起处置。</p>
+    <p><strong>谁会用：</strong>调度监控员、安全管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>实时监控 → 风险预警分析</strong>。</li>
+      <li>通过顶部条件筛选：事件来源（DSM / ADAS / 国标报警 / 厂商上报 / 北斗等）、风险等级、处理状态、命中规则、车牌。</li>
+      <li>查看顶部四张 KPI 卡与漏斗各环节数量，判断事件在哪个环节积压。</li>
+      <li>列表中含视频分析任务相关事件（占位上报链路）；对需要处置的事件点<strong>去处理</strong>，系统创建处置工单并自动打开工单详情抽屉。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 风险预警分析（路由 /risk）</div>
+      <div class="sh-p">KPI 卡 + 漏斗图 + 筛选条 + 事件列表。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>大部分风险事件在入库时已自动建工单，"去处理"主要用于未建单或需补单的事件。</li>
+      <li>事件等级由规则配置决定；对判定有异议时，先在工单中处置，事后可由管理员调整规则。</li>
+    </ul>
+
+    <h3 id="r-orders">4.2 处置工单</h3>
+    <p><strong>用途：</strong>风险事件的处置台账，按"待处理 → 处理中 → 已闭环"状态机流转，支持认领、分派、转派、SLA 时限与超时升级，并在工单内记录电话提醒、安全教育等干预动作。</p>
+    <p><strong>谁会用：</strong>调度监控员（认领、处置、闭环）、安全管理员/主管（分派、转派、重开）、车队长（查看本企业工单）。</p>
+    <h4>列表页操作</h4>
+    <ol>
+      <li>侧边栏 <strong>实时监控 → 处置工单</strong>。</li>
+      <li>顶部六张统计卡：待处理、处理中、超时、已升级、今日闭环、平均闭环分钟，点击卡片可快速过滤。</li>
+      <li>筛选条件支持：状态、时限档位（临期 / 已超时 / 已升级）、负责人、车牌、时间等。</li>
+      <li>右上角 <strong>SLA 配置</strong>按钮可调整处置时限；注意：新时限<strong>只对修改后新建的工单生效</strong>，存量工单时限不变。</li>
+      <li>对待处理工单点<strong>认领</strong>即成为负责人，状态转为处理中。</li>
+      <li>点击任意一行打开 780px 宽的<strong>工单详情抽屉</strong>。</li>
+    </ol>
+    <h4>工单详情抽屉操作</h4>
+    <ol>
+      <li>顶部状态条展示当前状态、剩余/超时时间与负责人。</li>
+      <li>查看<strong>事件快照</strong>（事件类型、等级、车牌、位置、时间）与<strong>处置信息</strong>。</li>
+      <li>在<strong>干预记录</strong>区点新增：选择干预方式——电话提醒 / 安全教育 / 停运 / 处罚 / 其他，填写干预结果后保存。干预记录只可追加，不可修改删除。</li>
+      <li>用工单操作按钮完成流转：<strong>认领 / 分派（指定负责人）/ 转派</strong>。</li>
+      <li>处置完成后点<strong>闭环</strong>：选择五种闭环结果之一，并填写 <strong>10 ~ 255 字</strong>的处置说明。</li>
+      <li>闭环后如发现处置不当，主管可执行<strong>重开</strong>，工单回到处理中。</li>
+      <li>底部<strong>流转时间线</strong>完整展示建单、分派、干预、闭环、重开的每个节点与操作人。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：实时监控 → 处置工单（路由 /risk/orders）</div>
+      <div class="sh-p">六张统计卡 + 筛选条 + 工单列表；点行打开右侧 780px 详情抽屉。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>超过 SLA 时限未闭环的工单自动标记超时并按策略升级，请优先处理"临期/已超时"工单。</li>
+      <li>闭环说明少于 10 字或多于 255 字无法提交。</li>
+      <li>工单关闭不代表事件消失：事件、工单、干预记录长期保留并汇入画像统计。</li>
+    </ul>
+
+    <h3 id="r-rules">4.3 风控规则配置</h3>
+    <p><strong>用途：</strong>维护平台实时风控规则：超速、疲劳驾驶、信号类报警等，可启停规则、调整阈值与冷却秒数；规则决定了风险事件如何产生、等级如何判定。</p>
+    <p><strong>谁会用：</strong>安全管理员、超级管理员（普通坐席只读或不可见）。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 风控规则</strong>。</li>
+      <li>按规则类型（SPEED 超速 / FATIGUE 疲劳 / SIGNAL 信号类等）浏览规则列表。</li>
+      <li>用行内<strong>启停开关</strong>临时停用/启用规则；编辑阈值参数与<strong>冷却秒数</strong>（同类事件在冷却期内不重复产生）。</li>
+      <li>需要纳入驾驶评分的事件码在"评分白名单"中维护，如 <code>SPEED_GENERAL</code>、<code>SPEED_SEVERE</code>、<code>FATIGUE_DRIVE</code>、<code>DSM_FATIGUE</code>、<code>DSM_DISTRACTION</code>、<code>ADAS_FCW</code>、<code>ADAS_LDW</code>、<code>COMBO_FATIGUE_SPEED</code>。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：系统管理 → 风控规则（路由 /system/rules）</div>
+      <div class="sh-p">规则类型筛选 + 规则列表 + 启停开关/编辑对话框。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li><strong>内置规则不可删除</strong>，只能停用或调整参数。</li>
+      <li>修改即时生效，只影响之后新产生的事件，不追溯历史。</li>
+      <li>调大冷却秒数会减少提醒量但可能漏报，调整请结合值守人力评估。</li>
+    </ul>
+
+    <h3 id="r-fence">4.4 电子围栏</h3>
+    <p><strong>用途：</strong>在地图上画出圆形或多边形区域，车辆进入、离开或进出围栏时自动产生报警事件，用于禁区管理、场站到离管理。</p>
+    <p><strong>谁会用：</strong>安全管理员、调度监控员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 电子围栏</strong>，点<strong>新建围栏</strong>。</li>
+      <li>选择围栏形状：<strong>圆形</strong>（选中心点 + 半径）或<strong>多边形</strong>（在地图上依次点选顶点，至少 3 个顶点后闭合）。</li>
+      <li>填写名称，选择<strong>触发方向</strong>：进入 / 离开 / 进出均触发；选择报警等级与冷却时间。</li>
+      <li>保存后围栏立即生效；列表中可停用、编辑或删除围栏。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：系统管理 → 电子围栏（路由 /system/fences）</div>
+      <div class="sh-p">围栏列表 + 地图绘制对话框（基于 PostGIS 空间判定）。</div>
+    </div>
+    <p><strong>注意事项：</strong>进出判定依赖定位上报频率，定位稀疏时触发时刻会有延后；围栏报警同样进入风险预警与工单链路。</p>
+
+    <h2 id="mdm">五、主数据管理</h2>
+    <p>组织、车辆、终端、驾驶员是所有业务的"地基"。建议维护顺序：<strong>组织架构 → 车辆/终端/驾驶员档案 → 绑定关系</strong>。数据归属、权限范围、通知对象、评分统计全部依赖这些档案。</p>
+
+    <h3 id="d-org">5.1 组织架构</h3>
+    <p><strong>用途：</strong>维护运输企业与车队的多级组织树，它是数据权限的骨架——"车队长看本企业、坐席看本部门"都靠组织挂接实现。</p>
+    <p><strong>谁会用：</strong>超级管理员、安全管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>主数据管理 → 组织架构</strong>。</li>
+      <li>左侧组织树选中一个节点，右侧展示该节点详情；点<strong>新增下级</strong>可建企业或车队两类节点。</li>
+      <li>编辑名称、联系人等信息后保存；调整层级在树上拖动或编辑上级节点。</li>
+    </ol>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>组织分<strong>企业 / 车队</strong>两类，车辆最终挂接在组织节点上。</li>
+      <li>节点下仍有车辆或下级组织时<strong>不能删除</strong>，请先迁移车辆与子节点。</li>
+      <li>数据可见范围一律以车辆归属组织为准，与车牌是哪个省份的无关（公司名下可挂任意外省车牌）。</li>
+    </ul>
+
+    <h3 id="d-vehicle">5.2 车辆档案与绑定管理</h3>
+    <p><strong>用途：</strong>车辆台账的增删改查（车牌、车牌颜色、车型、运输性质、所属组织、注册城市等），并在车辆档案内集中维护"车-终端""车-主班/副班司机"的绑定关系与绑定历史。</p>
+    <p><strong>谁会用：</strong>车队长（本企业档案）、安全管理员、超级管理员。</p>
+    <h4>车辆档案操作</h4>
+    <ol>
+      <li>侧边栏 <strong>主数据管理 → 车辆档案</strong>。</li>
+      <li>按车牌、所属组织等条件筛选；点<strong>新增</strong>录入车辆信息并选择归属组织，保存。</li>
+      <li>对已有车辆可编辑、置失效；列表点行进入车辆详情。</li>
+    </ol>
+    <h4>绑定管理操作</h4>
+    <ol>
+      <li>在车辆详情中点<strong>绑定管理</strong>打开绑定弹窗。</li>
+      <li>分别维护三类关系：车 — 终端、车 — 主班司机、车 — 副班司机；选择对象后绑定，系统记录生效时间。</li>
+      <li>换设备/换司机时对原关系执行<strong>解绑</strong>，再绑定新对象；弹窗内可查看完整<strong>绑定历史</strong>。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：主数据管理 → 车辆档案（路由 /mdm/vehicles）→ 详情 → 绑定管理</div>
+      <div class="sh-p">车辆列表 + 详情抽屉 + 绑定管理弹窗（车-终端 / 车主班 / 车副班 / 绑定历史）。</div>
+    </div>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li>车牌号全局唯一，重复录入会被拒绝。</li>
+      <li>同一终端、同一司机同一时间只能绑定一辆车，重复绑定会被拒绝。</li>
+      <li>解绑不影响历史数据：历史报警与轨迹按事件发生当时的绑定关系归集。</li>
+      <li>"失效"车辆不再参与在线率等统计，历史数据保留可查。</li>
+    </ul>
+
+    <h3 id="d-terminal">5.3 终端档案</h3>
+    <p><strong>用途：</strong>北斗终端设备台账：终端编号（identityCode）、设备型号、协议类型、SIM 账号、视频通道数、启用状态等，是终端接入与后续指令下发的基础。</p>
+    <p><strong>谁会用：</strong>安全管理员、运维人员、超级管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>主数据管理 → 终端档案</strong>。</li>
+      <li>点<strong>新增</strong>录入终端编号、型号、协议类型（JT808 / JT1078 / 其他）、SIM 账号等信息保存。</li>
+      <li>更换终端时先在车辆档案中解绑旧终端、绑定新终端；不再使用的终端置停用。</li>
+    </ol>
+    <p><strong>注意事项：</strong>终端编号全局唯一；终端与车辆是多对多的历史关系，当前是否在用车以绑定关系为准。</p>
+
+    <h3 id="d-driver">5.4 驾驶员档案</h3>
+    <p><strong>用途：</strong>驾驶员信息台账：姓名、驾驶证类别、从业资格证、联系电话、状态等。风险要落到"人"，评分、画像、干预通知都依赖司机档案。</p>
+    <p><strong>谁会用：</strong>车队长、安全管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>主数据管理 → 驾驶员档案</strong>。</li>
+      <li>点<strong>新增</strong>填写司机信息保存；支持按姓名、所属组织筛选与编辑。</li>
+      <li>在车辆档案"绑定管理"中把司机绑定为主班或副班后，该司机即参与评分与画像统计。</li>
+    </ol>
+    <p><strong>注意事项：</strong>手机号等联系方式仅授权人员可见；司机不再上岗时置停用即可，历史评分保留。</p>
+
+    <h2 id="analysis">六、分析决策</h2>
+
+    <h3 id="a-score">6.1 驾驶评分</h3>
+    <p><strong>用途：</strong>基于超速、疲劳、急加减速、分心等风险事件，为车辆/司机周期性计算 0~100 的安全分与 A~E 风险等级，支持手动重算与下钻查看 30 天趋势及扣分明细。</p>
+    <p><strong>谁会用：</strong>安全管理员、车队长、企业管理层。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>分析决策 → 驾驶评分</strong>。</li>
+      <li>顶部四张卡展示近 7 天均分等概览指标。</li>
+      <li>用日期、司机、车牌、等级筛选记录；点击<strong>重算</strong>可对指定时间范围发起异步重算（<strong>单次跨度最多 92 天</strong>），完成后刷新查看。</li>
+      <li>点击列表任意一行打开详情抽屉：查看该对象近 30 天评分趋势与特征扣分明细。</li>
+    </ol>
+    <div class="kvlist">
+      <div class="kv"><div class="k">等级 A</div><div class="vv">≥ 90 分</div></div>
+      <div class="kv"><div class="k">等级 B</div><div class="vv">75 ~ 89 分</div></div>
+      <div class="kv"><div class="k">等级 C</div><div class="vv">60 ~ 74 分</div></div>
+      <div class="kv"><div class="k">等级 D</div><div class="vv">40 ~ 59 分</div></div>
+      <div class="kv"><div class="k">等级 E</div><div class="vv">&lt; 40 分</div></div>
+    </div>
+    <p><strong>评分口径（了解即可）：</strong>高风险事件扣 8 分、中风险扣 4 分、低风险扣 2 分；急加减速单次扣 0.5 分且次日封顶 5 分；为避免小样本失真，样本不足（少于 200 个定位点或 30 分钟行驶）的周期不出分。被工单以"误报"闭环的事件不扣分。</p>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：分析决策 → 驾驶评分（路由 /analysis/scores）</div>
+      <div class="sh-p">四张概览卡 + 筛选条 + 评分列表 + 行详情抽屉（30 天趋势 + 特征明细）。</div>
+    </div>
+
+    <h3 id="a-profile">6.2 风险趋势与画像</h3>
+    <p><strong>用途：</strong>从"处理今天的事"升级到"看清长期的势"：按全网/企业/司机/车辆查看风险趋势，按车辆/司机/企业查看画像（处置漏斗、评分曲线、事件构成 Top6、工单 Top5）。</p>
+    <p><strong>谁会用：</strong>安全管理员、企业管理层。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>分析决策 → 风险趋势与画像</strong>。</li>
+      <li>选择时间范围：近 7 天 / 近 30 天 / 近 90 天 / 自定义。</li>
+      <li><strong>趋势分析</strong>页签：选择维度（全网 / 企业 / 司机 / 车辆）与粒度（日 / 周 / 月）查看趋势曲线。</li>
+      <li><strong>对象画像</strong>页签：选择对象类型（车辆 / 司机 / 企业）并指定具体对象，查看处置漏斗、评分曲线、事件构成 Top6、关联工单 Top5。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：分析决策 → 风险趋势与画像（路由 /analysis/profiles）</div>
+      <div class="sh-p">时间范围选择 + 两个页签（趋势分析 / 对象画像）。</div>
+    </div>
+    <p><strong>注意事项：</strong>趋势结论依赖数据积累，上线初期样本少，建议以周/月为单位观察；画像为只读分析，不修改任何数据。</p>
+
+    <h3 id="a-coming">6.3 报表查询与统计分析（19 项，功能建设中）</h3>
+    <p><strong>用途：</strong>对标交信北斗平台的 19 个分析节点已挂入菜单，目前均为占位页，点击后统一显示"功能建设中"，顶部标签条同步显示对应功能名称。</p>
+    <p><strong>谁会用：</strong>当前版本仅供了解规划；正式上线后面向安全管理员、统计分析人员与企业管理层。</p>
+    <p><strong>操作步骤：</strong>侧边栏 <strong>分析决策 → 报表查询 / 统计分析</strong> → 点击任一功能名称，进入占位页；建设进度见 <a href="../modules/MOD-DBD-017-分析与报表.html">MOD-DBD-017 分析与报表</a>，外部对标详情见 <a href="FUNC-REF-001-交信北斗平台分析功能对标.html">FUNC-REF-001</a>。</p>
+    <table>
+      <thead><tr><th>分组</th><th>功能节点（13 项）</th></tr></thead>
+      <tbody>
+        <tr><td>报表查询</td><td>轨迹报表、里程报表、行驶报表、停车报表、怠速报表、司机驾驶报表、离线报表、故障车报表、油耗报表、加油报表、实时在线率、车辆工作情况、服务费报表</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>分组</th><th>功能节点（6 项）</th></tr></thead>
+      <tbody>
+        <tr><td>统计分析</td><td>车辆分析、企业分析、企业安全分析、司机分析、车辆商机分析、轨迹完整率</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="system">七、系统管理</h2>
+
+    <h3 id="s-user">7.1 用户管理</h3>
+    <p><strong>用途：</strong>管理登录账号：新建用户、编辑、分配角色、重置密码、解锁、停用/启用、修改登录口令。</p>
+    <p><strong>谁会用：</strong>超级管理员（安全管理员可按授权管理部分账号）。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 用户管理</strong>。</li>
+      <li>点<strong>新增</strong>：填写用户名、姓名、初始密码，勾选所属组织与角色后保存。</li>
+      <li>对已有用户可：编辑资料、<strong>分配角色</strong>、<strong>重置密码</strong>、账号被锁时<strong>解锁</strong>、离职时<strong>停用</strong>、必要时<strong>修改登录口令</strong>。</li>
+    </ol>
+    <p><strong>注意事项：</strong></p>
+    <ul>
+      <li><code>admin</code> 超级管理员为系统保护账号，不可删除、不可停用。</li>
+      <li>重置密码、解锁等敏感操作均写入审计日志。</li>
+      <li>建议一人一号，离职及时停用，不要多人共用账号。</li>
+    </ul>
+
+    <h3 id="s-role">7.2 角色管理</h3>
+    <p><strong>用途：</strong>维护角色及其菜单权限、按钮权限与数据范围。系统内置四个角色，也可新建自定义角色。</p>
+    <p><strong>谁会用：</strong>超级管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 角色管理</strong>。</li>
+      <li>新建角色或编辑现有角色：在权限树中勾选<strong>菜单</strong>与<strong>按钮</strong>权限。</li>
+      <li>设置<strong>数据范围</strong>：1 全部数据 / 按企业及下级 / 按部门树 / 仅本部门 / 5 自定义部门集合。</li>
+      <li>保存后，拥有该角色的用户下次操作即按新权限校验。</li>
+    </ol>
+    <p><strong>注意事项：</strong>内置角色（超级管理员、安全管理员、调度监控员、企业车队长）不可删除；数据范围默认强制、失败即拒绝（fail-closed），配置自定义范围时请确保至少勾选一个部门。</p>
+
+    <h3 id="s-audit">7.3 操作审计</h3>
+    <p><strong>用途：</strong>自动记录谁在什么时间、从哪个模块、做了什么动作、结果如何，是事后定责与合规检查的第一手证据。页面提供统计卡、多维检索与详情抽屉。</p>
+    <p><strong>谁会用：</strong>超级管理员、安全管理员（只读）。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 操作审计</strong>。</li>
+      <li>顶部 4+1 张统计卡概览操作量；用日期、账号、模块、动作、结果、关键字组合筛选。</li>
+      <li>点击记录行打开详情抽屉，查看请求参数与结果信息。</li>
+    </ol>
+    <p><strong>注意事项：</strong>审计记录<strong>只读</strong>，任何人（含管理员）不可修改或删除；密码等敏感字段自动脱敏。</p>
+
+    <h3 id="s-dict">7.4 数据字典</h3>
+    <p><strong>用途：</strong>统一维护业务枚举（报警类型、车辆颜色、车牌颜色等），页面下拉与列表翻译都从字典取值，避免口径写死在代码里。</p>
+    <p><strong>谁会用：</strong>系统管理员、安全管理员。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 数据字典</strong>。</li>
+      <li>页面为左右双栏：左侧选<strong>字典类型</strong>，右侧维护该类型下的<strong>字典项</strong>（值、名称、排序、启停）。</li>
+      <li>新增字典项保存后，相关页面的下拉与翻译立即生效。</li>
+    </ol>
+    <p><strong>注意事项：</strong>字典项在（类型 + 值）上有唯一约束，重复保存会被拒绝；停用字典项只会让它不再出现在新数据的可选项中，不影响历史展示。</p>
+
+    <h3 id="s-config">7.5 系统参数与测试数据</h3>
+    <p><strong>用途：</strong>一页管两件事——顶部是"测试数据与模拟器"卡片（演示/培训/联调用），下方是系统参数键值表（在线窗口等全局可调项）。</p>
+    <p><strong>谁会用：</strong>超级管理员、演示/培训人员；系统参数调整通常由管理员执行。</p>
+    <h4>加载测试数据（5 分钟快速上手第 ② 步）</h4>
+    <ol>
+      <li>侧边栏 <strong>系统管理 → 系统参数</strong>，找到顶部"测试数据与模拟器"卡片。</li>
+      <li>点<strong>加载标准测试集</strong>：约 115 万轨迹点（30 秒一点，96 起风险事件，4 公司 / 10 车队 / 500 车），加载需 4~5 分钟，加载前会先清空现有业务数据。</li>
+      <li>需要更密数据时点<strong>加载稠密测试集</strong>：约 330 万点（15 秒一点，192 起事件），约需 12~15 分钟。</li>
+      <li>打开<strong>模拟器</strong>开关后，系统约每 15 秒产生实时轨迹、终端报警与风险事件；停止时点开关并确认即可（已产生数据保留）。</li>
+      <li>需要重置时点<strong>清空业务数据</strong>：清除公司/车队/车辆/终端/司机/轨迹/报警/事件/工单/干预/评分，但保留账号、角色、菜单与系统参数。</li>
+    </ol>
+    <h4>维护系统参数</h4>
+    <ol>
+      <li>在下方参数键值表中找到目标参数（如在线判定窗口分钟数），编辑取值保存。</li>
+      <li>参数修改立即影响后续口径，请谨慎调整并知会相关岗位。</li>
+    </ol>
+    <div class="shot">
+      <div class="sh-icon">🖥️</div>
+      <div class="sh-t">菜单路径：系统管理 → 系统参数（路由 /system/config）</div>
+      <div class="sh-p">页面顶部"测试数据与模拟器"卡 + 下方系统参数键值表。</div>
+    </div>
+    <blockquote class="danger"><p>加载标准测试集与清空业务数据都会改变现有业务数据，正式环境严禁操作；演示环境操作前也请确认数据不再需要。</p></blockquote>
+
+    <h3 id="s-msg">7.6 消息中心</h3>
+    <p><strong>用途：</strong>站内通知统一查阅处：风险预警、工单分派、处置进展等消息在此汇集，顶栏铃铛显示未读数。</p>
+    <p><strong>谁会用：</strong>所有用户（各自只收到与自己相关的消息）。</p>
+    <h4>操作步骤</h4>
+    <ol>
+      <li>点顶栏铃铛，或侧边栏 <strong>系统管理 → 消息中心</strong>。</li>
+      <li>用"全部 / 未读"页签过滤；点<strong>全部已读</strong>一键清未读。</li>
+      <li>点击工单类消息行可直接打开对应工单（openOrder 跳转）；不需要的消息可单条删除。</li>
+    </ol>
+    <p><strong>注意事项：</strong>短信、语音、App 推送为预留通道，当前仅站内消息与实时弹窗生效；消息按角色与工单负责人定向发送。</p>
+
+    <h2 id="perm">八、角色与数据权限</h2>
+    <h3>8.1 四个内置角色</h3>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">超级管理员</div>
+        <div class="sc-name">admin</div>
+        <div class="sc-d">全部菜单与按钮、全部组织数据；负责账号、角色、参数、字典等平台级配置。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">规则与督办</div>
+        <div class="sc-d">系统管理与风控规则配置、全局/本单位安全态势查看与工单督办。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">一线值守（_disp）</div>
+        <div class="sc-d">监控、报警确认解除、风险事件与工单处置；数据范围限本部门。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业车队长</div>
+        <div class="sc-name">企业视角（_capt）</div>
+        <div class="sc-d">本企业车辆档案维护、监控查看与工单跟进；看不到其他企业数据。</div>
+      </div>
+    </div>
+    <h3>8.2 数据权限两条硬规则</h3>
+    <ol>
+      <li><strong>默认强制、失败即拒绝（fail-closed）：</strong>所有查询、推送、异步任务都按数据范围装载数据；权限解析失败时按"看不到"处理，不放开。</li>
+      <li><strong>以车辆归属组织为准，不按车牌省份过滤：</strong>公司名下可以挂任意外省车牌，只要车辆归属组织在你的范围内，你就能看到它的位置、报警、工单与评分；车牌首字、省份代码仅作档案展示，绝不作为权限条件。</li>
+    </ol>
+
+    <h2 id="faq">九、常见问题</h2>
+    <table>
+      <thead><tr><th style="width:34%">问题</th><th>解答</th></tr></thead>
+      <tbody>
+        <tr><td>登录时要求输入"验证码/动态码"？</td><td>该账号开启了登录二次验证（MFA）。打开绑定的身份验证器 App，把当前 6 位动态码填入即可；换设备后请联系管理员重置 MFA。</td></tr>
+        <tr><td>账号被锁定怎么办？</td><td>多次密码错误会触发锁定。联系超级管理员在"系统管理 → 用户管理"中对你的账号执行解锁。</td></tr>
+        <tr><td>为什么我看不到某个菜单/按钮？</td><td>菜单与按钮按角色权限显示。联系超级管理员在"角色管理"中为角色勾选对应权限，或为你分配其他角色。</td></tr>
+        <tr><td>明明知道车牌，为什么搜不到车？</td><td>数据范围以车辆归属组织为准。该车不在你的数据范围内时，搜索、地图、接口均不可见，这是数据权限的正常表现，不是故障。</td></tr>
+        <tr><td>监控页车辆怎么全"离线"了？</td><td>先确认顶部在线判定窗口；平台以"平台数据时基（最新定位时间）"而非墙钟判定在线。若模拟器已关闭或数据时基停滞，车辆会陆续转为离线——重新打开模拟器即可。</td></tr>
+        <tr><td>报警中心列表为什么是空的？</td><td>列表默认只查"今日 00:00~23:59"（按墙钟）。样例数据日期不在今天时，请手动把开始/结束时间改到样例数据所在日期后再查询。</td></tr>
+        <tr><td>报警处理时提示"状态已变化"？</td><td>另一位同事已先行确认或解除了该报警。刷新列表查看最新状态即可，避免重复处置。</td></tr>
+        <tr><td>工单闭环提交不了？</td><td>闭环必须选择结果且说明在 10~255 字之间；请补充完整处置说明后再提交。</td></tr>
+        <tr><td>车辆详情显示"未绑定"？</td><td>该车尚未关联终端或驾驶员。到"主数据管理 → 车辆档案 → 绑定管理"完成绑定后，监控归属与统计即生效。</td></tr>
+        <tr><td>今天的驾驶评分怎么还没有？</td><td>评分按周期批量计算，且样本需达到 200 个定位点 / 30 分钟行驶门槛，样本不足不出分；需要时可在驾驶评分页发起"重算"（跨度最多 92 天）。</td></tr>
+        <tr><td>误报事件会影响司机评分吗？</td><td>不会。对应报警在报警中心以"误报（01）"解除、或工单以误报闭环后，该事件不参与扣分。</td></tr>
+        <tr><td>监控气泡里的"视频/对讲/拍照"能点吗？</td><td>这些是 JT/T 1078 视频对接的预留按钮，当前版本点击仅提示预留；实时视频能力在后续版本提供。</td></tr>
+        <tr><td>分析决策里的 19 个报表点不开数据？</td><td>这些节点（13 项报表查询 + 6 项统计分析）已挂菜单占位，当前显示"功能建设中"，属于规划功能，详见 MOD-DBD-017。</td></tr>
+        <tr><td>加载测试集/清空数据点错了怎么办？</td><td>加载标准测试集会先清空业务数据再灌入样例；清空操作需要二次确认。正式环境严禁使用这些按钮；一旦误操作，只能从数据库备份恢复。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>USER-DBD-001 系统功能使用手册 · v1.0.0 · 2026-10-05</span>
+      <span>功能行为以线上系统为准；发现描述与实际不符请反馈产品负责人</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

@@ -48,8 +48,13 @@ public class VehiclePanelService {
         if (terminal != null) {
             VehiclePanelVO.LatestPoint latest = panelMapper.selectLatestPoint(terminal.getIdentityCode());
             if (latest != null) {
-                latest.setOnline(latest.getGpsTime() != null
-                        && latest.getGpsTime().isAfter(now.minusMinutes(ONLINE_WINDOW_MINUTES)));
+                // GATEWAY-PLAN-001：终端在案在线状态优先；状态未知（NULL）回退"最近 N 分钟有点"
+                if (terminal.getOnlineStatus() != null) {
+                    latest.setOnline(terminal.getOnlineStatus() == 1);
+                } else {
+                    latest.setOnline(latest.getGpsTime() != null
+                            && latest.getGpsTime().isAfter(now.minusMinutes(ONLINE_WINDOW_MINUTES)));
+                }
             }
             vo.setLatestPoint(latest);
             vo.setTodayTrack(buildTodayTrack(terminal.getIdentityCode(), dayStart, now));

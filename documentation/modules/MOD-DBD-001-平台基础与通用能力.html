@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-001 平台基础与通用能力 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">MOD-DBD-001 平台基础与通用能力 · 登录认证 / 统一响应与异常 / 容器基座 / 前端布局标签框架</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 登录与进入工作台</a></li>
+            <li><a href="#s3-2">3.2 多标签页工作方式</a></li>
+            <li><a href="#s3-3">3.3 侧栏折叠与顶栏工具</a></li>
+            <li><a href="#s3-4">3.4 退出登录</a></li>
+            <li><a href="#s3-5">3.5 会话失效后的表现</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 登录认证与 JWT 双用途令牌</a></li>
+            <li><a href="#s7-2">7.2 JwtAuthFilter 认证过滤器</a></li>
+            <li><a href="#s7-3">7.3 统一响应 Result 与错误码</a></li>
+            <li><a href="#s7-4">7.4 全局异常翻译</a></li>
+            <li><a href="#s7-5">7.5 容器基座（platform-boot / platform-common）</a></li>
+            <li><a href="#s7-6">7.6 前端布局与多标签页框架</a></li>
+            <li><a href="#s7-7">7.7 前端请求封装与路由守卫</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 关联数据表</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 定时任务与后台行为</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-001 平台基础与通用能力</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-001<span class="sep">|</span>版本 v1.1.0<span class="sep">|</span>发布日期 2026-10-06<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 P01 / P02 / P03
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码（backend-java platform-boot、platform-common、module-iam；frontend src）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>PlatformApplication</code> / <code>HealthController</code>（platform-boot）；<code>JwtUtil</code> / <code>JwtAuthFilter</code> / <code>Result</code> / <code>ErrorCode</code> / <code>GlobalExceptionHandler</code> / <code>WebConfig</code> / <code>MybatisPlusConfig</code> / <code>MybatisMetaObjectHandler</code>（platform-common）；<code>AuthController</code> / <code>AuthService</code>（module-iam）；前端 <code>views/Login.vue</code>、<code>layout/MainLayout.vue</code>、<code>store/tabs.ts</code>、<code>store/auth.ts</code>、<code>router/index.ts</code>、<code>api/http.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>本模块是平台的<strong>地基</strong>，包含四组贯穿全系统的基础能力，本身不对应某个业务菜单，但每一个业务页面都建立在它之上：</p>
+    <ul>
+      <li><strong>登录与 JWT（P01）</strong>：账号密码登录、失败计数与锁定、JWT 访问令牌签发与校验、登录态在前后端的维持；MFA 二次验证仅在此描述令牌链路，TOTP 绑定与策略详见 MOD-DBD-002。</li>
+      <li><strong>统一响应与全局异常（P02）</strong>：所有 Java REST 接口返回 <code>{code, message, data}</code> 统一结构；业务异常、参数校验异常、唯一约束冲突、未知异常被全局异常处理器翻译为标准错误码，前端请求库统一解包。</li>
+      <li><strong>容器基座（P03）</strong>：Spring Boot 启动类、模块装配（scanBasePackages + MapperScan）、定时任务开关、CORS、JWT 过滤器注册、MyBatis-Plus 分页插件、公共审计字段自动填充、健康检查端点。</li>
+      <li><strong>前端布局与标签页框架（P03）</strong>：登录后的主框架——左侧可折叠导航菜单（按登录人权限渲染）、顶部多标签页（固定标签 / 右键菜单 / 溢出滚动箭头）、通知铃铛、用户下拉（个人中心 / 退出登录）、keep-alive 视图缓存。</li>
+    </ul>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>业务规则（谁能看哪些菜单、数据范围多大）在 MOD-DBD-002（IAM）；本模块只负责"令牌怎么签发与校验、响应怎么包装、应用怎么装配、页面框架怎么组织"。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>账号密码登录</td><td>用户名 + 密码校验；连续 5 次失败锁定 15 分钟；登录成功回写 last_login_time/ip</td><td><code>AuthController.login</code> + <code>AuthService.login</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>JWT 双用途令牌</td><td>access 令牌 8 小时（purpose=access）；MFA 中间令牌 5 分钟（purpose=mfa，仅可用于 /api/auth/mfa/verify）</td><td><code>JwtUtil</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>请求级认证</td><td>仅拦截 /api/*；白名单 /api/auth/login、/api/auth/mfa/verify；Bearer 头解析、purpose 校验、主体装载进 UserContext</td><td><code>JwtAuthFilter</code>（WebConfig 注册，Order=1）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>统一响应结构</td><td>成功 code=0；失败携带业务错误码；分页统一 PageData（total/current/size/list）</td><td><code>Result</code> / <code>PageData</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>全局异常处理</td><td>BizException→原样返回；参数校验→40001 带字段名；唯一约束冲突→40901；未知异常→50000 + 日志</td><td><code>GlobalExceptionHandler</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>容器装配</td><td>com.mydbd 全包扫描、MapperScan com.mydbd.**.mapper、@EnableScheduling、CORS（/api/**）、MP 分页插件（PostgreSQL 方言）</td><td><code>PlatformApplication</code> / <code>WebConfig</code> / <code>MybatisPlusConfig</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>审计字段自动填充</td><td>insert 写 creator/create_date/updater/update_date；update 写 updater/update_date；无登录上下文回落 system</td><td><code>MybatisMetaObjectHandler</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>健康检查</td><td>GET /health 返回 {"status":"UP"}，不经 JWT 过滤器（路径不在 /api/* 下）</td><td><code>HealthController</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>前端登录页</td><td>账号密码 → （可选）动态口令两步；测试账号快捷填充；登录后跳转 redirect 或首个有权菜单</td><td><code>views/Login.vue</code> + <code>store/auth.ts</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>主布局与多标签页</td><td>侧栏菜单按权限渲染（目录/二级分组/菜单三级）、可折叠；标签页一功能一标签、/monitor 固定、右键刷新/关闭其他/关闭全部、sessionStorage 恢复</td><td><code>layout/MainLayout.vue</code> + <code>store/tabs.ts</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>前端请求封装</td><td>axios 自动附带 Bearer；响应解包 Result；401 清 token 跳登录页；skipErrorMessage 静默选项</td><td><code>api/http.ts</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>路由守卫</td><td>无 token 跳登录；首入装载 profile；meta.perm 校验，无权回落首个有权菜单</td><td><code>router/index.ts</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>退出登录</td><td>POST /api/auth/logout 仅审计留痕（JWT 无状态不拉黑）；前端清标签与 token 硬跳登录页</td><td><code>AuthController.logout</code> + <code>MainLayout.onCommand</code></td><td><span class="badge green">已上线</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>access 令牌</td><td>登录成功签发的业务访问令牌，<strong>HS256 签名（2026-10-06 起由 JwtUtil 显式钉死）</strong>，claims 含 sub=username、uid、purpose=access，有效期 8 小时。此前 signWith 未指定算法时 JJWT 按密钥长度自选，50 字节密钥实际签发 HS384；解析侧与 processing 侧均兼容 HS384/HS512 存量令牌，过渡期无需重新登录。</td></tr>
+        <tr><td>mfa 令牌</td><td>开通 TOTP 的账号密码校验通过后签发的中间令牌（purpose=mfa，5 分钟），只能调 /api/auth/mfa/verify，不能访问任何业务接口（过滤器按 purpose 拒绝）。</td></tr>
+        <tr><td>UserContext</td><td>请求线程内的登录主体 ThreadLocal，由 JwtAuthFilter 写入、finally 清理；Service 层据此取当前用户。</td></tr>
+        <tr><td>Result / ErrorCode</td><td>统一响应体与错误码枚举（40001/40101/42301/40301/40401/40901/50000），成功恒为 code=0。</td></tr>
+        <tr><td>固定标签 affix</td><td>多标签页中不可关闭的标签，当前仅 /monitor（实时导航监控），始终置于首位。</td></tr>
+        <tr><td>viewKey / refreshSeq</td><td>"刷新当前标签"的实现机制：path + 自增序号作为 router-view 的 key，序号变化触发组件重建。</td></tr>
+        <tr><td>valid_mark</td><td>全平台软删标记约定（1 有效 / 0 已删），用户、角色、围栏等均沿用。</td></tr>
+        <tr><td>雪花 ID 按 string 处理</td><td>前端约定：后端 bigint 主键（雪花 ID）超出 JS 安全整数，接口层一律以 string 承载（见 iam.ts、mdm.ts 的 id: string 声明）。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">全体登录用户</div>
+        <div class="sc-name">日常登录与多页并行</div>
+        <div class="sc-desc">早上打开平台登录，进入实时导航监控（固定标签）。随后打开车辆档案、报警中心两个标签并行处理，标签栏可随时切换，刷新浏览器后标签自动恢复。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">误输密码被锁定</div>
+        <div class="sc-desc">连续 5 次输错密码，账号锁定 15 分钟，登录页提示锁定截止时间；等锁定期满或由管理员在 系统管理 → 用户管理 点"解锁"提前解除。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">排班交接退出登录</div>
+        <div class="sc-desc">下班前点右上角用户名 → 退出登录，确认框后系统清空本机会话标签并回到登录页，下一个班次的同事登录看到的是自己的工作台。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">运维人员</div>
+        <div class="sc-name">容器健康探活</div>
+        <div class="sc-desc">Docker / K8s 探针定时请求 GET /health 返回 {"status":"UP"}；该路径不经过 JWT 过滤器，不需要任何令牌。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>本模块无独立业务菜单，入口是<strong>登录页（/login）</strong>与登录后的<strong>主框架</strong>（任何菜单页都在其中）。</p>
+
+    <h3 id="s3-1">3.1 登录与进入工作台</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">打开登录页</div>
+        <div class="s-desc">访问 /login（未登录访问任何页面会被路由守卫重定向到此，并带 redirect 参数）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">输入账号密码</div>
+        <div class="s-desc">演示环境登录页提供测试账号快捷填充（admin/admin123、四省调度员与车队长 test123456，与 16/17 号种子一致）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">（可选）动态口令</div>
+        <div class="s-desc">账号已开通 TOTP 时进入第二步，输入身份验证器 6 位验证码；可"返回上一步"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">进入工作台</div>
+        <div class="s-desc">登录成功跳 redirect 参数指向页，否则跳该账号菜单树中第一个可访问菜单（firstMenuPath，兜底 /monitor）。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 多标签页工作方式</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">打开功能页即开标签</div>
+        <div class="s-desc">从左侧菜单进入任一功能页，顶部 44px 顶栏内出现一个标签；同一路径重复进入只更新原标签（一功能一标签，按 route.path 去重）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">切换与关闭</div>
+        <div class="s-desc">点击标签切换；点标签上的 × 关闭；关闭当前激活标签自动跳到相邻标签，没有相邻标签时回 /monitor。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">右键菜单</div>
+        <div class="s-desc">标签上右键弹出：刷新当前（组件重建）、关闭其他（保留本标签与固定标签）、关闭全部（仅留固定标签 /monitor）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">溢出滚动</div>
+        <div class="s-desc">标签过多时顶栏左右出现 ‹ › 箭头平滑滚动；切换标签后激活标签自动滚入可视区。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">刷新恢复</div>
+        <div class="s-desc">标签清单存 sessionStorage（键 mydbd-tabs），F5 刷新后恢复；退出登录时清空，避免下个账号看到上个账号的标签。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 侧栏折叠与顶栏工具</h3>
+    <ul>
+      <li><strong>折叠导航</strong>：侧栏底部"收起菜单"按钮切换 210px / 64px；状态存 localStorage（mydbd-aside-collapsed），下次进入保持。</li>
+      <li><strong>监控大屏入口</strong>：顶栏 DataBoard 图标直达 /dashboard（脱离主布局的全屏大屏，详见 MOD-DBD-005）。</li>
+      <li><strong>通知铃铛</strong>：未读角标（99 封顶）、最近消息弹层、"全部已读"、点工单类消息跳 处置工单 页（详见 MOD-DBD-011）。</li>
+      <li><strong>用户下拉</strong>：显示姓名/登录名，开通 MFA 的账号带"动态口令"标记；菜单含 个人中心（ProfileDialog，改资料/密码/绑定口令）与 退出登录。</li>
+    </ul>
+
+    <h3 id="s3-4">3.4 退出登录</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">发起退出</div>
+        <div class="s-desc">右上角用户名 → 退出登录 → 确认框"确认退出登录？"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">服务端留痕</div>
+        <div class="s-desc">前端调 POST /api/auth/logout，服务端只写审计日志（AUTH/LOGOUT）；JWT 无状态，不做令牌拉黑。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">本地清理</div>
+        <div class="s-desc">清空会话标签（tabs.reset）、清空 auth store 与 localStorage token，window.location.assign('/login') 硬跳转彻底重置内存态。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-5">3.5 会话失效后的表现</h3>
+    <ul>
+      <li>access 令牌有效期 8 小时，到期或无效后任意接口返回 40101；前端 http.ts 拦截 401：提示"登录已失效，请重新登录"、清 token、跳 /login。</li>
+      <li>令牌被篡改、purpose 不是 access、账号被停用/删除，同样按 401 处理（过滤器分别返回"令牌类型无效""账号不存在或已停用"等文案）。</li>
+      <li>登录页表单校验失败（密码错误）直接展示后端 message，含剩余尝试次数；锁定时提示解锁时间。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块前端为 1 个登录页 + 1 套主框架（所有菜单页共享）。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">🔐</div>
+      <div class="sh-t">截图 4-1：登录页第一步（/login）</div>
+      <div class="sh-p">应截：居中登录卡片（mydbd 品牌字、"北斗导航数据业务平台"副标题）、用户名/密码输入框、登录按钮、测试账号快捷填充区（管理员/上海/山东/江苏/安徽分组 chip）、底部默认管理员提示。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🔢</div>
+      <div class="sh-t">截图 4-2：登录页第二步（动态口令）</div>
+      <div class="sh-p">应截：已开启动态口令账号登录后的第二步——warning 提示条"账号「xx」已开启动态口令"、6 位验证码输入框（等宽字距）、验证按钮、返回上一步。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🗂️</div>
+      <div class="sh-t">截图 4-3：主框架全貌（任意菜单页，如 /monitor）</div>
+      <div class="sh-p">应截：左侧深色导航（logo 区"北斗业务平台"、分组菜单、底部收起按钮）、顶部标签栏（固定标签"实时导航监控"前置蓝点、激活标签蓝色下划线）、右侧大屏入口图标、通知铃铛、用户名下拉。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📑</div>
+      <div class="sh-t">截图 4-4：标签右键菜单</div>
+      <div class="sh-p">应截：任一标签上右键弹出的三项菜单（刷新当前 / 关闭其他 / 关闭全部）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🚪</div>
+      <div class="sh-t">截图 4-5：退出登录确认</div>
+      <div class="sh-p">应截：用户下拉展开（个人中心 / 退出登录）与"确认退出登录？"确认框。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">8h</div><div class="l">access 令牌有效期，覆盖一个班次免重复登录</div></div>
+      <div class="stat"><div class="v">5 次 / 15 分钟</div><div class="l">连续失败锁定阈值与时长，防爆破</div></div>
+      <div class="stat"><div class="v">1 套结构</div><div class="l">全平台 {code,message,data} 响应，前端统一解包</div></div>
+      <div class="stat"><div class="v">N 标签</div><div class="l">一功能一标签并行工作，刷新可恢复</div></div>
+    </div>
+    <ul>
+      <li><strong>登录口径清晰</strong>：密码错误提示剩余次数、锁定提示截止时间、停用提示联系管理员，用户不需要猜原因。</li>
+      <li><strong>页面级并行</strong>：监控、档案、报警可同时挂着互不干扰；监控页 keep-alive 保活，切走再切回地图状态不丢。</li>
+      <li><strong>错误一致可读</strong>：后端任何异常都被翻译成统一结构，前端弹的就是后端给的业务文案（如"登录名已存在"），不是英文堆栈。</li>
+      <li><strong>运维可探活</strong>：/health 无需认证，容器编排可直接挂探针。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>后端地基由 platform-boot（启动装配）与 platform-common（横切能力）两个 Maven 模块承担；登录认证的业务规则（密码校验、锁定）在 module-iam。前端地基是 Login.vue + MainLayout.vue + router/store/http 四件套。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>Login.vue</b> 两步登录 + 测试账号填充</span>
+          <span class="node"><b>MainLayout.vue</b> 侧栏/顶栏/标签/通知/用户下拉</span>
+          <span class="node"><b>router/index.ts</b> 守卫（token→profile→perm）</span>
+          <span class="node"><b>store/auth.ts / tabs.ts</b> 登录态 / 标签态</span>
+          <span class="node"><b>api/http.ts</b> axios 拦截与 Result 解包</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">platform-boot</div>
+        <div class="al-body">
+          <span class="node"><b>PlatformApplication</b> @SpringBootApplication + @MapperScan + @EnableScheduling</span>
+          <span class="node"><b>HealthController</b> GET /health（免认证）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">platform-common</div>
+        <div class="al-body">
+          <span class="node"><b>JwtUtil / JwtAuthFilter</b> 令牌签发解析 / 请求认证</span>
+          <span class="node"><b>Result / PageData / ErrorCode</b> 统一响应</span>
+          <span class="node"><b>GlobalExceptionHandler / BizException</b> 异常翻译</span>
+          <span class="node"><b>WebConfig / MybatisPlusConfig / MybatisMetaObjectHandler</b> CORS+过滤器 / 分页 / 审计填充</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">module-iam<br>（认证业务）</div>
+        <div class="al-body">
+          <span class="node"><b>AuthController</b> /api/auth/** 登录/登出/自助</span>
+          <span class="node"><b>AuthService</b> 密码校验、失败锁定、MFA 步进</span>
+          <span class="node"><b>PasswordCodec</b> PBKDF2-HMAC-SHA256（120000 迭代）</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>PlatformApplication</code></td><td>boot</td><td>启动入口与装配</td><td>scanBasePackages="com.mydbd"；@MapperScan("com.mydbd.**.mapper")；@EnableScheduling</td></tr>
+        <tr><td><code>HealthController</code></td><td>boot</td><td>健康检查</td><td>GET /health → {"status":"UP"}；路径不在 /api/*，天然绕过 JwtAuthFilter</td></tr>
+        <tr><td><code>JwtUtil</code></td><td>common</td><td>令牌签发/解析</td><td>jjwt 0.12.6；签发显式 <code>signWith(key, Jwts.SIG.HS256)</code>（2026-10-06 前未指定算法，JJWT 按密钥长度自选，50 字节密钥签发 HS384，曾与 processing 的 HS256 验签白名单冲突导致打开「运行模式」页被 401 踢回登录）；解析 verifyWith(key) 接受同族 HMAC，兼容存量令牌；密钥取 mydbd.jwt.secret，兜底环境变量 JWT_HMAC_SECRET，再兜底 dev 值；access 8h / mfa 5min；readUserId 兼容 Integer</td></tr>
+        <tr><td><code>JwtAuthFilter</code></td><td>common</td><td>请求认证</td><td>OncePerRequestFilter；白名单 login/mfa.verify；purpose 校验；PermissionCache.getOrLoad 装载主体；401 直接写 Result JSON</td></tr>
+        <tr><td><code>WebConfig</code></td><td>common</td><td>过滤器注册 + CORS</td><td>FilterRegistrationBean 仅 /api/*、Order=1；CORS allowedOriginPatterns *、allowCredentials、maxAge 3600</td></tr>
+        <tr><td><code>Result / PageData / ErrorCode</code></td><td>common</td><td>响应结构</td><td>ok()/fail(code,message)；PageData(total,current,size,list)；7 个错误码常量</td></tr>
+        <tr><td><code>GlobalExceptionHandler</code></td><td>common</td><td>异常→Result</td><td>@RestControllerAdvice；BizException 透传码与文案；BindException 取首个字段错；DuplicateKeyException→40901；兜底 50000 + error 日志</td></tr>
+        <tr><td><code>MybatisMetaObjectHandler</code></td><td>common</td><td>审计字段填充</td><td>strictInsertFill/UpdateFill；操作人取 UserContext.username()，无上下文回落 "system"</td></tr>
+        <tr><td><code>AuthController / AuthService</code></td><td>iam</td><td>登录/登出/自助</td><td>login 不挂 @Transactional（防止失败计数被回滚）；MAX_FAIL_COUNT=5、LOCK_MINUTES=15；logout 仅 @AuditLog</td></tr>
+        <tr><td><code>Login.vue / auth store</code></td><td>前端</td><td>登录交互与令牌保管</td><td>token 存 localStorage mydbd-token；login 返回 mfaRequired 时切第二步；acceptToken 后 loadProfile</td></tr>
+        <tr><td><code>MainLayout.vue / tabs store</code></td><td>前端</td><td>主框架与标签</td><td>菜单树按 menuType/visible 过滤渲染；标签 sessionStorage 持久化；keep-alive include=['Monitor'] max=6</td></tr>
+        <tr><td><code>http.ts / router 守卫</code></td><td>前端</td><td>请求与导航基础设施</td><td>请求拦截附 Bearer；响应 code!==0 弹错；401 跳登录；守卫按 meta.perm 鉴权回落</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 登录认证与 JWT 双用途令牌</h3>
+    <p><code>AuthService.login</code> 的完整判定顺序（每一步失败都抛 BizException，前端按 message 原样提示）：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">① 查用户</div>
+        <div class="s-desc">按 username + valid_mark=1 查 traj.sys_user；不存在返回"用户名或密码错误"（不区分账号不存在与密码错，防枚举）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② 状态与锁定</div>
+        <div class="s-desc">status!=1 → "账号已停用"；locked_until 在未来 → 42301"账号已锁定，请于 {时刻} 后重试"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ 校验密码</div>
+        <div class="s-desc">PasswordCodec.matches（PBKDF2-HMAC-SHA256，每用户 16 字节盐，120000 迭代，存储格式 pbkdf2$120000$base64(salt)$base64(hash)，比对用 MessageDigest.isEqual 防时序攻击）。失败则 fail_count+1；达 5 次置 locked_until=now+15min 并提示"剩余尝试次数"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ 成功处理</div>
+        <div class="s-desc">清零 fail_count/locked_until，回写 last_login_time 与 last_login_ip（取自 X-Forwarded-For 首段 / X-Real-IP / remoteAddr），evict 权限缓存。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑤ 分支签发</div>
+        <div class="s-desc">mfa_enabled=1 且有密钥 → 返回 LoginVO.mfaStep（5 分钟 mfa 令牌）；否则返回 LoginVO.access（8 小时 access 令牌 + 姓名）。</div>
+      </div>
+    </div>
+    <blockquote class="warn">
+      <p><strong>为什么 login 不能加 @Transactional：</strong>代码注释明确——密码错误会抛异常，若存在事务，失败计数/锁定时间的 UPDATE 将被一并回滚，"连续失败 N 次锁定"策略失效。此处仅有单表单行写入，无需事务。</p>
+    </blockquote>
+    <p>令牌结构（<code>JwtUtil.build</code>）：HS256（jjwt Keys.hmacShaKeyFor 建钥、<code>signWith(key, Jwts.SIG.HS256)</code> 显式指定算法；2026-10-06 前仅传 key 时 JJWT 按密钥长度自选算法），claims 为 <code>sub=username</code>、<code>uid=userId</code>、<code>purpose=access|mfa</code>、iat、exp。密钥配置链 <code>${mydbd.jwt.secret}</code> → <code>${JWT_HMAC_SECRET}</code> → 开发兜底值。</p>
+    <blockquote class="warn">
+      <p><strong>跨服务算法契约（2026-10-06 修复，详见 <a href="../plans/20261006-01-jwt-alg-401-fix.md">修复方案存档</a>）：</strong>processing-service 的 <code>app/security.py</code> 用 PyJWT 验签浏览器 JWT，白名单为 HS256/HS384/HS512；Java 签发侧固定 HS256、解析侧接受同族 HMAC。令牌算法必须两侧同时认可，否则 processing 接口 401，前端拦截器收到 401 会清 token 并硬跳 /login。</p>
+    </blockquote>
+
+    <h3 id="s7-2">7.2 JwtAuthFilter 认证过滤器</h3>
+    <table>
+      <thead><tr><th>步骤</th><th>行为</th><th>失败响应</th></tr></thead>
+      <tbody>
+        <tr><td>路径判定</td><td>仅 /api/* 注册；白名单 /api/auth/login、/api/auth/mfa/verify 直接放行</td><td>—</td></tr>
+        <tr><td>取令牌</td><td>Authorization: Bearer xxx，截取第 7 位后</td><td>40101 "缺少认证令牌"</td></tr>
+        <tr><td>解析与类型</td><td>jwtUtil.parse；purpose 必须为 access（mfa 令牌不能访问业务接口）</td><td>40101 "令牌类型无效" / "令牌无效或已过期"</td></tr>
+        <tr><td>装载主体</td><td>PermissionCache.getOrLoad(uid, DbAuthRealm.loadByUserId)（120 秒进程内缓存）；账号停用/删除返回 null</td><td>40101 "账号不存在或已停用"</td></tr>
+        <tr><td>写上下文</td><td>UserContext.set(user)；request.setAttribute(AuditFilter.ATTR_USER) 供审计过滤器在链返回后读取</td><td>—</td></tr>
+        <tr><td>清理</td><td>finally UserContext.clear()，防线程复用串号</td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-3">7.3 统一响应 Result 与错误码</h3>
+    <p>所有 Controller 返回 <code>Result.ok(data)</code> 或经异常处理器返回 <code>Result.fail(code, message)</code>，结构固定 <code>{code, message, data}</code>，成功恒为 <code>code=0, message="success"</code>。错误码枚举：</p>
+    <table>
+      <thead><tr><th>错误码</th><th>常量</th><th>默认文案</th><th>典型场景</th></tr></thead>
+      <tbody>
+        <tr><td>40001</td><td>BAD_REQUEST</td><td>请求参数错误</td><td>参数校验失败（带字段名）、取值非法</td></tr>
+        <tr><td>40101</td><td>UNAUTHORIZED</td><td>未认证或登录已失效</td><td>无令牌/令牌过期/密码错误/未登录</td></tr>
+        <tr><td>42301</td><td>LOCKED</td><td>账号已锁定</td><td>连续失败锁定窗口内登录</td></tr>
+        <tr><td>40301</td><td>FORBIDDEN</td><td>无访问权限</td><td>@RequiresPerm 校验失败</td></tr>
+        <tr><td>40401</td><td>NOT_FOUND</td><td>资源不存在</td><td>按 id 查无有效记录</td></tr>
+        <tr><td>40901</td><td>CONFLICT</td><td>资源状态冲突</td><td>唯一约束冲突、保护规则（如内置角色禁删）</td></tr>
+        <tr><td>50000</td><td>INTERNAL_ERROR</td><td>服务器内部错误</td><td>未捕获异常兜底（HTTP 500）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-4">7.4 全局异常翻译</h3>
+    <p><code>GlobalExceptionHandler</code>（@RestControllerAdvice）四类处理器：</p>
+    <ul>
+      <li><strong>BizException</strong>：透传 code 与 message（warn 级日志）；业务代码只负责 <code>throw new BizException(ErrorCode.CONFLICT, "登录名已存在")</code>。</li>
+      <li><strong>MethodArgumentNotValidException / BindException</strong>：取第一个字段错误，拼成"字段名 + 校验提示"，返回 40001。</li>
+      <li><strong>DuplicateKeyException</strong>：数据库唯一约束冲突统一翻译为 40901"数据已存在或绑定冲突，请检查唯一性规则"，避免把 SQL 细节透给前端。</li>
+      <li><strong>Exception 兜底</strong>：HTTP 500 + 50000，error 级日志带完整堆栈。</li>
+    </ul>
+
+    <h3 id="s7-5">7.5 容器基座（platform-boot / platform-common）</h3>
+    <ul>
+      <li><strong>装配</strong>：单一启动类扫 com.mydbd 全部包，MapperScan 匹配所有模块的 mapper 包；@EnableScheduling 使各模块 @Scheduled 生效（如工单超时扫描）。</li>
+      <li><strong>CORS</strong>：/api/** 放开所有来源（allowedOriginPatterns *）、允许凭证，适配前端 Vite 开发服务器跨域；生产由网关收敛（见部署手册）。</li>
+      <li><strong>分页</strong>：MybatisPlusInterceptor 挂 PaginationInnerInterceptor（POSTGRE_SQL 方言），Service 统一 new Page&lt;&gt;(page, size) 并各自钳制 size 上限。</li>
+      <li><strong>审计字段</strong>：实体继承 BaseEntity（creator/create_date/updater/update_date），insert/update 由 MetaObjectHandler 自动填充当前登录名，无登录上下文（如 DataInitializer）落 "system"。</li>
+      <li><strong>健康检查</strong>：GET /health 返回 {"status":"UP"}，因路径不在 /api/* 下，过滤器不拦截，探针免令牌。</li>
+    </ul>
+
+    <h3 id="s7-6">7.6 前端布局与多标签页框架</h3>
+    <ul>
+      <li><strong>菜单渲染</strong>：MainLayout 遍历 auth.menus（来自 /api/auth/profile 的菜单树）：menuType=1 渲染为可展开目录（支持目录内再嵌一层二级分组目录，仅当其下有可见菜单时显示）；menuType=2 且 visible!=0 且有 path 渲染为菜单项；visible=0 的隐藏项不渲染。</li>
+      <li><strong>标签模型</strong>：TabItem{path, title, fullPath, affix}，以 route.path 为唯一键；visit() 已存在则只更新 fullPath/标题；/dashboard 与 /login 不登记标签。</li>
+      <li><strong>固定标签</strong>：ensureAffix('/monitor','实时导航监控') 保证存在且置首；关闭动作对 affix 一律无效；关闭全部后仅剩它。</li>
+      <li><strong>刷新机制</strong>：viewKey = route.path + '#' + refreshSeq；"刷新当前"自增 refreshSeq 触发 router-view 重建，不重载整页。</li>
+      <li><strong>视图缓存</strong>：keep-alive include=['Monitor'] :max="6"，监控页切走保留地图与连接状态。</li>
+      <li><strong>持久化</strong>：标签存 sessionStorage（mydbd-tabs，按浏览器会话隔离）；侧栏折叠态存 localStorage（mydbd-aside-collapsed）；token 存 localStorage（mydbd-token）。</li>
+      <li><strong>退出时序</strong>：先 ElMessageBox.close() 显式收起确认框遮罩（注释说明曾与跳转存在时序竞争残留遮罩），再 tabs.reset()、auth.logout()、window.location.assign('/login')。</li>
+    </ul>
+
+    <h3 id="s7-7">7.7 前端请求封装与路由守卫</h3>
+    <p><code>api/http.ts</code>（axios 实例，timeout 120 秒）：</p>
+    <ul>
+      <li>请求拦截：localStorage 有 token 即附 <code>Authorization: Bearer</code>。</li>
+      <li>响应拦截：body 含 code 字段时，code===0 直接返回 data（业务代码拿到的已是解包结果）；否则 ElMessage.error(message) 并 reject。调用方设 <code>skipErrorMessage</code> 可跳过全局弹窗（预留能力接口降级用，如终端指令/逆地理）。</li>
+      <li>HTTP 401：提示"登录已失效"、清 token、跳 /login。</li>
+    </ul>
+    <p><code>router/index.ts</code> 守卫链：meta.public（仅 /login）直接放行；无 token → 跳登录带 redirect；首入 await auth.loadProfile()（失败则 reset 跳登录）；meta.perm 存在且 auth.has() 为假 → 回落 firstMenuPath（菜单树第一个可访问叶子，兜底 /monitor）。</p>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>一次"登录 → 打开业务页 → 调接口"的端到端链路：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">登录</div>
+        <div class="s-desc">POST /api/auth/login（白名单免认证）→ 校验密码/锁定 → 签发 access（或 mfa 步进）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">装载档案</div>
+        <div class="s-desc">前端存 token → GET /api/auth/profile 取用户/角色/权限/菜单树，渲染侧栏。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">业务请求</div>
+        <div class="s-desc">axios 附 Bearer → JwtAuthFilter 解析 → UserContext 装载 → Controller @RequiresPerm 校验 → Service 业务。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">统一返回</div>
+        <div class="s-desc">Result.ok(data)；异常经 GlobalExceptionHandler 翻译为 fail(code,message)。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">前端解包</div>
+        <div class="s-desc">code=0 返回 data；非 0 弹 message；401 清会话回登录页。</div>
+      </div>
+    </div>
+    <blockquote class="tip">
+      <p><strong>与业务模块的分工：</strong>数据范围过滤（deptScope）在主体装载时已算好存进 UserInfo，由 MOD-002 与各业务模块消费；权限点在 PermAspect 判定，本模块只提供 UserContext 载体。</p>
+    </blockquote>
+
+    <h2 id="s9">9 关联数据表</h2>
+    <p>本模块直接读写的表只有登录相关的 traj.sys_user（由 module-iam 维护）；容器与前端框架不落库。</p>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/约束</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.sys_user</code></td>
+          <td>登录账号（密码哈希、失败计数、锁定、MFA、最近登录）</td>
+          <td>uk_sys_user_username（valid_mark=1 部分唯一）、password_hash、fail_count、locked_until、mfa_enabled/mfa_secret、last_login_time/last_login_ip、status、valid_mark</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_user">DDL · tbl-traj_sys_user</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>菜单树（traj.sys_menu）与角色（traj.sys_role）在 profile 组装时读取，属 MOD-DBD-002 的数据模型，此处不展开。</p>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块直接相关的端点。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>认证要求</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>POST <code>/api/auth/login</code></td><td>账号密码登录（可能返回 mfaRequired + mfaToken）</td><td>白名单免令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+        <tr><td>POST <code>/api/auth/mfa/verify</code></td><td>二次验证换 access 令牌（仅接受 purpose=mfa 令牌）</td><td>白名单免令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+        <tr><td>POST <code>/api/auth/logout</code></td><td>退出登录（仅审计留痕，JWT 不拉黑）</td><td>access 令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+        <tr><td>GET <code>/api/auth/profile</code></td><td>当前登录人档案 + 角色 + 权限 + 菜单树（前端首入必调）</td><td>access 令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+        <tr><td>PUT <code>/api/auth/password</code> / <code>/api/auth/profile</code></td><td>自助改密 / 改资料（个人中心）</td><td>access 令牌</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+        <tr><td>GET <code>/health</code></td><td>健康检查 {"status":"UP"}</td><td>免认证（不在 /api/* 下）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-health">grp-health</a></td></tr>
+      </tbody>
+    </table>
+    <p>MFA 绑定三件套（/api/auth/mfa/setup|enable|disable）属 MOD-DBD-002 的覆盖范围，锚点同在 grp-auth 组。</p>
+
+    <h2 id="s11">11 定时任务与后台行为</h2>
+    <p>本模块自身无定时任务；它通过 @EnableScheduling 为全平台任务提供开关。</p>
+    <table>
+      <thead><tr><th>后台行为</th><th>触发方式</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>权限主体缓存到期</td><td>PermissionCache TTL 120 秒懒过期</td><td>用户/角色写操作主动 evict；无写操作时最长 120 秒自动重载</td></tr>
+        <tr><td>账号锁定自动解除</td><td>无任务，按时间判定</td><td>locked_until 是时间点，过期后登录自然放行；管理员也可手动解锁</td></tr>
+        <tr><td>令牌过期</td><td>无任务，解析时判定</td><td>jjwt 校验 exp；过期按 40101 处理</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>无状态 JWT 而非服务端 Session</strong>：单页 + 多实例友好，免会话同步；代价是无法即时吊销，用 8 小时较短有效期 + 停用账号在主体装载时拦截（DbAuthRealm 返回 null 即 401）折中。</li>
+      <li><strong>双用途令牌（purpose 声明）而非另起通道</strong>：MFA 中间态复用同一 JWT 设施，过滤器一行 purpose 判断即可隔离，避免引入临时会话存储。</li>
+      <li><strong>PBKDF2-HMAC-SHA256 自实现而非引 BCrypt 依赖</strong>：JDK 原生 SecretKeyFactory 即可，12 万迭代 + 每用户盐 + isEqual 常数比较，满足口令存储基线且不增依赖。</li>
+      <li><strong>自研 JwtAuthFilter + UserContext 而非引入安全框架</strong>：平台权限模型（@RequiresPerm + deptScope）较轻，OncePerRequestFilter + ThreadLocal 足够，避免框架学习成本与过度配置。</li>
+      <li><strong>@RestControllerAdvice 集中翻译异常</strong>：Controller/Service 不 try-catch，错误文案只在抛出处维护，前端拿到的永远是可直读的业务文案。</li>
+      <li><strong>多标签页自研（tabs store）而非路由级缓存方案</strong>：一功能一标签 + 固定标签 + 右键菜单是监控类系统的操作习惯；sessionStorage 按会话隔离，天然支持多账号分窗口使用。</li>
+      <li><strong>MyBatis-Plus 分页插件</strong>：PostgreSQL 方言 LIMIT/OFFSET 自动生成，业务代码不手写分页 SQL。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>JWT 无法即时吊销</td>
+          <td>logout 仅审计留痕；令牌到期前一直有效</td>
+          <td>令牌泄露后在有效期内可被冒用</td>
+          <td>有效期已压至 8h；停用/删除账号在主体装载即 401；如需强制下线可引入令牌版本号或黑名单（Redis）</td>
+        </tr>
+        <tr>
+          <td>密钥默认值风险</td>
+          <td>JwtUtil 兜底 "change-me-dev-secret"</td>
+          <td>生产忘配密钥则令牌可被伪造</td>
+          <td>部署手册要求必配 mydbd.jwt.secret / JWT_HMAC_SECRET；可在启动时对默认值告警</td>
+        </tr>
+        <tr>
+          <td>CORS 全放开</td>
+          <td>WebConfig allowedOriginPatterns("*") + allowCredentials</td>
+          <td>浏览器跨域面较宽</td>
+          <td>生产由反向代理同源托管前端，网关层收敛；开发期放开属有意取舍</td>
+        </tr>
+        <tr>
+          <td>PermissionCache 进程内缓存</td>
+          <td>TTL 120s，单机 ConcurrentHashMap</td>
+          <td>多实例部署时权限变更不一致窗口</td>
+          <td>写操作已主动 evict/evictAll；多实例化时需改为共享缓存或广播失效</td>
+        </tr>
+        <tr>
+          <td>登录接口暴力破解</td>
+          <td>有 5 次/15 分钟锁定；无验证码、无 IP 限流</td>
+          <td>分布式慢速爆破仍可尝试</td>
+          <td>锁定已覆盖单账号；网关层可加 IP 频控与图形验证码（待评估）</td>
+        </tr>
+        <tr>
+          <td>前端 token 存 localStorage</td>
+          <td>http.ts / auth store 读取 mydbd-token</td>
+          <td>XSS 时 token 可被读取</td>
+          <td>依赖前端输出转义与依赖治理；高安全场景可演进为 HttpOnly Cookie + CSRF Token</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-002-用户与权限IAM.html">MOD-DBD-002 用户与权限（IAM）</a></td><td>本模块的认证过滤器调用 IAM 的 DbAuthRealm 装载主体；@RequiresPerm 的权限集、菜单树、数据范围均由 IAM 提供；登录锁定/MFA 策略实现也在 module-iam</td><td>AuthRealm SPI、DbAuthRealm、PermAspect</td></tr>
+        <tr><td><a href="MOD-DBD-013-操作审计日志.html">MOD-DBD-013 操作审计</a></td><td>AuditFilter 依赖本模块过滤器写入的 ATTR_USER 请求属性；@AuditLog 注解切面属 platform-common</td><td>JwtAuthFilter → AuditFilter.ATTR_USER</td></tr>
+        <tr><td>全部业务模块</td><td>所有 Controller 返回 Result、所有 /api/* 请求过 JwtAuthFilter、所有分页走 MP 分页插件、所有实体审计字段由 MetaObjectHandler 填充</td><td>platform-common 被所有 module-* 依赖</td></tr>
+        <tr><td><a href="MOD-DBD-005-实时监控与可视化.html">MOD-DBD-005 实时监控</a></td><td>/monitor 是布局固定标签与 keep-alive 唯一白名单页；/dashboard 大屏脱离主布局全屏展示</td><td>MainLayout.vue、router/index.ts</td></tr>
+        <tr><td><a href="MOD-DBD-011-通知中心与多渠道预警.html">MOD-DBD-011 通知中心</a></td><td>顶栏铃铛的未读数、最近消息、全部已读由通知模块接口支撑</td><td>useNotify、api/notify.ts</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">密码输错几次会锁？锁多久？</div><div class="vv">连续 5 次（IamConstants.MAX_FAIL_COUNT）锁定 15 分钟（LOCK_MINUTES），提示剩余尝试次数与解锁时刻；登录成功自动清零。</div></div>
+      <div class="kv"><div class="k">退出登录后旧令牌还能用吗？</div><div class="vv">能，直到 8 小时过期。JWT 无状态，logout 只写审计日志；这是选型时的已知取舍（见 13 节）。</div></div>
+      <div class="kv"><div class="k">为什么 mfa 令牌调业务接口会 401？</div><div class="vv">JwtAuthFilter 强制 purpose=access；mfa 令牌（purpose=mfa，5 分钟）只允许换发正式令牌，防止未完成二次验证的会话访问业务。</div></div>
+      <div class="kv"><div class="k">停用账号后已签发的令牌还有效吗？</div><div class="vv">无效。每次请求主体装载时 DbAuthRealm 检查 valid_mark/status，停用即返回 null，过滤器按 401"账号不存在或已停用"处理。</div></div>
+      <div class="kv"><div class="k">刷新浏览器标签会丢吗？</div><div class="vv">不会。标签清单在 sessionStorage（mydbd-tabs），F5 恢复；但关掉浏览器标签页/窗口后按会话隔离策略不再保留。</div></div>
+      <div class="kv"><div class="k">为什么退出登录要"硬跳转"？</div><div class="vv">window.location.assign('/login') 彻底重置前端内存态（store、keep-alive、弹层），注释说明曾与确认框遮罩关闭动画存在时序竞争，硬跳转是最稳妥的清理方式。</div></div>
+      <div class="kv"><div class="k">接口返回 40901 是什么意思？</div><div class="vv">资源状态冲突：重名、重复绑定（唯一约束）或保护规则触发（如内置角色禁删、超管不可停用）。文案由后端给出具体原因，或统一约束翻译"数据已存在或绑定冲突"。</div></div>
+      <div class="kv"><div class="k">/health 为什么不需要令牌？</div><div class="vv">JwtAuthFilter 只注册在 /api/* 上，/health 不在拦截范围，探针可直接访问。</div></div>
+      <div class="kv"><div class="k">审计字段谁写入的？</div><div class="vv">MybatisMetaObjectHandler 在 insert/update 时自动填充 creator/updater 为当前登录名；定时任务、初始化等无登录上下文场景落 "system"。</div></div>
+      <div class="kv"><div class="k">前端接口拿到的为什么不是 Result 包装？</div><div class="vv">http.ts 响应拦截器已统一解包：code===0 时直接把 data 返回给业务代码，非 0 统一弹错；业务代码不需要再判 code。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>正常登录</td><td>admin/admin123 登录成功，跳 /monitor，侧栏按权限渲染菜单</td><td>登录页操作</td></tr>
+        <tr><td>2</td><td>密码错误计数</td><td>连续输错提示剩余次数；第 5 次提示锁定至具体时刻</td><td>连续错误登录</td></tr>
+        <tr><td>3</td><td>锁定解除</td><td>锁定期内同账号正确密码也被 42301 拒绝；管理员解锁后可登录</td><td>用户管理解锁按钮</td></tr>
+        <tr><td>4</td><td>令牌有效期</td><td>过期/篡改 token 调任意 /api/* 返回 40101，前端跳登录页</td><td>手工构造请求</td></tr>
+        <tr><td>5</td><td>mfa 令牌隔离</td><td>用 purpose=mfa 令牌调 /api/iam/users 返回"令牌类型无效"</td><td>接口直调</td></tr>
+        <tr><td>6</td><td>统一响应</td><td>任意接口返回 {code,message,data}；触发参数校验错误返回 40001 且带字段名</td><td>接口直调</td></tr>
+        <tr><td>7</td><td>唯一约束翻译</td><td>重复创建同名资源返回 40901 与可读文案，不暴露 SQL</td><td>重名创建</td></tr>
+        <tr><td>8</td><td>健康检查</td><td>GET /health 无令牌返回 {"status":"UP"}</td><td>curl</td></tr>
+        <tr><td>9</td><td>标签行为</td><td>一功能一标签；/monitor 固定不可关；右键三项菜单生效；F5 恢复；退出后清空</td><td>界面操作</td></tr>
+        <tr><td>10</td><td>侧栏折叠</td><td>折叠后 64px 且刷新保持（localStorage）</td><td>界面操作</td></tr>
+        <tr><td>11</td><td>无权回落</td><td>直接访问无权限路由被守卫重定向到首个有权菜单</td><td>低权账号直输 URL</td></tr>
+        <tr><td>12</td><td>审计字段</td><td>业务表新行的 creator/create_date 自动写入当前登录名与时间</td><td>数据库核对</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>未找到充分证据或依赖运行环境</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>生产 JWT 密钥配置</strong>：代码支持 mydbd.jwt.secret 与 JWT_HMAC_SECRET 两级配置并有开发兜底值；生产环境实际注入方式与强度以部署手册/运维配置为准。</li>
+      <li><strong>登录页验证码</strong>：当前代码无图形验证码/滑块；是否需要叠加防爆破手段属安全策略评估项。</li>
+      <li><strong>8 小时令牌期间的密码变更影响</strong>：改密后已签发令牌在其剩余有效期内仍可使用（主体装载不校验密码版本），是否需要"改密即失效"策略待确认。</li>
+      <li><strong>多实例部署的缓存一致性</strong>：PermissionCache 为进程内缓存，多实例滚动发布时的权限不一致窗口未见专门处理。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>首次发布。以 2026-10-05 源代码为准编写：固化 JWT 双用途令牌（access 8h / mfa 5min）、登录失败 5 次锁 15 分钟、Result/ErrorCode 统一响应、GlobalExceptionHandler 四类翻译、JwtAuthFilter 白名单与 purpose 校验、platform-boot 装配、前端 MainLayout 多标签框架（固定标签 /monitor、sessionStorage 恢复、keep-alive 白名单）等实现事实。</td>
+        </tr>
+        <tr>
+          <td>v1.1.0</td>
+          <td>2026-10-06</td>
+          <td>JWT 跨服务算法契约对齐修复：JwtUtil 签发显式固定 HS256（此前 50 字节密钥被 JJWT 自选为 HS384），processing app/security.py 验签白名单放宽为 HS256/HS384/HS512 兼容存量令牌；解决打开「运行模式」页被 401 踢回登录的问题。§1.3、§6 组件表、§7.1 同步，方案存档见 <a href="../plans/20261006-01-jwt-alg-401-fix.md">plans/20261006-01-jwt-alg-401-fix.md</a>。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-001 平台基础与通用能力 · v1.1.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-06</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

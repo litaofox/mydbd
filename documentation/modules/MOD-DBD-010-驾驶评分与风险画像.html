@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-010 驾驶评分与风险画像 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-010 驾驶评分与风险画像 ｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位</a></li>
+            <li><a href="#s1-2">1.2 功能清单与状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+            <li><a href="#s1-4">1.4 两套"人 / 车 / 企"口径</a></li>
+            <li><a href="#s1-5">1.5 本期边界（不做什么）</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 驾驶评分列表</a></li>
+            <li><a href="#s3-2">3.2 评分详情抽屉</a></li>
+            <li><a href="#s3-3">3.3 手动重算</a></li>
+            <li><a href="#s3-4">3.4 风险趋势与画像四 Tab</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 日评计算总流程</a></li>
+            <li><a href="#s7-2">7.2 当日生效绑定选择</a></li>
+            <li><a href="#s7-3">7.3 事件聚合口径</a></li>
+            <li><a href="#s7-4">7.4 GPS 派生急加减速</a></li>
+            <li><a href="#s7-5">7.5 门槛、扣分与等级</a></li>
+            <li><a href="#s7-6">7.6 多车合并与 upsert</a></li>
+            <li><a href="#s7-7">7.7 手动重算接口</a></li>
+            <li><a href="#s7-8">7.8 画像趋势聚合</a></li>
+            <li><a href="#s7-9">7.9 对象画像卡</a></li>
+            <li><a href="#s7-10">7.10 黑点路段（网格近似）</a></li>
+            <li><a href="#s7-11">7.11 风险排行</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 定时任务与后台行为</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-010 驾驶评分与风险画像</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-010<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F22（驾驶评分）/ F23（风险趋势与画像）
+    </p>
+    <p class="cover-meta">事实基准：2026-10-05 源代码（module-analysis）与 <code>14-driving-score.sql</code>、<code>15-risk-profile.sql</code></p>
+    <p class="cover-meta">主要代码锚点：<code>ScoreController / ScoreCalcService / ScoreScheduler / ScoreConstants</code>、<code>ProfileController / ProfileCardService / ProfileSupport / ProfileEventMapper / ProfileOrderMapper</code>；前端 <code>analysis/ScoreList.vue</code>、<code>analysis/RiskProfile.vue</code>、<code>api/analysis.ts</code></p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位</h3>
+    <p>本模块在风险事件与轨迹数据之上提供两类<strong>只读分析</strong>能力，包名 <code>com.mydbd.analysis[.profile]</code>，菜单挂在"分析决策"目录：</p>
+    <ul>
+      <li><strong>F22 驾驶评分（日评）</strong>：每日 T+1（次日 01:00）按"当日生效的车-终端-司机绑定"把前一天的风险事件与急加减速折算为 0~100 分与 A~E 五级，写入 <code>mon.driver_score</code>，支持查询、趋势、特征明细与授权人员手动重算。</li>
+      <li><strong>F23 风险趋势与画像</strong>：对全网 / 部门 / 司机 / 车辆四类对象，按日 / 周 / 月给出事件趋势、构成、处置漏斗、评分概览、黑点路段网格、司机 / 车辆风险排行。画像模块<strong>不建新表</strong>，只对 traj 主数据与 mon 风险表做聚合查询。</li>
+    </ul>
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>评分是"每天一行"的离线批计算（可重算、结果落表）；画像是"每次请求实时聚合"的在线查询（不落数据）。两者数据来源相同但口径并不完全一致，最典型的是司机 / 车辆关联口径与漏斗闭环时基，使用前务必读 1.4 与 7.9。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>要点</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>日评定时计算</td><td>每日 01:00 重算前一天；AtomicBoolean 互斥；门槛不足跳过；upsert 幂等</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>评分查询</td><td>/page 默认近 7 天，按日期 DESC、分数 ASC 排序；KPI 卡、等级字典着色</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>司机 30 天趋势</td><td>/trend 默认 30 天、最长 92 天；抽屉内 ECharts 折线 + 特征明细 + Top3 扣分项</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>手动重算</td><td>区间 ≤92 天、end ≤ 今天；仅超管 / 安全管理员；单线程守护线程异步</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>风险趋势</td><td>global/dept/driver/vehicle × day/week/month，空桶补零、周一起始、[start,end) 左闭右开</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>对象画像卡</td><td>概览 + 构成 + 处置漏斗 + Top5 工单 + 评分摘要（评分缺失独立降级）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>黑点路段</td><td>EPSG:3857 ST_SnapToGrid 网格吸附近似聚类，质心回转 4326，VO 明确 approx=true</td><td><span class="badge amber">近似口径</span></td></tr>
+        <tr><td>风险排行</td><td>driver/vehicle 维度；车牌加权分 → 当前绑定映射司机；多取 500 Java 排序截取</td><td><span class="badge green">已上线</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:180px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>日评 driver_score</td><td>mon.driver_score 一行 = 某司机某自然日的评分结果，唯一键 (score_date, driver_id)，无逻辑删除。</td></tr>
+        <tr><td>当日生效绑定</td><td>评分归属口径：车辆-终端-司机绑定记录（driver_type=1 主班、valid_mark=1）与评分日时间窗有交集即视为当日驾驶；同日多车合并计评。</td></tr>
+        <tr><td>当前绑定</td><td>画像 / 排行的人车归属口径：traj.traj_vehicle_driver 中 status=1 的在效绑定，只反映"现在"，不回溯历史。</td></tr>
+        <tr><td>扣分白名单</td><td>ScoreConstants 中 8 个参与评分的事件码：SPEED_GENERAL / SPEED_SEVERE / FATIGUE_DRIVE / DSM_FATIGUE / DSM_DISTRACTION / ADAS_FCW / ADAS_LDW / COMBO_FATIGUE_SPEED。</td></tr>
+        <tr><td>当日等级 MAX 口径</td><td>同一车牌 × 同一事件码当天有多条事件时，取 MAX(risk_level) 作为该码当日等级，只扣一次分。</td></tr>
+        <tr><td>误报排除</td><td>事件对应工单以 FALSE_ALARM 闭环后，评分聚合 SQL 用 NOT EXISTS 排除该事件，不扣分。</td></tr>
+        <tr><td>急加减速派生事件</td><td>不属于 risk_event；由评分任务直接从 GPS 点计算：|a| ≥ 2.5 m/s²，连续同向合并，HARD_ACCEL / HARD_BRAKE 各封顶扣 5 分。</td></tr>
+        <tr><td>样本门槛</td><td>当日 GPS 样本点 ≥ 200 且累计驾驶时长 ≥ 30 分钟才出分；不足则删除当日旧行并跳过（视为无评价日）。</td></tr>
+        <tr><td>空桶补零</td><td>趋势按日 / 周 / 月补齐时间轴，没有事件的桶返回 0，保证折线连续。</td></tr>
+        <tr><td>左闭右开</td><td>画像时间参数统一 [start, end)；按天查询传 end=次日，结束日当天数据需 end 取到下一天。</td></tr>
+        <tr><td>网格近似黑点</td><td>ST_SnapToGrid 在 EPSG:3857 米制网格吸附聚类，质心不对应真实路段，VO 标注 approx=true，F10 路网匹配后再升级。</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-4">1.4 两套"人 / 车 / 企"口径</h3>
+    <blockquote class="warn">
+      <p><strong>同一套系统里存在两套人车关联口径，排查"分数 / 排行对不上"时先确认用的是哪一套：</strong></p>
+    </blockquote>
+    <table>
+      <thead><tr><th>议题</th><th>驾驶评分（F22）</th><th>画像 / 排行（F23）</th></tr></thead>
+      <tbody>
+        <tr><td>人车关系</td><td>"当日生效绑定"：绑定时间窗与评分日有交集即可，主班 driver_type=1</td><td>"当前 status=1 绑定"：只看查询时刻在效关系</td></tr>
+        <tr><td>同日多车</td><td>同一司机当天在多辆车的事件 / 急加减速<strong>合并到同一日评分</strong>，扣分重新合计并重新封顶</td><td>车辆榜按车牌独立加权；司机榜再把车牌分经当前绑定映射给人</td></tr>
+        <tr><td>部门口径</td><td>dept_id 取司机 / 车辆归属（写入当日快照）</td><td>dept 维度为<strong>本级精确车辆，不含子部门</strong></td></tr>
+        <tr><td>事件范围</td><td>仅 8 个白名单码；FALSE_ALARM 排除；同日同码取 MAX 等级</td><td>全部事件码（含围栏 GEO_*），不排除误报，按 COALESCE(event_time,create_date) 统计</td></tr>
+        <tr><td>闭环时基</td><td>不统计闭环，只看事件与工单结果</td><td>工单漏斗按 create_date，而对象卡 closedTotal 按 <strong>close_time</strong>（两处时基本就不同）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-5">1.5 本期边界（不做什么）</h3>
+    <ul>
+      <li><strong>不做实时 / 行程级评分</strong>：只有按自然日的司机日评，不按单次行程、单趟运输任务计分；当日中途入职 / 离职按绑定时间窗自然截断，不做按小时折算。</li>
+      <li><strong>不做评分规则的页面配置</strong>：白名单 8 码、8/4/2 扣分、2.5 m/s² 阈值、200 点 / 30 分钟门槛全部固化在 ScoreConstants，调整需改代码发布，不进系统参数中心。</li>
+      <li><strong>不做考核处罚动作</strong>：模块只产出分数 / 等级 / 排行，不挂钩罚款、派单限制或自动培训单；触发处置仍由工单与人工流程承担。</li>
+      <li><strong>不做短信 / 推送报表</strong>：评分与画像不触发通知中心任何消息，日报 / 周报导出不在本期范围。</li>
+      <li><strong>不做真实路网黑点</strong>：黑点为网格质心近似，不做地图匹配 / 道路绑定 / 历史路段重算（规划见 F10）。</li>
+      <li><strong>画像不做写操作</strong>：四个接口全部 GET，不提供标注、备注、黑名单等回写能力，也不产生任何审计业务数据。</li>
+    </ul>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">车队长 · 晨会复盘</div>
+        <div class="sc-name">查看昨日全队驾驶评分</div>
+        <div class="sc-desc">打开分析决策 → 驾驶评分，默认近 7 天列表按分数升序，D/E 级司机排在最前；点行展开抽屉看 30 天趋势与 Top3 扣分项，晨会直接点名教育。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">误报闭环后修正分数</div>
+        <div class="sc-desc">某条超速事件被核实为设备误报并以 FALSE_ALARM 闭环后，管理员对该日发起区间重算，重算结果不再为该事件扣分，等级可回升。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员 · 态势分析</div>
+        <div class="sc-name">全网风险趋势与构成</div>
+        <div class="sc-desc">风险趋势与画像页全局时间条选择上月，按周查看事件量空桶补零折线与事件码构成 Top5，判断风险是在走高还是收敛。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">一司机 / 一车辆画像</div>
+        <div class="sc-desc">对象画像卡输入司机或车牌，一次看到概览、事件构成、处置漏斗、评分摘要与未闭环 Top5 工单，点工单直接跳工单中心处理。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员 · 黑点治理</div>
+        <div class="sc-name">识别事故多发路段</div>
+        <div class="sc-desc">黑点路段 Tab 选 200 米网格与时间范围，地图上按网格质心展示高发位置；页面明确标注为网格近似口径，用于安排路面排查而非执法取证。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业管理层</div>
+        <div class="sc-name">月度红黑榜考核</div>
+        <div class="sc-desc">对比排行 Tab 切换司机榜 / 车辆榜，按区间加权风险分排序导出讲评依据；司机排名按当前在聘绑定归属，已离职司机不会因历史绑定入榜。</div>
+      </div>
+    </div>
+    <h2 id="s3">3 操作流程</h2>
+    <p>两个入口均为<strong>分析决策</strong>目录（sys_menu parent=300）下的菜单项：驾驶评分菜单 id=301，路由 <code>/analysis/scores</code>，权限 <code>analysis:score:view</code>；风险趋势与画像菜单 id=302，路由 <code>/analysis/profiles</code>，权限 <code>analysis:profile:view</code>（角色授权见种子）。</p>
+
+    <h3 id="s3-1">3.1 驾驶评分列表</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入页面</div>
+        <div class="s-desc">分析决策 → 驾驶评分（ScoreList.vue）。默认查询近 7 天评分，顶部 4 张 KPI 卡展示平均分、参评司机数、A 级占比、D/E 级人数等汇总。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">筛选</div>
+        <div class="s-desc">按日期区间（默认近 7 天）、车牌 / 司机关键字、等级（useDict('score_level') 渲染 A~E）筛选后查询；size 钳制 1~100。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">看排序</div>
+        <div class="s-desc">后端固定排序 score_date DESC, score ASC：日期新的在前，同一天分数低（风险高）的在前，红榜导向明确。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">点开详情</div>
+        <div class="s-desc">点击任意行打开右侧抽屉，展示该司机 30 天评分趋势、当日特征明细与 Top3 扣分项（见 3.2）。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 评分详情抽屉</h3>
+    <ul>
+      <li><strong>趋势图</strong>：进抽屉调 <code>GET /api/analysis/score/trend</code>（driverId 必填，默认 30 天，最长 92 天），ECharts 折线展示每日分数，缺失日（未出分）断点。</li>
+      <li><strong>特征明细 features</strong>：driver_score.features jsonb 中固定 10 个键的中文映射（FEATURE_NAMES），含各事件码计数与 <code>HARD_ACCEL</code>（急加速）、<code>HARD_BRAKE</code>（急减速）次数、sample_points、driving_minutes、event_count。</li>
+      <li><strong>Top3 扣分项</strong>：前端按 features 中各扣分项折算值排序取前三，让坐席一眼看到"分扣在哪"。</li>
+      <li><strong>等级标签</strong>：level 与 score 双显，A 优秀 / B 良好 / C 合格 / D 较差 / E 危险，中文名来自字典 score_level。</li>
+    </ul>
+
+    <h3 id="s3-3">3.3 手动重算</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">权限可见</div>
+        <div class="s-desc">重算按钮仅当前用户 roles 含 <code>SUPER_ADMIN</code> 时出现（canRecalc）；后端二次校验 superAdmin 标志或角色码 SUPER_ADMIN / SAFE_ADMIN，不满足返回业务码 40301。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">选择日期区间</div>
+        <div class="s-desc">RecalcRequest 传 start / end（yyyy-MM-dd）：跨度 ≤ 92 天、end ≤ 今天；参数不合法返回 46001；已有重算任务进行中返回 46002。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">异步执行</div>
+        <div class="s-desc">接口立即返回，由单线程 daemon ExecutorService（线程名 score-recalc）逐日串行重算，期间定时日评也会被互斥挡住，避免并发写同日数据。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">结果校正</div>
+        <div class="s-desc">重算为"删除当日旧行后重建"语义（deleteDayExcept + upsert）；误报事件被排除、补录事件被纳入，完成后刷新列表即可看到新分数。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 风险趋势与画像四 Tab</h3>
+    <p>分析决策 → 风险趋势与画像（RiskProfile.vue）。页面顶部为<strong>全局时间条</strong>（区间 + 粒度 day/week/month），下方 4 个 Tab：</p>
+    <table>
+      <thead><tr><th>Tab</th><th>操作与内容</th><th>主要接口</th></tr></thead>
+      <tbody>
+        <tr><td>趋势分析</td><td>选维度（全网 / 部门 / 司机 / 车辆）与粒度，出事件量折线（空桶补零）+ 事件码构成 Top5；周粒度以周一为桶起点</td><td>GET /api/analysis/profile/trend</td></tr>
+        <tr><td>对象画像</td><td>类型 vehicle / driver / dept 三选一 + 输入对象，出概览 KPI、事件构成、处置漏斗、评分摘要、未闭环工单 Top5（risk_level DESC, overdue DESC, event_time DESC）</td><td>GET /profile/object-card</td></tr>
+        <tr><td>黑点路段</td><td>半径（网格）100 / 200 / 500 米默认 200、limit 1~50 默认 20；Leaflet 地图展示网格质心圆与计数，弹窗明示"网格聚类近似口径"</td><td>GET /profile/hotspots</td></tr>
+        <tr><td>对比排行</td><td>司机榜 / 车辆榜切换；工单 Top5 行可点击跳转 /risk/orders 处理</td><td>GET /profile/ranking</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p>时间参数格式统一为 <code>yyyy-MM-dd'T'HH:mm:ss</code>，区间语义 <strong>[start, end) 左闭右开</strong>；跨度超过 366 天返回 46101，时间格式错误 40001，维度非法 46102，对象不存在或越权 40401。</p>
+    </blockquote>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块 2 个路由页面 + 1 个详情抽屉。截图占位只描述真实界面内容，不引用任何外部图片或图片 URL。</p>
+    <div class="shot">
+      <div class="sh-icon">🏆</div>
+      <div class="sh-t">截图 4-1：驾驶评分列表（分析决策 → 驾驶评分，/analysis/scores）</div>
+      <div class="sh-p">应截：顶部 4 张 KPI 卡；筛选区（日期区间、关键字、A~E 等级下拉、查询）；表格列含日期、司机、车牌、部门、分数、等级 tag（A 绿 / E 红）、样本点、事件数；默认 score_date DESC、score ASC 排序。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📈</div>
+      <div class="sh-t">截图 4-2：评分详情抽屉</div>
+      <div class="sh-p">应截：抽屉内 ECharts 30 天分数折线（缺分日断点）；特征明细 10 项（含急加减速次数）；Top3 扣分项列表；顶部司机 / 车牌 / 当日等级信息。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🔁</div>
+      <div class="sh-t">截图 4-3：手动重算弹窗（仅超管可见按钮）</div>
+      <div class="sh-p">应截：日期区间选择器与"跨度 ≤92 天、截止今天"的校验提示；提交后任务进行中再次点击的 46002 提示。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📊</div>
+      <div class="sh-t">截图 4-4：风险趋势与画像（趋势分析 / 对象画像 Tab）</div>
+      <div class="sh-p">应截：全局时间条 + 维度 / 粒度选择；事件趋势折线与构成 Top5；对象画像卡的概览、漏斗、评分摘要、工单 Top5。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🗺️</div>
+      <div class="sh-t">截图 4-5：黑点路段地图与对比排行</div>
+      <div class="sh-p">应截：网格半径切换（100/200/500 米）、地图上按质心聚类的圆点与计数；"网格聚类近似口径，非真实路段"提示；排行 Tab 的司机 / 车辆榜单与跳转工单入口。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">100 分</div><div class="l">无扣分日满分；下限兜底为 0，不为负</div></div>
+      <div class="stat"><div class="v">5 级</div><div class="l">A ≥90 / B ≥75 / C ≥60 / D ≥40 / E &lt;40</div></div>
+      <div class="stat"><div class="v">T+1</div><div class="l">每日 01:00 自动出前一日评分</div></div>
+      <div class="stat"><div class="v">92 天</div><div class="l">手动重算与趋势查询的最大跨度</div></div>
+    </div>
+    <ul>
+      <li><strong>考核可量化</strong>：事件等级、急加减速都折算为统一分数与等级，把"感觉这个司机危险"变成可排名、可追溯的日指标。</li>
+      <li><strong>口径克制</strong>：同日同码只按最高等级扣一次、误报闭环可剔除、样本不足不出分，避免"点多分低、误报冤枉人"。</li>
+      <li><strong>分析零打扰业务</strong>：画像全部是实时只读聚合，不建新表、不写主数据，跨模块零代码依赖（只读 traj.* 与 mon 工单表）。</li>
+      <li><strong>黑点可定位</strong>：即使没有路网匹配，米制网格质心已足够支持"哪片区域高发"的路面排查排序。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>分析域是独立 Spring Boot 模块 / 包 <code>com.mydbd.analysis</code>，与风控配置面、工单域<strong>没有编译期依赖</strong>：它只读 mon 风险表与 traj 主数据表，不 import 其他业务模块的类。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>analysis/ScoreList.vue</b> KPI / 列表 / 等级字典 / 详情抽屉 / 重算权限</span>
+          <span class="node"><b>analysis/RiskProfile.vue</b> 时间条 + 趋势 / 对象卡 / 黑点地图 / 排行 4 Tab</span>
+          <span class="node"><b>api/analysis.ts</b> score 与 profile 全部类型化接口</span>
+          <span class="node"><b>ECharts / Leaflet</b> 趋势折线、黑点地图</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">评分域<br>com.mydbd.analysis</div>
+        <div class="al-body">
+          <span class="node"><b>ScoreController</b> /api/analysis/score（page/trend/summary/recalc）</span>
+          <span class="node"><b>ScoreCalcService</b> calcDay：绑定→事件→GPS→门槛→扣分→合并→upsert</span>
+          <span class="node"><b>ScoreScheduler</b> cron 01:00 + AtomicBoolean 互斥</span>
+          <span class="node"><b>ScoreConstants</b> 白名单 / 扣分 / 门槛 / 等级边界</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">画像域<br>.analysis.profile</div>
+        <div class="al-body">
+          <span class="node"><b>ProfileController</b> /api/analysis/profile（trend/object-card/hotspots/ranking）</span>
+          <span class="node"><b>ProfileCardService</b> 对象卡装配 + fillScore 独立降级</span>
+          <span class="node"><b>ProfileSupport</b> 数据范围 / 对象解析 / 事件名三级兜底</span>
+          <span class="node"><b>ProfileEventMapper / ProfileOrderMapper</b> 趋势、构成、漏斗、黑点、排行 SQL</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层<br>Postgres / PostGIS</div>
+        <div class="al-body">
+          <span class="node"><b>mon.driver_score</b> 日评结果（本模块唯一新增结果表）</span>
+          <span class="node"><b>mon.risk_event / risk_work_order</b> 只读聚合</span>
+          <span class="node"><b>traj.traj_vehicle / traj_vehicle_driver / GPS 点表</b> 只读归属与轨迹</span>
+          <span class="node"><b>ST_SnapToGrid / ST_Centroid / date_trunc FILTER</b> 画像聚合算子</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>职责</th><th>关键约束</th></tr></thead>
+      <tbody>
+        <tr><td><code>ScoreController</code></td><td>评分 REST</td><td>类级 analysis:score:view；recalc 方法内部做超管 / 安全管理员二次鉴权与 @AuditLog</td></tr>
+        <tr><td><code>ScoreCalcService</code></td><td>日评核心</td><td>关联键统一 plate_no(vehicle_no)；主班 driver_type=1；deleteDayExcept 后 ON CONFLICT DO UPDATE</td></tr>
+        <tr><td><code>ScoreScheduler</code></td><td>T+1 定时</td><td>cron="0 0 1 * * ?"；AtomicBoolean 防重入；重算昨天</td></tr>
+        <tr><td><code>ProfileController</code></td><td>画像 REST（全 GET）</td><td>analysis:profile:view；参数错误码 40001/46101/46102/40401</td></tr>
+        <tr><td><code>ProfileCardService</code></td><td>对象卡装配</td><td>评分读取独立 try/catch 降级（scoreReady=false 不影响卡片其他数据）</td></tr>
+        <tr><td><code>ProfileSupport</code></td><td>范围与名称解析</td><td>scopeOrNull 全网口径；dept 不含子部门；eventName 字典→兜底表→原码</td></tr>
+        <tr><td><code>ProfileEventMapper</code></td><td>通用事件聚合</td><td>COALESCE(event_time,create_date)；[start,end)；granularity 白名单 &lt;choose&gt;</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><code>analysis/ScoreList.vue</code>：4 张 KPI 卡取 /summary；等级下拉与标签经 <code>useDict('score_level')</code> 渲染（A 优秀 … E 危险），等级配色跟字典 cssClass 走而非页面硬编码。</li>
+      <li>行点击打开同一页内的 el-drawer：进抽屉并行拉 30 天 /trend 与详情；ECharts 折线在缺分日断开（不补零，区别于画像趋势的空桶补零）。</li>
+      <li>特征明细的 FEATURE_NAMES 是<strong>前端固定 10 键</strong>中文映射（含 HARD_ACCEL / HARD_BRAKE），键名必须与后端 features jsonb 写入键严格一致；Top3 扣分项在前端按特征值折算排序。</li>
+      <li>重算按钮 v-if="canRecalc"，canRecalc 来自用户 roles 是否含 SUPER_ADMIN；提交后按钮进入 loading，避免连点（后端另有 46002 兜底）。</li>
+      <li><code>analysis/RiskProfile.vue</code>：全局时间条对四个 Tab 共享；黑点 Tab 用 Leaflet 画网格质心圆，半径切换只重拉 /hotspots；排行 / 画像 Top5 工单点击携带 openOrder 跳 <code>/risk/orders?openOrder=&lt;id&gt;</code>，与工单中心深链约定一致。</li>
+      <li><code>api/analysis.ts</code> 为 score 与 profile 各接口声明完整 TS 类型（含趋势桶、对象卡、黑点 VO 的 approx/note 字段），后端时间字段统一字符串 <code>yyyy-MM-dd'T'HH:mm:ss</code>。</li>
+      <li>路由级权限码 analysis:score:view / analysis:profile:view 同时驱动菜单显隐与按钮 v-perm；301 授普通管理角色、302 仅 role1/2 的差异在菜单种子中体现。</li>
+    </ul>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 日评计算总流程</h3>
+    <p><code>ScoreCalcService.calcDay(date, onlyDriverId)</code> 是定时与手动重算共用的唯一入口，六个步骤顺序执行：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">① 查当日绑定 selectBindings</div>
+        <div class="s-desc">取当日车-终端-司机绑定：主班 driver_type=1、valid_mark=1，绑定 / 解绑时间窗与评分日有交集；ORDER BY bindTime DESC，用 Map.putIfAbsent 保留每车最新一条有效绑定。关联键统一用 plate_no(vehicle_no)。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② 事件聚合 selectEventAgg</div>
+        <div class="s-desc">一条 SQL 按车牌 × 事件码聚合当天白名单事件：等级取 MAX(risk_level)；NOT EXISTS 排除已被 FALSE_ALARM 闭环的事件。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ GPS 逐车派生 selectGpsPoints</div>
+        <div class="s-desc">逐车取当天轨迹点，调 deriveHardEvents 算急加 / 急减并累计驾驶秒数（见 7.4）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ 门槛校验</div>
+        <div class="s-desc">sample_points &lt; 200 或 driving_minutes &lt; 30：删除该车 / 司机当日旧评分行后跳过——该司机当日不出分。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑤ 计分定级</div>
+        <div class="s-desc">score = max(100 − 事件扣分 − 急加减速扣分, 0)，保留 1 位小数；按 90/75/60/40 边界定 A~E 级。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑥ 多车合并 + upsert</div>
+        <div class="s-desc">mergeDriver 把同司机多辆车的计数累加后重新统一扣分 / 封顶；deleteDayExcept 清扫后 INSERT … ON CONFLICT(score_date,driver_id) DO UPDATE。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-2">7.2 当日生效绑定选择</h3>
+    <ul>
+      <li>绑定来源 <code>traj.traj_vehicle_driver</code>（车-终端-司机绑定表），只取 <strong>driver_type=1 主班</strong>且 valid_mark=1；副班驾驶不计入当日主评分人。</li>
+      <li>时间窗交集：bind_time ≤ 评分日结束、unbind_time 为空或 ≥ 评分日开始，换班 / 解约会改变次日归属。</li>
+      <li>同日同车多条绑定：按 bind_time DESC 排序，putIfAbsent 取<strong>最新</strong>一条。</li>
+      <li>人车关联键全程使用 <strong>plate_no（车辆 vehicle_no）</strong>，与事件表、GPS 点表的车牌口径一致，不依赖终端号。</li>
+      <li>只在评分这一天看"当天谁在开"：这与画像排行按"当前 status=1 绑定"的口径刻意区分（见 1.4）。</li>
+    </ul>
+
+    <h3 id="s7-3">7.3 事件聚合口径</h3>
+    <p>白名单与扣分在 <code>ScoreConstants</code> 中固化：</p>
+    <table>
+      <thead><tr><th>事件码</th><th>含义</th><th>高 / 中 / 低扣分</th></tr></thead>
+      <tbody>
+        <tr><td>SPEED_GENERAL</td><td>一般超速</td><td rowspan="8">LEVEL_DEDUCT：高 8 分 / 中 4 分 / 低 2 分（同日同码取 MAX(risk_level) 只扣一次）</td></tr>
+        <tr><td>SPEED_SEVERE</td><td>严重超速</td></tr>
+        <tr><td>FATIGUE_DRIVE</td><td>疲劳驾驶</td></tr>
+        <tr><td>DSM_FATIGUE</td><td>终端疲劳信号</td></tr>
+        <tr><td>DSM_DISTRACTION</td><td>分心驾驶</td></tr>
+        <tr><td>ADAS_FCW</td><td>前向碰撞风险</td></tr>
+        <tr><td>ADAS_LDW</td><td>车道偏离</td></tr>
+        <tr><td>COMBO_FATIGUE_SPEED</td><td>疲劳叠加超速组合</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>旧说法纠正：</strong>早期说明曾按"每条事件逐条扣分"描述。代码实际是<strong>按车牌 × 事件码一天聚合成一条</strong>，等级取当天该码的 <code>MAX(risk_level)</code>；并且 <code>NOT EXISTS</code> 排除工单闭环结果为 FALSE_ALARM 的事件。围栏 GEO_* 事件不在白名单，从不扣分。</p>
+    </blockquote>
+
+    <h3 id="s7-4">7.4 GPS 派生急加减速</h3>
+    <ul>
+      <li>对每辆车当天 GPS 点按时间排序，相邻两点计算加速度 a = (v2 − v1)/3.6 / dt；<code>MAX_DT_SECONDS=30</code>：点间隔超过 30 秒不参与（避免掉线期间的虚假大加速度）。</li>
+      <li>仅当 v1 ≥ <code>MIN_SPEED_KMH=10</code> 且 v2 ≥ 10 时计入，低速挪车不产生急加减速。</li>
+      <li>a ≥ <code>ACCEL_THRESHOLD=2.5 m/s²</code> 计一次急加速（HARD_ACCEL），a ≤ −2.5 计一次急减速（HARD_BRAKE）。</li>
+      <li><strong>连续同向合并</strong>：连续多个点同方向超阈值合并为一次，避免一脚刹车被记多次。</li>
+      <li>每次扣 <code>HARD_DEDUCT=0.5</code> 分，急加 / 急减<strong>各自每日封顶 5 分</code>（HARD_CAP，各 10 次）。</li>
+      <li>drivingSeconds 只在 v1&gt;0 且 v2&gt;0 的相邻点间累计，用于 30 分钟门槛与 features.driving_minutes。</li>
+    </ul>
+
+    <h3 id="s7-5">7.5 门槛、扣分与等级</h3>
+    <table>
+      <thead><tr><th>参数（ScoreConstants）</th><th>值</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td>MIN_SAMPLE_POINTS</td><td>200</td><td>当日样本点低于此值不出分</td></tr>
+        <tr><td>MIN_DRIVING_MINUTES</td><td>30</td><td>当日驾驶时长低于此值不出分</td></tr>
+        <tr><td>LEVEL_DEDUCT</td><td>8 / 4 / 2</td><td>高 / 中 / 低风险事件单次扣分</td></tr>
+        <tr><td>HARD_DEDUCT / HARD_CAP</td><td>0.5 / 5</td><td>急加减速单次扣分与单日单项封顶</td></tr>
+        <tr><td>ACCEL_THRESHOLD</td><td>2.5 m/s²</td><td>急加减速判定阈值</td></tr>
+        <tr><td>MAX_DT_SECONDS / MIN_SPEED_KMH</td><td>30 / 10</td><td>派生计算的点间隔与速度门槛</td></tr>
+        <tr><td>MAX_RECALC_DAYS</td><td>92</td><td>重算与趋势查询最大跨度</td></tr>
+      </tbody>
+    </table>
+    <p>等级边界：<strong>A ≥90，B ≥75，C ≥60，D ≥40，E &lt;40</strong>。该组边界同时出现在 ScoreConstants、14 脚本 score_level 字典注释、ProfileConstants 三处，取值一致但属于多点耦合，调整必须三处同步（见第 13 节）。</p>
+    <h3 id="s7-6">7.6 多车合并与 upsert</h3>
+    <ul>
+      <li>步骤 ②③ 的中间结果先按车牌归集；mergeDriver 阶段按 driverId 把同一司机当天<strong>多辆车</strong>的事件计数、急加 / 急减次数、样本点、驾驶秒数全部累加。</li>
+      <li>累加后<strong>重新计算扣分并重新套用封顶</strong>：事件按码重新查等级扣分、HARD_ACCEL/HARD_BRAKE 各自再次 cap 到 5 分，而不是把各车扣分值直接相加。</li>
+      <li>写库前 deleteDayExcept(date, driverIds) 清掉这些司机当天旧行（门槛不足跳过的司机也会清旧行），再批量 upsert：<code>ON CONFLICT (score_date, driver_id) DO UPDATE</code>，保证定时跑、手动重算跑多少遍结果一致。</li>
+      <li>features jsonb 同步写 10 个特征键，score 为 numeric(5,1) 一位小数，最低 0 分。</li>
+    </ul>
+
+    <h3 id="s7-7">7.7 手动重算接口</h3>
+    <table>
+      <thead><tr><th>项</th><th>规则</th></tr></thead>
+      <tbody>
+        <tr><td>端点</td><td>POST /api/analysis/score/recalc</td></tr>
+        <tr><td>鉴权</td><td>登录 + analysis:score:view 可见页面；本接口额外要求 superAdmin=true 或角色码 ∈ {SUPER_ADMIN, SAFE_ADMIN}，否则 40301</td></tr>
+        <tr><td>入参</td><td>RecalcRequest：start、end，格式 yyyy-MM-dd</td></tr>
+        <tr><td>参数校验</td><td>跨度 ≤ MAX_RECALC_DAYS(92)；end ≤ 今天；非法返回 46001</td></tr>
+        <tr><td>并发控制</td><td>已有重算任务运行中返回 46002；与定时任务共用 AtomicBoolean 互斥</td></tr>
+        <tr><td>执行模型</td><td>单线程 daemon ExecutorService（"score-recalc"）逐日串行；接口立即返回，不阻塞请求</td></tr>
+        <tr><td>审计</td><td>@AuditLog 记录重算操作人与区间</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-8">7.8 画像趋势聚合</h3>
+    <p><code>GET /api/analysis/profile/trend</code> 的核心约定：</p>
+    <ul>
+      <li><strong>dim</strong>：global（全网）/ dept / driver / vehicle；<strong>granularity</strong>：day / week / month。</li>
+      <li>聚合时间取 <code>COALESCE(event_time, create_date)</code>；区间 [start,end)；plateNos 为 null 表示全网。</li>
+      <li>用 <code>date_trunc</code> + <code>FILTER (WHERE …)</code> 一条 SQL 出总量与各等级 / 各事件码分量；granularity 通过 MyBatis <code>&lt;choose&gt;</code> 白名单拼接，杜绝任意参数注入。</li>
+      <li><strong>空桶补零</strong>：SQL 返回的稀疏结果在 Java 侧按时间轴补齐；week 桶以<strong>周一</strong>为起点；因为 [start,end) 不含 end 当天，按"今天"查日趋势时 end 要传明天。</li>
+      <li>事件构成 Top5 分两步查询（先桶总量、再 Top5 事件码）；非全网用户追加 EXISTS traj_vehicle 部门归属过滤。</li>
+    </ul>
+
+    <h3 id="s7-9">7.9 对象画像卡</h3>
+    <p><code>ProfileCardService.card(type, id, start, end)</code>，type ∈ vehicle / driver / dept：</p>
+    <ul>
+      <li><strong>对象解析（ProfileSupport.resolvePlates）</strong>：vehicle 校验 traj_vehicle 存在且部门归属匹配；driver 经 traj.traj_vehicle_driver 当前 status=1 绑定取车牌集合；dept 为<strong>本级精确车辆，不含子部门</strong>。对象不存在或越权返回 40401。</li>
+      <li><strong>概览 + composition</strong>：区间事件总数、等级构成、事件码构成。</li>
+      <li><strong>处置漏斗</strong>（ProfileOrderMapper）：orderTotal 按 event_time / create_date 区间；interventionTotal 为 distinct 干预工单数；<code>closedTotal 按 close_time 区间</code>。</li>
+      <li><strong>topOrders</strong>：未闭环工单按 risk_level DESC, overdue DESC, event_time DESC 取前 5，前端可点跳工单中心。</li>
+      <li><strong>fillScore</strong>：dept 取区间日均 AVG(score)，driver 取本人评分，vehicle 取当前绑定司机评分；评分读取独立 try/catch，异常时仅 scoreReady=false，卡片其余内容正常返回。</li>
+    </ul>
+    <blockquote class="warn">
+      <p><strong>两处漏斗闭环口径不一致（以代码为准）：</strong>工单中心统计漏斗的闭环按 <code>create_date</code> 时基，而画像对象卡 closedTotal 按 <code>close_time</code> 时基。同一区间两个页面的闭环数因此可能不同，跨页对账时必须注明时基；中期应统一为同一 SQL 口径。</p>
+    </blockquote>
+
+    <h3 id="s7-10">7.10 黑点路段（网格近似）</h3>
+    <ul>
+      <li><code>GET /profile/hotspots?radius_m=100|200|500&amp;limit=1~50</code>，radius_m 默认 200，limit 默认 20。</li>
+      <li>事件点先转 <strong>EPSG:3857</strong>（米制）后用 <code>ST_SnapToGrid(geom, radius_m)</code> 吸附到规则网格，按网格单元 GROUP BY 计数。</li>
+      <li>每个网格用 <code>ST_Centroid</code> 取质心再 <strong>ST_Transform 回 EPSG:4326</strong>，坐标保留 6 位小数返回前端打点。</li>
+      <li>返回 VO 带 <code>approx=true</code> 与 note：<em>"网格聚类近似口径，非真实路段；F10 路网匹配后升级"</em>——质心可能落在非道路位置（楼顶、江面），只用于区域级排序。</li>
+    </ul>
+
+    <h3 id="s7-11">7.11 风险排行</h3>
+    <ul>
+      <li><code>GET /profile/ranking?dim=driver|vehicle</code>。车辆榜：直接按车牌聚合 <code>weightedScore = SUM(COALESCE(risk_level,2))</code>（缺失等级按 2 兜底加权）。</li>
+      <li>司机榜：先查车牌加权分，再经 <strong>当前 status=1 绑定</strong>的 allPlateDrivers 映射累加给司机——不是按历史绑定回溯。</li>
+      <li>SQL 层多取 500 行回到 Java 内存排序后截取榜单，避免复杂 SQL 全量映射；评分为 DISTINCT ON 批量取每对象区间最新一条，评分查询异常时该对象评分降级为 null，不影响排行出数。</li>
+    </ul>
+    <p><strong>事件名解析</strong>：ProfileSupport.eventName 优先级为 ①字典 risk_event_code → ②ProfileConstants.EVENT_NAME_FALLBACK（含 GEO_ENTER/GEO_EXIT、V_LDW/V_HMW/V_FCW/V_PCW、BEIDOU_SPEED、国标数字码 1~7）→ ③原始事件码，保证未知码也能展示。</p>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p><strong>离线评分流（写）：</strong></p>
+    <div class="flow">
+      <div class="step"><div class="s-title">触发</div><div class="s-desc">ScoreScheduler 每日 01:00（或超管手动重算区间）调 calcDay(昨天 / 指定日)。</div></div>
+      <div class="step"><div class="s-title">绑定 + 事件 + GPS</div><div class="s-desc">查当日主班绑定 → 事件按车牌×码聚合（MAX 等级、排除误报）→ 逐车 GPS 派生急加减速与驾驶秒数。</div></div>
+      <div class="step"><div class="s-title">门槛与计分</div><div class="s-desc">不足 200 点 / 30 分钟清旧行跳过；否则算分定级，同司机多车 mergeDriver 重新合计封顶。</div></div>
+      <div class="step"><div class="s-title">落表</div><div class="s-desc">deleteDayExcept + upsert mon.driver_score；前端次日查询可见。</div></div>
+    </div>
+    <p><strong>在线画像流（只读）：</strong>页面请求 → ProfileController 解析维度 / 数据范围（scopeOrNull 为 null 即全网）→ Mapper 对 mon.risk_event、mon.risk_work_order、traj 主数据做 date_trunc / FILTER / ST_SnapToGrid 聚合 → Java 补零、映射、降级 → VO 返回；全程不写任何表。</p>
+
+    <h3 id="s8-1">8.1 异常与降级路径</h3>
+    <table>
+      <thead><tr><th>异常情形</th><th>系统行为</th><th>用户感知</th></tr></thead>
+      <tbody>
+        <tr><td>某日某车 GPS 点为空或全部稀疏（dt&gt;30s）</td><td>派生事件为 0、驾驶秒数为 0 → 门槛不足跳过</td><td>当日无评分记录（不是 0 分）</td></tr>
+        <tr><td>事件聚合查不到任何白名单事件</td><td>事件扣分为 0；若 GPS 门槛满足则出满分 100 / A 级</td><td>列表显示 A 级 100 分</td></tr>
+        <tr><td>对象卡评分查询异常</td><td>fillScore 独立 catch，scoreReady=false，其余 KPI / 漏斗正常</td><td>评分区显示"暂无评分"</td></tr>
+        <tr><td>排行中某对象评分缺失</td><td>DISTINCT ON 取不到则该对象 score=null，加权分与排名照常</td><td>榜单分数列空缺但仍在榜</td></tr>
+        <tr><td>事件码字典与兜底表都未收录</td><td>eventName 回退显示原始事件码</td><td>构成图显示原始码而非空白</td></tr>
+        <tr><td>重算执行中服务重启</td><td>daemon 线程随 JVM 退出；互斥标志随进程重置；已写日期幂等无脏数据</td><td>未跑完的日期保持旧分，可再次发起重算</td></tr>
+        <tr><td>请求跨度过大 / 维度非法 / 对象越权</td><td>分别返回 46101 / 46102 / 40401，不执行 SQL</td><td>前端错误提示并保留查询条件</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段 / 约束</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mon.driver_score</code></td>
+          <td>司机日评结果（本模块唯一结果表，14-driving-score.sql）</td>
+          <td>score_date date、driver_id、identity_code、plate_no、dept_id、score numeric(5,1)、level char(1)、features jsonb、sample_points、event_count；<strong>UNIQUE(score_date,driver_id)</strong>；无逻辑删除字段</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_driver_score">DDL · tbl-mon_driver_score</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_event</code></td>
+          <td>评分与画像的主数据源（只读）</td>
+          <td>评分用白名单码 + FALSE_ALARM 排除；画像用全量；15 脚本补索引 (identity_code,event_time DESC)、(plate_no,event_time DESC)</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_event">DDL · tbl-mon_risk_event</a></td></tr>
+        <tr>
+          <td><code>mon.risk_work_order / risk_intervention</code></td>
+          <td>画像漏斗与 Top5 工单（只读）</td><td>闭环时基 close_time；FALSE_ALARM 结果</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_work_order">DDL · tbl-mon_risk_work_order</a></td></tr>
+        <tr>
+          <td><code>traj.traj_vehicle_driver / traj_vehicle</code></td>
+          <td>人车归属（只读）</td><td>评分按时间窗 + driver_type=1；画像按 status=1；dept 本级</td><td>DDL 手册 traj 章节</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p>15-risk-profile.sql <strong>没有新建表</strong>：仅插入菜单 302 与角色授权，并为 mon.risk_event 补充 (identity_code,event_time DESC)、(plate_no,event_time DESC) 两个画像查询索引。score_level 字典（A 优秀…E 危险）随 14 脚本种子创建。</p>
+    </blockquote>
+
+    <h3 id="s9-1">9.1 字段与枚举速查</h3>
+    <table>
+      <thead><tr><th>枚举 / 字段</th><th>取值</th><th>出处</th></tr></thead>
+      <tbody>
+        <tr><td>driver_score.level</td><td>A（≥90 优秀）/ B（≥75 良好）/ C（≥60 合格）/ D（≥40 较差）/ E（&lt;40 危险）</td><td>ScoreConstants + 字典 score_level</td></tr>
+        <tr><td>features 键</td><td>各白名单事件码计数 + HARD_ACCEL + HARD_BRAKE（+ sample_points / driving_minutes 等共 10 键）</td><td>ScoreCalcService 写入 / FEATURE_NAMES 前端映射</td></tr>
+        <tr><td>风险等级数值</td><td>1 低 / 2 中 / 3 高（排行 COALESCE 兜底 2）</td><td>字典 risk_level；Profile 排行加权</td></tr>
+        <tr><td>trend.dim</td><td>global / dept / driver / vehicle</td><td>ProfileController 白名单，非法 46102</td></tr>
+        <tr><td>trend.granularity</td><td>day / week / month（week 周一起始）</td><td>Mapper &lt;choose&gt; 白名单</td></tr>
+        <tr><td>object-card.type</td><td>vehicle / driver / dept</td><td>ProfileCardService</td></tr>
+        <tr><td>hotspots.radius_m</td><td>100 / 200 / 500（默认 200）</td><td>ProfileController 参数校验</td></tr>
+        <tr><td>hotspots.limit</td><td>1~50（默认 20）</td><td>ProfileController 参数校验</td></tr>
+        <tr><td>黑点 VO 标记</td><td>approx=true；note="网格聚类近似口径，非真实路段；F10 路网匹配后升级"</td><td>热点 VO</td></tr>
+        <tr><td>时间格式 / 区间</td><td>yyyy-MM-dd'T'HH:mm:ss；[start,end) 左闭右开</td><td>ProfileController 全局约定</td></tr>
+        <tr><td>评分排序</td><td>score_date DESC, score ASC（固定）</td><td>ScoreController /page</td></tr>
+        <tr><td>身份快照</td><td>identity_code、plate_no、dept_id 随评分日落库，组织调整不回改历史分</td><td>mon.driver_score</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限 / 关键参数</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/analysis/score/page</code></td><td>评分分页（默认近 7 天；score_date DESC,score ASC）</td><td>analysis:score:view；size 1~100</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-score">grp-score</a></td></tr>
+        <tr><td>GET <code>/api/analysis/score/trend</code></td><td>司机评分趋势</td><td>driverId 必填；默认 30 天，最长 92</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-score">grp-score</a></td></tr>
+        <tr><td>GET <code>/api/analysis/score/summary</code></td><td>KPI 汇总</td><td>analysis:score:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-score">grp-score</a></td></tr>
+        <tr><td>POST <code>/api/analysis/score/recalc</code></td><td>区间手动重算（异步）</td><td>超管 / SAFE_ADMIN；46001 参数错 / 46002 进行中 / 40301 越权</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-score">grp-score</a></td></tr>
+        <tr><td>GET <code>/api/analysis/profile/trend</code></td><td>趋势 + 构成</td><td>dim、granularity、[start,end)；46101 跨度过大 / 46102 维度非法 / 40001 时间格式</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-profile">grp-profile</a></td></tr>
+        <tr><td>GET <code>/api/analysis/profile/object-card</code></td><td>对象画像卡</td><td>type=vehicle|driver|dept；40401 不存在/越权；评分独立降级</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-profile">grp-profile</a></td></tr>
+        <tr><td>GET <code>/api/analysis/profile/hotspots</code></td><td>黑点网格</td><td>radius_m∈{100,200,500} 默认 200；limit 1~50 默认 20；approx=true</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-profile">grp-profile</a></td></tr>
+        <tr><td>GET <code>/api/analysis/profile/ranking</code></td><td>司机 / 车辆排行</td><td>dim=driver|vehicle；司机按当前绑定映射</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-profile">grp-profile</a></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s10-1">10.1 错误码与请求体速查</h3>
+    <table>
+      <thead><tr><th>码</th><th>触发场景</th><th>归属接口</th></tr></thead>
+      <tbody>
+        <tr><td>40001</td><td>时间参数格式不符 yyyy-MM-dd'T'HH:mm:ss</td><td>profile 全部 GET</td></tr>
+        <tr><td>40301</td><td>非超管 / 安全管理员调用重算</td><td>score /recalc</td></tr>
+        <tr><td>40401</td><td>对象不存在，或对象不属于当前用户数据范围</td><td>profile /object-card（必要时 /ranking 解析）</td></tr>
+        <tr><td>46001</td><td>重算 start/end 格式错、跨度 &gt;92、end 晚于今天</td><td>score /recalc</td></tr>
+        <tr><td>46002</td><td>已有重算任务在执行</td><td>score /recalc</td></tr>
+        <tr><td>46101</td><td>画像查询时间跨度 &gt;366 天</td><td>profile 全部 GET</td></tr>
+        <tr><td>46102</td><td>dim / type / granularity 取值不在白名单</td><td>profile 全部 GET</td></tr>
+      </tbody>
+    </table>
+    <p><strong>重算请求体（POST /api/analysis/score/recalc，@AuditLog 留痕）：</strong></p>
+    <pre><code>{
+  "start": "2026-09-01",   // yyyy-MM-dd，必填
+  "end":   "2026-09-30"    // yyyy-MM-dd，必填；含首尾、跨度 &lt;=92 天、end &lt;= 今天
+}
+// 同步返回：任务已受理（异步逐日执行）
+// 失败：46001 参数不合法 / 46002 任务进行中 / 40301 无权限</code></pre>
+    <p><strong>典型画像查询串：</strong><code>/api/analysis/profile/trend?dim=dept&amp;id=12&amp;granularity=week&amp;start=2026-09-01T00:00:00&amp;end=2026-10-01T00:00:00</code>（注意 end 取 10 月 1 日才能覆盖整个 9 月）。</p>
+
+    <h2 id="s11">11 定时任务与后台行为</h2>
+    <table>
+      <thead><tr><th>任务</th><th>调度</th><th>行为</th></tr></thead>
+      <tbody>
+        <tr><td><code>ScoreScheduler</code> 日评</td><td><code>@Scheduled(cron="0 0 1 * * ?")</code> 每日 01:00</td><td>T+1 重算昨天；AtomicBoolean 互斥（含与手动重算互斥）</td></tr>
+        <tr><td>score-recalc 线程池</td><td>手动触发；单线程 daemon ExecutorService</td><td>区间内逐日串行 calcDay；不随服务关闭阻塞（daemon）</td></tr>
+        <tr><td>画像查询</td><td>无定时任务</td><td>全部为请求时实时聚合，不做物化 / 预计算</td></tr>
+      </tbody>
+    </table>
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>日评落表而非实时算分</strong>：评分输入是全天事件与轨迹，实时既无必要又会让列表查询扫全量事件；T+1 落 mon.driver_score 一行，列表 / KPI / 趋势都是窄表查询，并可重算校正。</li>
+      <li><strong>一条 SQL 完成事件聚合</strong>：按车牌×事件码 GROUP BY + MAX(risk_level) + NOT EXISTS 误报排除，把逐事件循环下沉到数据库，应用层只处理"每车每天一行"的中间结果。</li>
+      <li><strong>GPS 派生放应用层</strong>：急加减速依赖相邻点差分与"连续同向合并"状态机，SQL 窗口函数可读性差；逐车取点在 Java 内推导更易调阈值（2.5 m/s²、30 秒、10 km/h）。</li>
+      <li><strong>画像不建表、纯实时聚合</strong>：分析维度与时间窗组合太多，物化任一口径都会引入刷新一致性问题；数据量在索引支撑下可接受，换取口径永远新鲜。</li>
+      <li><strong>黑点用 ST_SnapToGrid 米制网格而非聚类算法</strong>：一条 SQL 即可并行化、参数只有边长；质心口径的局限在 VO 中显式 approx 标注，F10 路网匹配上线后再升级到路段维度。</li>
+      <li><strong>跨模块零代码依赖</strong>：分析域只读表不 import 业务类，配合独立包与独立菜单，避免"分析需求"反向牵动风控 / 工单代码发布。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>影响</th><th>对策（代码现状）</th></tr></thead>
+      <tbody>
+        <tr><td>01:00 定时与手动重算并发</td><td>同日重复写、计数错乱</td><td>AtomicBoolean 互斥；重算进行中接口直接 46002；写库 deleteDayExcept + ON CONFLICT 幂等</td></tr>
+        <tr><td>等级边界三处复制（ScoreConstants / 14 脚本字典注释 / ProfileConstants）</td><td>改一处漏两处，分数与标签错配</td><td>本期以同值固化 + 本文显式登记；后续应抽到单一配置 / 字典，加启动期一致性校验</td></tr>
+        <tr><td>样本稀疏日强行出分</td><td>"开了半小时车被扣 8 分"的失真评价</td><td>200 点 + 30 分钟双门槛，不足删旧行跳过，不产生低分记录</td></tr>
+        <tr><td>误报事件拉低分数</td><td>司机对评分公信力质疑</td><td>FALSE_ALARM 闭环事件 NOT EXISTS 排除 + 授权重算；重算跨度上限 92 天防止全量扫描</td></tr>
+        <tr><td>画像大区间实时聚合慢</td><td>接口超时</td><td>跨度上限 366 天（46101）；risk_event 已补 (identity_code,event_time)、(plate_no,event_time) 复合索引；排行 SQL 多取 500 行后内存截断</td></tr>
+        <tr><td>黑点质心偏离真实道路</td><td>误判事故点位置</td><td>VO approx=true + note 明示近似口径与升级计划；前端用网格圆表达"区域"而非定位针</td></tr>
+        <tr><td>评分 / 画像双口径混淆</td><td>"同一司机两处分数 / 排名对不上"</td><td>见 1.4 对照表；前端文案区分"当日驾驶"与"当前绑定"；文档与培训须先讲口径</td></tr>
+        <tr><td>画像评分依赖故障</td><td>整张对象卡打不开</td><td>fillScore 独立 try/catch → scoreReady=false 降级，其余卡片数据照常返回</td></tr>
+        <tr><td>重算大区间堆积</td><td>队列线程占用</td><td>单线程 daemon 串行、跨度 92 天上限；任务结束自动释放；不提供排队，第二个请求 46002 拒绝</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>依赖方向 / 说明</th></tr></thead>
+      <tbody>
+        <tr><td>MOD-DBD-008 风控规则引擎</td><td>数据上游</td><td>mon.risk_event（规则引擎 / Python 识别写入）是评分扣分与画像聚合的主数据源；本模块只读不反向调用</td></tr>
+        <tr><td>MOD-DBD-009 处置工单与坐席干预</td><td>数据上游 + 跳转出口</td><td>读 risk_work_order / risk_intervention 做漏斗、Top5；FALSE_ALARM 闭环影响评分排除；画像 Top5 工单前端跳 /risk/orders</td></tr>
+        <tr><td>MOD-DBD-007 电子围栏</td><td>数据上游（仅画像）</td><td>GEO_ENTER / GEO_EXIT 进画像事件名兜底与趋势统计，但不在评分 8 码白名单内</td></tr>
+        <tr><td>MOD-DBD-012 系统配置与数据字典</td><td>字典依赖</td><td>score_level 等级名 / 颜色来自字典中心；risk_event_code 字典决定画像事件名第一优先级</td></tr>
+        <tr><td>实时监控（终端 / GPS）</td><td>数据上游</td><td>GPS 轨迹点表是急加减速派生与驾驶时长的唯一来源</td></tr>
+        <tr><td>MOD-DBD-011 通知中心</td><td>无关系</td><td>评分与画像均不触发通知；重算完成无消息推送（操作结果看页面与审计）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">某天某司机为什么没有分数？</div><div class="v">三种原因：当日无主班绑定（driver_type=1 时间窗无交集）；样本点 &lt;200 或驾驶时长 &lt;30 分钟（系统主动不出分并清旧行）；或当天没有任何车辆绑定到该司机。</div></div>
+      <div class="kv"><div class="k">同一天开两辆车，分数怎么算？</div><div class="v">mergeDriver 把两车事件与急加减速计数全部累加到该司机当日记录，扣分按累加后的计数重新计算，急加 / 急减各自重新封顶 5 分；只有一条 driver_score 记录，plate_no 取其中一辆（以代码装配结果为准）。</div></div>
+      <div class="kv"><div class="k">误报工单闭环后分数会自动恢复吗？</div><div class="v">不会自动。评分是 T+1 快照，闭环发生后需超管 / 安全管理员对该日发起重算（recalc），NOT EXISTS 排除生效后分数才回升。</div></div>
+      <div class="kv"><div class="k">趋势图为什么最后一天没数据？</div><div class="v">区间为 [start,end) 左闭右开，end 当天不包含；日趋势要看今天需把 end 传明天；评分本身也是次日 01:00 才出前一天的分。</div></div>
+      <div class="kv"><div class="k">周粒度从哪天开始？</div><div class="v">周一。空桶补零以周一为桶起点对齐自然周。</div></div>
+      <div class="kv"><div class="k">部门画像为什么不含下级部门车辆？</div><div class="v">dept 维度按本级 dept_id 精确匹配 traj_vehicle.dept_id，不下钻；要看全网用 global，看子部门需单独选择该子部门。</div></div>
+      <div class="kv"><div class="k">司机换车后历史排行会跟人走吗？</div><div class="v">不会。排行司机映射只看当前 status=1 绑定，是"现在谁开这辆车"的口径；历史日评分仍按当日绑定保存在 driver_score 中。</div></div>
+      <div class="kv"><div class="k">黑点为什么落在江面上？</div><div class="v">网格质心是米制网格几何中心，不做路网吸附；VO approx=true 已声明近似。F10 路网匹配上线后按路段聚合可解决。</div></div>
+      <div class="kv"><div class="k">重算按钮为什么看不到 / 点了 40301？</div><div class="v">前端按 roles 含 SUPER_ADMIN 显示按钮；后端同时认 superAdmin 标志与角色码 SUPER_ADMIN/SAFE_ADMIN。账号只有 SAFE_ADMIN 角色但前端按钮不可见时，属于前后端角色集合的细微差异，需管理员核对授权（见待核实项）。</div></div>
+      <div class="kv"><div class="k">画像页闭环数与工单页对不上？</div><div class="v">两处时基不同：画像对象卡 closedTotal 按 close_time 过滤，工单漏斗按 create_date；对账必须统一时基，属已知差异。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>次日日评自动产出</td><td>01:00 后前一天满足门槛的司机在 /analysis/scores 可见，score 一位小数、level 与 90/75/60/40 边界一致</td><td>造一天测试数据，等待 / 手动触发调度后查 mon.driver_score</td></tr>
+        <tr><td>2</td><td>门槛不足不出分</td><td>样本点 150 或驾驶 20 分钟的司机当日无记录，且旧记录被清除</td><td>查 driver_score 无该 (date,driver) 行</td></tr>
+        <tr><td>3</td><td>同日同码 MAX 口径</td><td>同车超速产生低 + 高两条，只按高风险扣 8 分一次</td><td>构造两条事件后重算核对 features 与总分</td></tr>
+        <tr><td>4</td><td>误报排除</td><td>事件对应工单以 FALSE_ALARM 闭环后重算，该事件不再扣分</td><td>闭环 → recalc → 对比前后 score</td></tr>
+        <tr><td>5</td><td>急加减速推导</td><td>构造相邻点 |a|≥2.5（v≥10、dt≤30s）计数正确；连续同向合并；各封顶 5 分</td><td>检查 features.HARD_ACCEL/HARD_BRAKE 与扣分</td></tr>
+        <tr><td>6</td><td>多车合并</td><td>同司机两车事件累加、一条评分、重新封顶</td><td>两车造数后核对 driver_score 唯一行</td></tr>
+        <tr><td>7</td><td>重算权限与错误码</td><td>非授权账号 40301；跨度 93 天 / end 未来 46001；并发第二次 46002</td><td>Postman 分别构造请求</td></tr>
+        <tr><td>8</td><td>幂等</td><td>同一日重算 N 次结果完全一致，行数不增长</td><td>重复 recalc 后 COUNT 与 score 对比</td></tr>
+        <tr><td>9</td><td>趋势空桶补零</td><td>无事件的日 / 周 / 月桶返回 0；周桶起点为周一；[start,end) 不含 end</td><td>调 /profile/trend 核对桶数与值</td></tr>
+        <tr><td>10</td><td>黑点近似标注</td><td>radius_m 三档可用、默认 200；VO approx=true 且质心为 4326 六位小数</td><td>调 /profile/hotspots 检查返回结构与地图打点</td></tr>
+        <tr><td>11</td><td>排行口径</td><td>车辆榜按车牌加权；司机榜按当前 status=1 绑定；评分缺失不影响出榜</td><td>解绑司机后对比榜单变化</td></tr>
+        <tr><td>12</td><td>越权与数据范围</td><td>非全网用户只看本部门车辆；查他人对象 40401</td><td>用受限账号请求 object-card</td></tr>
+        <tr><td>13</td><td>评分异常降级</td><td>driver_score 临时不可查时对象卡仍返回，scoreReady=false</td><td>构造查询异常观察接口响应</td></tr>
+        <tr><td>14</td><td>菜单与权限</td><td>分析决策目录下 301/302 按角色显隐；无 analysis:*:view 不可访问接口</td><td>不同角色账号登录核对</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>下列条目在本期代码 / 脚本中未能闭环确认，上线前或迭代中需补充核实：</p>
+    </blockquote>
+    <ul>
+      <li><strong>重算按钮角色差</strong>：前端 canRecalc 仅判断 SUPER_ADMIN，后端还放行 SAFE_ADMIN；需确认 SAFE_ADMIN 是否应在前端直接看到重算入口，或后端收紧为仅超管。</li>
+      <li><strong>多车合并后 plate_no 快照取值</strong>：mergeDriver 写一行 driver_score 时 plate_no 取哪辆车（最新绑定 / 任一）需与业务确认；查询列表按车牌筛选时可能只命中其中一辆。</li>
+      <li><strong>漏斗时基统一计划</strong>：画像 closedTotal(close_time) 与工单漏斗(create_date) 的口径差异何时统一、以哪个为准，需产品与工单模块共同确认。</li>
+      <li><strong>黑点升级路线</strong>：F10 路网匹配的排期与"网格→路段"历史数据是否重算，尚未见跟踪任务。</li>
+      <li><strong>长区间画像性能基线</strong>：366 天 × 全网 / 月桶的实际响应时间未做压测，当前上限是经验值；上线后需观察慢查询。</li>
+      <li><strong>等级边界单点化</strong>：90/75/60/40 三处复制（含 14 脚本字典注释）暂未做启动一致性校验，调整阈值的发布流程需补充检查清单。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>修订内容</th><th>编写 / 审核</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>首版：基于 module-analysis 源码与 14/15 号 SQL 脚本编写 F22 驾驶评分、F23 风险趋势与画像，明确双轨人车口径、MAX 等级聚合、误报排除、急加减速推导、网格近似黑点等代码事实</td><td>平台文档组</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <p>北斗导航数据业务平台 · 功能模块文档 MOD-DBD-010｜本文技术结论均绑定类名 / 表名 / 菜单 ID，可直接回溯源代码与 SQL 种子脚本。</p>
+      <p><a href="../index.html">← 返回文档中心</a></p>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

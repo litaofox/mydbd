@@ -28,12 +28,12 @@ public interface VehiclePanelMapper {
             """)
     VehiclePanelVO.VehicleBrief selectVehicle(@Param("vehicleId") long vehicleId);
 
-    /** 当前有效绑定终端（status=1 AND valid_mark=1；无绑定返回 null） */
+    /** 当前有效绑定终端（status=1 AND valid_mark=1；无绑定返回 null），含网关在案在线状态 */
     @Select("""
             SELECT t.id, t.identity_code AS "identityCode", t.tl_model AS "tlModel",
                    t.sim_account AS "simAccount", t.protocol_type AS "protocolType",
                    t.equipment_type AS "equipmentType", t.video_channel AS "videoChannel",
-                   t.status, b.bind_time AS "bindTime"
+                   t.status, t.online_status AS "onlineStatus", b.bind_time AS "bindTime"
               FROM traj.traj_vehicle_terminal b
               JOIN traj.traj_terminal t ON t.id = b.terminal_id AND t.valid_mark = 1
              WHERE b.vehicle_id = #{vehicleId} AND b.status = 1 AND b.valid_mark = 1

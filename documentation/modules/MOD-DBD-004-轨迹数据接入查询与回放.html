@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-004 轨迹数据接入、查询与回放 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">MOD-DBD-004 轨迹数据接入、查询与回放 · HTTP 推送 / CSV 导入 / 模拟器 / 历史回放</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 历史轨迹回放</a></li>
+            <li><a href="#s3-2">3.2 加载标准测试数据集</a></li>
+            <li><a href="#s3-3">3.3 启停实时轨迹模拟器</a></li>
+            <li><a href="#s3-4">3.4 样例 CSV 导入</a></li>
+            <li><a href="#s3-5">3.5 终端 HTTP 实时推送（系统间）</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 三条接入链路的共同落库管道</a></li>
+            <li><a href="#s7-2">7.2 终端 HTTP 推送与服务令牌</a></li>
+            <li><a href="#s7-3">7.3 样例 CSV 幂等导入与事件联动</a></li>
+            <li><a href="#s7-4">7.4 进程内模拟器：车辆清单与运动模型</a></li>
+            <li><a href="#s7-5">7.5 轨迹查询的数据范围过滤</a></li>
+            <li><a href="#s7-6">7.6 最新位置查询的 LATERAL 优化</a></li>
+            <li><a href="#s7-7">7.7 前端回放页实现</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 样例文件与种子数据</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-004 轨迹数据接入、查询与回放</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-004<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 P04 / P05 / P06 / P08 / P09
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码（backend-java module-trajectory；processing-service app；frontend src）与初始化 SQL（<code>02-traj-tables.sql</code>）、网关配置（<code>infra/nginx/portal.conf</code>）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>TrajectoryController</code> / <code>TrajectoryService</code> / <code>GpsPointMapper</code>（Java，module-trajectory）；<code>processing-service/app/routes/ingest.py</code> / <code>routes/simulator.py</code> / <code>routes/dataset.py</code> / <code>services/simulator.py</code> / <code>services/dataset_gen.py</code> / <code>app/db.py</code> / <code>app/security.py</code>（Python）；前端 <code>views/playback/Playback.vue</code>、<code>views/system/ConfigList.vue</code>、<code>api/traj.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>本模块覆盖轨迹数据的<strong>一进一出</strong>：进——把定位点写进 <code>traj.traj_gps_point</code>（PostGIS 点列同步维护）；出——把点查出来支撑实时监控与历史回放。当前有三条接入链路，全部落在 Python 处理服务（processing-service，FastAPI）：</p>
+    <ul>
+      <li><strong>终端 HTTP 实时推送（P05）</strong>：面向终端/第三方系统的批量推点接口 <code>POST /api/ingest/traj</code>，以 <code>X-Service-Token</code> 服务令牌鉴权；是真实 JT/T 808 网关就位前的标准接入契约。</li>
+      <li><strong>样例 CSV 批量导入（P04）</strong>：把 samples 目录下的 GPS 轨迹 CSV 幂等导入（重导前按设备+时间窗清旧点），并联动导入当日司机风险事件。</li>
+      <li><strong>进程内轨迹模拟器（P06）</strong>：processing-service 内置 asyncio 模拟器，每 2 秒为 12 辆演示车批量产点，并周期性产出"终端报警 + 风险事件"演示数据；代码注释明确"正式版本将替换为 JT/T 808 终端协议网关"。</li>
+      <li><strong>标准测试数据集</strong>：一键后台生成"4 公司 / 10 车队 / 500 车 / 500 终端 / 500 司机 + 2026-09 全月轨迹"的演示库，standard/dense 两档密度，可清空重灌。</li>
+    </ul>
+    <p>出侧由 Java module-trajectory 提供四个查询接口（P09）：在途车辆、车辆台账、各终端最新位置、历史轨迹（P08 回放页的数据源）。全部查询按登录人数据范围过滤（fail-closed）。</p>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>本模块只负责"点怎么进库、怎么查出来"。点入库后的实时判定（超速/围栏 CEP 旁路评估）、实时推送（WebSocket）、报警闭环分别在 MOD-DBD-008、MOD-DBD-005、MOD-DBD-006；轨迹的统计报表（F41 等）属第二波建设内容。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>终端 HTTP 实时推送</td><td>identityCode + points[] 批量接收，X-Service-Token 鉴权，5000 行分片写入，CEP 旁路评估异常不阻断入库</td><td><code>routes/ingest.py: ingest_traj</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>样例 CSV 批量导入</td><td>按设备+时间窗先删后插保证幂等；同日司机事件只导一次</td><td><code>routes/ingest.py: load_sample</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>标准测试数据集</td><td>后台线程异步生成；standard 约 700~900 万点 / dense 约 1500~1800 万点；互斥运行、可清空</td><td><code>routes/dataset.py</code> + <code>services/dataset_gen.py</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>轨迹模拟器</td><td>10 市内车 + 2 跨省专线车（回退北京 5 车），每 2 秒一批点；12~20 秒节律产演示报警/事件</td><td><code>services/simulator.py</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>在途车辆 / 台账 / 最新位置</td><td>三个监控基础查询，按数据范围过滤</td><td><code>TrajectoryController</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>历史轨迹查询</td><td>按设备/车牌 + 时间窗，时间正序全量返回；车牌范围过滤</td><td><code>TrajectoryService.queryTrack</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>地图回放页</td><td>轨迹线 + 移动车标，播放/暂停、1/2/4/8 倍速、时间轴滑块、路由参数自动查询</td><td><code>Playback.vue</code>（239 行）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>JT/T 808 协议网关</td><td>终端直接以 808 二进制协议接入（F01），当前由 HTTP 推送契约 + 模拟器替代</td><td>—</td><td><span class="badge gray">待建设</span></td></tr>
+        <tr><td>轨迹明细报表</td><td>F41 逐点明细报表形态（油量/补点标识等）</td><td>—</td><td><span class="badge gray">待建设（第二波）</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>identity_code</td><td>终端编号，轨迹点的第一关联键；CSV 中的 vehicle_id 列、推送报文的 identityCode 字段都映射到它。</td></tr>
+        <tr><td>gps_time / receive_time</td><td>定位时间（终端上报）与平台接收时间（默认入库时刻）；回放与在线判定用 gps_time 口径。</td></tr>
+        <tr><td>location 列</td><td><code>geometry(Point,4326)</code>，入库时由 lng/lat 经 ST_SetSRID(ST_MakePoint) 同步生成，供围栏等空间判定使用；Java 实体不映射该列。</td></tr>
+        <tr><td>X-Service-Token</td><td>系统间调用的共享密钥头，processing-service 内部接口（/traj 推送）鉴权方式；与用户 JWT 是两套体系。</td></tr>
+        <tr><td>幂等重导</td><td>CSV 重导前按 identity_code + gps_time 窗口 DELETE 旧点再插入，同一文件重复导入不产生重复点。</td></tr>
+        <tr><td>演示事件</td><td>模拟器按 12~20 秒随机间隔产出的成对数据：1 条 mon.risk_event（风险事件，自动建工单）+ 1 条 traj.traj_warn_info（终端报警）。</td></tr>
+        <tr><td>roster</td><td>模拟器车辆清单：启动时从库里选 10 辆市内车（每个车队第 1 辆）+ 2 辆跨省专线车（DS0353/DS0452）；无数据集时回退北京 5 车。</td></tr>
+        <tr><td>LATERAL 查询</td><td>"每终端最新点"的实现方式：终端表驱动 CROSS JOIN LATERAL 逐台索引探测取最新 1 行，避免扫 890 万行轨迹表。</td></tr>
+        <tr><td>currentPlates</td><td>Java 侧范围过滤口径：null=不限（超管），空列表=任何数据不可见（fail-closed），非空=可见车牌集合（由部门范围换得）。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">核查车辆一天行踪</div>
+        <div class="sc-desc">打开历史轨迹回放，选车、选起止时间，地图画出蓝色轨迹线；点播放按 2 倍速看车标沿线移动，拖动滑块跳到任意时点，右上角实时显示该点的定位时间与速度。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">坐席/监控页联动</div>
+        <div class="sc-name">从报警跳到当天回放</div>
+        <div class="sc-desc">报警中心/监控页带参数（plateNo + date）跳入回放页，页面自动选中车辆、把时间窗填为当天 00:00~23:59 并直接查询，省去手工选车选时间。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">演示/测试人员</div>
+        <div class="sc-name">一键灌演示库</div>
+        <div class="sc-desc">系统参数页点"加载标准测试数据集"，后台线程生成 500 辆车 9 月全月轨迹，页面进度条实时更新；想重灌先"清空"再加载，dense 档可压测大数据量查询。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">演示/测试人员</div>
+        <div class="sc-name">模拟实时车流</div>
+        <div class="sc-desc">打开模拟器开关，12 辆车开始 2 秒一批上报点位，监控页车标动起来；同时每隔十几秒自动产生一条终端报警和风险事件，报警中心、工单、大屏数字全部"活"起来。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">第三方系统对接方</div>
+        <div class="sc-name">按契约推送轨迹</div>
+        <div class="sc-desc">外部网关/终端按 identityCode + points[] 报文向 /api/ingest/traj 批量推点，请求头带 X-Service-Token；平台返回插入条数，CEP 评估失败不影响入库。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">数据治理</div>
+        <div class="sc-name">样例轨迹重复导入</div>
+        <div class="sc-desc">同一份 9 月 1 日 CSV 导入两次，库中不增重：接口先删该设备当天旧点再插入；当日的司机风险事件也不会重复出现。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>相关菜单：<strong>实时监控 → 历史轨迹回放</strong>（<code>sys_menu</code> id=12，路由 <code>/playback</code>，权限点 <code>playback:view</code>；调度监控员可见，企业车队长种子授权<strong>不含</strong>回放）。数据装载与模拟器控制在 <strong>系统参数</strong> 页（id=921，<code>/system/config</code>，权限点 <code>system:config:view</code>）顶部的"测试数据与模拟器"面板。</p>
+
+    <h3 id="s3-1">3.1 历史轨迹回放</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">选择车辆</div>
+        <div class="s-desc">下拉列出在途车辆（"车牌（终端编号）"），来源 /api/traj/vehicles，按数据范围过滤。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">设时间窗</div>
+        <div class="s-desc">起止时间均可空：不填时间 = 查询该车全部轨迹（页面既有语义）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">查询与绘制</div>
+        <div class="s-desc">"查询轨迹"后地图绘制蓝色轨迹线（#2563eb，宽 4），视野自适应；提示"共 N 个轨迹点"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">播放控制</div>
+        <div class="s-desc">播放/暂停；1x/2x/4x/8x 倍速（基准 600ms 一点）；滑块拖动定位；右侧显示当前点定位时间与速度；车头方向随 direction 旋转。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 加载标准测试数据集</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入面板</div>
+        <div class="s-desc">系统参数页顶部"测试数据与模拟器"→ 标准测试数据集区（4 公司 / 10 车队 / 500 车，鲁苏沪皖 9 月全月）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">选择档位</div>
+        <div class="s-desc">"加载标准数据集"（30 秒一点，约 700~900 万点）或"加载稠密数据集"（15 秒一点，约 1500~1800 万点）；已有任务运行时接口返回 409。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">跟踪进度</div>
+        <div class="s-desc">页面轮询 /api/ingest/dataset/status 展示阶段与百分比；可切走别的菜单，回来自动接续。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">清空重灌</div>
+        <div class="s-desc">"清空"删除全部业务数据（保留 IAM/菜单/字典/配置/审计）；任务运行中禁止清空（409）。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 启停实时轨迹模拟器</h3>
+    <ul>
+      <li>开关在同一面板"实时轨迹模拟器"区：启动后显示运行状态、车辆数、ticks、演示事件计数；周期同步后端真实状态，多标签页一致。</li>
+      <li>未加载标准数据集时给出提示"模拟器使用内置 5 辆演示车，建议先在左侧加载测试集"（回退清单）。</li>
+      <li>停止有确认框："停止后将不再产生实时轨迹、终端报警与风险事件（已产生的数据保留）"。</li>
+    </ul>
+
+    <h3 id="s3-4">3.4 样例 CSV 导入</h3>
+    <ul>
+      <li>接口 POST /api/ingest/load-sample，body <code>{"file": "vehicle_gps_20260901.csv"}</code>；文件须位于容器内 <code>{storage_root}/samples</code>（默认 /data/samples），文件名取 basename 防目录穿越。</li>
+      <li>CSV 列：vehicle_id, plate_no, gps_time, longitude, latitude, speed, direction, altitude, alarm_flag, driver_phone, driver_idcard, mileage（driver_* 两列不入库）。</li>
+      <li>返回导入文件名、设备号、时间范围、插入点数与联动事件数；当前界面无独立入口，以接口直调/脚本方式使用（api/traj.ts 已封装 loadSample）。</li>
+    </ul>
+
+    <h3 id="s3-5">3.5 终端 HTTP 实时推送（系统间）</h3>
+    <ul>
+      <li>POST /api/ingest/traj，请求头 <code>X-Service-Token: &lt;服务令牌&gt;</code>（配置项 service_token，环境变量注入）。</li>
+      <li>报文：<code>{"identityCode":"...", "plateNo":"...", "points":[{"gpsTime":"yyyy-MM-dd HH:mm:ss","lng":..,"lat":..,"speed":..,"direction":..,"altitude":..,"alarmFlag":0,"mileage":..}]}</code>；identityCode 与 points 必填，缺失返回 400。</li>
+      <li>响应 <code>{"inserted": N}</code>；单批超过 5000 点自动分片。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块面向用户的页面为回放页与系统参数页的数据面板。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">🗺️</div>
+      <div class="sh-t">截图 4-1：历史轨迹回放页（/playback）</div>
+      <div class="sh-p">应截：顶部车辆下拉与起止时间选择、高德底图上的蓝色轨迹线、带方向车标的移动 marker、底部控制条（播放钮/倍速/滑块/当前时间与速度）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📦</div>
+      <div class="sh-t">截图 4-2：标准测试数据集面板</div>
+      <div class="sh-p">应截：系统参数页顶部面板——"加载标准数据集/加载稠密数据集/清空"三按钮与进度条（阶段文案 + 百分比 + 计数）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🎛️</div>
+      <div class="sh-t">截图 4-3：实时轨迹模拟器面板</div>
+      <div class="sh-p">应截：模拟器开关、运行状态（车辆数/ticks/演示事件数）、未加载数据集时的提示条。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">3 条链路</div><div class="l">HTTP 推送 / CSV 导入 / 模拟器，一套落库管道</div></div>
+      <div class="stat"><div class="v">2 秒</div><div class="l">模拟器产点节拍，监控页实时可见</div></div>
+      <div class="stat"><div class="v">500 车 × 9 月</div><div class="l">标准数据集规模，支持大数据量验证</div></div>
+      <div class="stat"><div class="v">亚秒级</div><div class="l">最新位置查询（LATERAL 索引探测）</div></div>
+    </div>
+    <ul>
+      <li><strong>演示零门槛</strong>：没有真实终端也能在 10 分钟内灌出一个月的车队数据并看到实时车流。</li>
+      <li><strong>对接契约稳定</strong>：/api/ingest/traj 的报文结构就是未来 808 网关解析后的落地形态，第三方现在即可按契约联调。</li>
+      <li><strong>回放体验完整</strong>：倍速、滑块、方向车头、跨页带参跳入，核查行踪不用手工拼条件。</li>
+      <li><strong>权限不打折</strong>：受限账号在回放页只能选到、只能查出本范围车辆的轨迹。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>接入侧在 Python processing-service（写库 + 模拟器 + 数据集），查询侧在 Java module-trajectory（读库）；两侧共享同一套 PostgreSQL/PostGIS 表，nginx 按路径前缀分流。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">接入方</div>
+        <div class="al-body">
+          <span class="node"><b>终端/第三方</b> POST /api/ingest/traj（X-Service-Token）</span>
+          <span class="node"><b>samples/*.csv</b> 样例轨迹文件</span>
+          <span class="node"><b>模拟器</b> 进程内 asyncio 任务</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">processing-service<br>FastAPI :8000</div>
+        <div class="al-body">
+          <span class="node"><b>routes/ingest.py</b> /traj 推送 + /load-sample 导入</span>
+          <span class="node"><b>routes/dataset.py</b> 数据集 load/clear/status（后台线程）</span>
+          <span class="node"><b>routes/simulator.py</b> start/stop/status</span>
+          <span class="node"><b>services/simulator.py</b> roster 选取 + 运动模型 + 演示事件</span>
+          <span class="node"><b>services/dataset_gen.py</b> 演示库生成器</span>
+          <span class="node"><b>db.py</b> insert_gps_points 等（execute_values + PostGIS）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">PostgreSQL<br>+ PostGIS</div>
+        <div class="al-body">
+          <span class="node"><b>traj.traj_gps_point</b> 轨迹点（4 个索引含 GiST）</span>
+          <span class="node"><b>traj.traj_warn_info</b> 演示报警落点</span>
+          <span class="node"><b>mon.risk_event</b> 演示事件落点</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Java<br>module-trajectory</div>
+        <div class="al-body">
+          <span class="node"><b>TrajectoryController</b> /api/traj 四端点</span>
+          <span class="node"><b>TrajectoryService</b> 范围过滤（currentPlates）</span>
+          <span class="node"><b>GpsPointMapper</b> LATERAL 最新点 / 在途车辆</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">前端</div>
+        <div class="al-body">
+          <span class="node"><b>Playback.vue</b> Leaflet 轨迹线 + 移动车标 + 控制条</span>
+          <span class="node"><b>ConfigList.vue</b> 数据集/模拟器控制面板</span>
+          <span class="node"><b>api/traj.ts</b> 接口封装</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>routes/ingest.py</code></td><td>py-web</td><td>推送与 CSV 导入</td><td>/traj 挂 Depends(verify_service_token)；INSERT_CHUNK=5000 分片；CEP 旁路 try 包裹不阻断；load-sample 先 delete_gps_points(identity, start, end) 再分片插入</td></tr>
+        <tr><td><code>security.verify_service_token</code></td><td>py-安全</td><td>服务令牌校验</td><td>比对 X-Service-Token 头与 settings.service_token，不等即 401"服务令牌无效"</td></tr>
+        <tr><td><code>db.insert_gps_points</code></td><td>py-数据</td><td>批量写点</td><td>psycopg2 execute_values，模板内 ST_SetSRID(ST_MakePoint(%s,%s),4326) 同步 location；get_conn 上下文自动 commit/rollback</td></tr>
+        <tr><td><code>services/simulator.py</code></td><td>py-服务</td><td>模拟器内核</td><td>SimulatorService 单例；asyncio 2 秒 tick；三种运动模型（local 城区游走/cross 走廊往返/fallback 北京）；_maybe_demo_event 12~20s 节律、车辆轮换、严重超速速度不足自动降级</td></tr>
+        <tr><td><code>services/dataset_gen.py</code></td><td>py-服务</td><td>演示库生成</td><td>MODES 两档（standard 30s/1~2 趟/96 事件预算；dense 15s/2~3 趟/192 封顶）；4 公司 10 车队 500 车；清空保留 IAM/菜单/字典/配置/审计</td></tr>
+        <tr><td><code>routes/dataset.py</code></td><td>py-web</td><td>数据集任务控制</td><td>threading.Thread 后台执行；运行中重复 load/clear 返回 409；status 暴露 stage/percent/counts/error</td></tr>
+        <tr><td><code>TrajectoryController</code></td><td>java-web</td><td>四个查询端点</td><td>/api/traj/vehicles、/vehicles/registered、/latest、/track；<strong>无 @RequiresPerm</strong>，仅 JWT 认证 + 服务层数据范围</td></tr>
+        <tr><td><code>TrajectoryService</code></td><td>java-service</td><td>范围过滤查询</td><td>currentPlates()：UserInfo.allData() → null 不限；deptScope 空 → 空列表 fail-closed；否则按部门范围查车辆换车牌集合；queryTrack 按 gps_time 正序</td></tr>
+        <tr><td><code>GpsPointMapper</code></td><td>java-mapper</td><td>最新点/在途车 SQL</td><td>终端表驱动 CROSS JOIN LATERAL 逐台 ORDER BY gps_time DESC LIMIT 1；注释记录 890 万行 19s→亚秒、DISTINCT ON 53s→0.5s 的优化依据</td></tr>
+        <tr><td><code>Playback.vue</code></td><td>前端</td><td>回放页</td><td>L.polyline + divIcon 车标（方向变化 &gt;15° 才重建图标）；600/speed ms 定时器播帧；applyRouteQuery 支持 identityCode/plateNo/date 参数自动查询；watch route.query 支持同标签换车</td></tr>
+        <tr><td><code>portal.conf</code></td><td>网关</td><td>路径分流</td><td>/api/simulator/、/api/ingest/ → processing-app:8000（300s 超时）；其余 /api/ → platform-app:8080；client_max_body_size 220m 支撑大批量推送</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 三条接入链路的共同落库管道</h3>
+    <p>无论来源是外部推送、CSV 还是模拟器，最终都汇入 <code>db.insert_gps_points(rows)</code>：行 dict 统一为 identity_code / plate_no / gps_time / lng / lat / speed / direction / altitude / alarm_flag / mileage 十一个键，execute_values 单 SQL 批量插入，模板尾部 <code>ST_SetSRID(ST_MakePoint(%s, %s), 4326)</code> 用 lng/lat 同步生成 PostGIS location 列——围栏等空间判定（MOD-DBD-007）依赖该列，任何新接入链路只要复用此函数即自动具备空间能力。连接管理 <code>get_conn()</code> 上下文：正常 commit、异常 rollback、始终关闭。推送与模拟器链路在入库后都会旁路调用 <code>cep_engine.evaluate_points(rows)</code>，并用 try 包裹保证"评估挂了不影响入库"。</p>
+
+    <h3 id="s7-2">7.2 终端 HTTP 推送与服务令牌</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">鉴权</div>
+        <div class="s-desc">FastAPI Depends(verify_service_token)：X-Service-Token 头不等于配置 service_token（默认 change-me-service-token，环境变量覆盖）即 401。该链路不走用户 JWT。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">报文校验</div>
+        <div class="s-desc">identityCode 与 points 必填（400"identityCode 与 points 不能为空"）；plateNo 可选但应给，回放按车牌过滤依赖它。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">分片入库</div>
+        <div class="s-desc">点列表按 5000 行切片循环 insert_gps_points，累计 inserted 返回。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">CEP 旁路</div>
+        <div class="s-desc">整批（未分片的原始 rows）交 cep_engine.evaluate_points 做规则/围栏评估；异常仅打印 [cep] 日志。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-3">7.3 样例 CSV 幂等导入与事件联动</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">定位文件</div>
+        <div class="s-desc">默认 vehicle_gps_20260901.csv；os.path.basename 防目录穿越；不存在返回 404。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">解析</div>
+        <div class="s-desc">csv.DictReader 逐行读取，vehicle_id → identity_code，经纬度/速度等转型；空文件 400。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">幂等清理</div>
+        <div class="s-desc">取全文件最小/最大 gps_time，先 DELETE 该设备该时间窗旧点，再分片插入——重复导入不重复。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">事件联动</div>
+        <div class="s-desc">导入日的 driver_events.json 中当日事件同步写入 mon.risk_event（dsm_level → risk_level）；count_risk_events_on(日期)==0 才导，同一天只导一次。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-4">7.4 进程内模拟器：车辆清单与运动模型</h3>
+    <p><strong>roster 选取（启动时一次）：</strong>市内车——按车队（dept_type=2）每队取第 1 辆已绑终端的车（DISTINCT ON d.id 配 ORDER BY d.id, v.id）；跨省车——按终端编号 DS0353/DS0452 精确选取；查询失败或结果为空回退到北京 5 车（SIM_001~005 京牌）。</p>
+    <p><strong>每 2 秒 tick：</strong></p>
+    <table>
+      <thead><tr><th>模式</th><th>运动模型</th><th>参数</th></tr></thead>
+      <tbody>
+        <tr><td>local 市内车</td><td>平滑随机游走：航向 ±0.35 弧度抖动、速度 8~78 km/h 波动、按速度折算经纬度步长；出城区边界（lng ±0.12 / lat ±0.09）航向反转反弹</td><td>中心 = 车队所属城市中心（9 城坐标表）</td></tr>
+        <tr><td>cross 跨省车</td><td>沿"上海→苏州→芜湖→合肥"走廊 haversine 插值往返，到头掉头；车头方向取前方 0.2km 方位角</td><td>速度 60~108 km/h；里程 3~15 万公里初始</td></tr>
+        <tr><td>fallback</td><td>北京城区（116.404, 39.912 附近）随机游走</td><td>速度 20~80 km/h</td></tr>
+      </tbody>
+    </table>
+    <p>每 tick 全部车辆成一批 rows：mileage 按速度×2 秒累计，alarm_flag 在速度 ≥95 时置 1；随后 insert_gps_points → CEP 旁路 → _maybe_demo_event。演示事件按 12~20 秒随机间隔产出，5 类按权重抽取（一般超速 0.30 / 严重超速 0.50 / 疲劳 0.72 / DSM 疲劳 0.88 / 设备故障 1.00 累计权重），超速类只落在跨省高速车上；选车时刻意避开上一次的车辆；严重超速要求当前速度 ≥95，否则自动降级为一般超速。每次产出 1 条 risk_event（自动建工单，见 MOD-DBD-009）+ 1 条 traj_warn_info（报警，见 MOD-DBD-006）。</p>
+
+    <h3 id="s7-5">7.5 轨迹查询的数据范围过滤</h3>
+    <p><code>TrajectoryService.currentPlates()</code> 是全部查询的统一闸口：超管/数据范围=全部 → 返回 null（SQL 不加车牌条件）；范围为空 → 返回空列表，各方法直接返回空结果（fail-closed，SQL 都不执行）；否则按 deptScope 查有效车辆换得去重车牌集合，轨迹查询以 <code>plate_no IN (...)</code> 过滤。即使用户只传 identityCode 不传车牌，点位的车牌也必须在可见集合内——终端编号无法成为越权通道。WebSocket 推送链路是例外：<code>listLatestPointsForPush()</code> 全量查（调度线程无 UserContext），由发送环节按各会话范围逐会话过滤（见 MOD-DBD-005）。</p>
+
+    <h3 id="s7-6">7.6 最新位置查询的 LATERAL 优化</h3>
+    <p>"每个终端最新一点"若用 DISTINCT ON 或窗口函数，需要扫/排 890 万行轨迹表（注释实测 DISTINCT ON 约 53s、全量 DISTINCT 约 19s）。现实现以<strong>终端表驱动</strong>：traj_terminal（500 行级）CROSS JOIN LATERAL，逐终端用 (identity_code, gps_time DESC) 索引做 ORDER BY ... LIMIT 1 探测，500 次索引查找换来整体亚秒级（注释实测约 0.5s）。可见车牌集合作为可选条件拼在 LATERAL 外层。该 SQL 同时服务 /api/traj/latest（HTTP 数据源）与 WebSocket 推送。</p>
+
+    <h3 id="s7-7">7.7 前端回放页实现</h3>
+    <ul>
+      <li><strong>地图</strong>：Leaflet + 高德瓦片（webrd0{s}.is.autonavi.com，style=8），初始视野北京；查询成功 fitBounds 自适应轨迹。</li>
+      <li><strong>绘制</strong>：整条轨迹一根 L.polyline（#2563eb/4px/0.8）；移动车标是 divIcon 内嵌 SVG（vehicleIconSvg），方向角经 rotate 变换，<strong>方向变化超过 15° 才重建图标</strong>避免高频 DOM 重建。</li>
+      <li><strong>播放</strong>：setInterval 600/speed 毫秒步进索引；到末尾自动停；切倍速时重启定时器；滑块与索引双向联动。</li>
+      <li><strong>路由联动</strong>：identityCode 精确匹配优先、车牌兜底；date=YYYY-MM-DD 自动填当天 00:00:00~23:59:59；带参即自动查询；watch route.query 支持同标签换车（多标签模式下 path 不变仅 query 变）。</li>
+      <li><strong>时间展示</strong>：dayjs 兼容 ISO 串，统一显示 yyyy-MM-dd HH:mm:ss。</li>
+    </ul>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>以"模拟器开启 → 监控看到车 → 坐席回放核查"为例：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">产点</div>
+        <div class="s-desc">模拟器 2 秒 tick 算出 12 车新位置 → insert_gps_points 批量入库（location 同步）→ CEP 旁路评估。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">实时消费</div>
+        <div class="s-desc">WebSocket 推送链路 listLatestPointsForPush 取各终端最新点，按会话范围过滤后推给监控页（MOD-DBD-005）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">事件伴生</div>
+        <div class="s-desc">每 12~20 秒 1 条 risk_event（自动建工单）+ 1 条 traj_warn_info（报警中心可见）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">历史查询</div>
+        <div class="s-desc">回放页 GET /api/traj/track?identityCode&start&end → currentPlates 过滤 → gps_time 正序返回。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">地图回放</div>
+        <div class="s-desc">折线绘制 + 车标按 600/倍速 ms 步进，滑块/方向/速度联动展示。</div>
+      </div>
+    </div>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/索引</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.traj_gps_point</code></td>
+          <td>轨迹点（本模块核心）</td>
+          <td>idx(identity_code, gps_time DESC)、idx(plate_no, gps_time DESC)、idx(gps_time DESC)、GiST(location)；location 由入库管道生成；receive_time 默认入库时刻</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_gps_point">DDL · tbl-traj_traj_gps_point</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_warn_info</code></td>
+          <td>终端报警（模拟器演示事件伴生）</td>
+          <td>type_id 对 base_warn_type（1 超速/2 疲劳/5 设备故障）；handle_status 默认 0</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_warn_info">DDL · tbl-traj_traj_warn_info</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_terminal</code></td>
+          <td>最新点查询的驱动表 / identity_code 来源</td>
+          <td>valid_mark=1 才参与 LATERAL 驱动</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_terminal">DDL · tbl-traj_traj_terminal</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_vehicle</code></td>
+          <td>范围过滤的车牌来源 / 台账接口</td>
+          <td>dept_id ∈ deptScope → vehicle_no 集合</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_vehicle">DDL · tbl-traj_traj_vehicle</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>演示事件另写 mon.risk_event（MOD-DBD-008 数据模型）；数据集生成器还会重建 traj_dept/traj_vehicle/traj_terminal/traj_driver 及绑定（MOD-DBD-003）。</p>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块端点。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>认证要求</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/traj/vehicles</code></td><td>在途车辆（有轨迹终端去重，范围过滤）</td><td>用户 JWT</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-traj">grp-traj</a></td></tr>
+        <tr><td>GET <code>/api/traj/vehicles/registered</code></td><td>车辆台账（范围内有效车辆）</td><td>用户 JWT</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-traj">grp-traj</a></td></tr>
+        <tr><td>GET <code>/api/traj/latest</code></td><td>各终端最新位置（LATERAL，范围过滤）</td><td>用户 JWT</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-traj">grp-traj</a></td></tr>
+        <tr><td>GET <code>/api/traj/track</code></td><td>历史轨迹（identityCode/plateNo + start/end，时间正序）</td><td>用户 JWT</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-traj">grp-traj</a></td></tr>
+        <tr><td>POST <code>/api/ingest/traj</code></td><td>终端/第三方批量推点（5000 分片 + CEP 旁路）</td><td>X-Service-Token</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-ingest">grp-py-ingest</a></td></tr>
+        <tr><td>POST <code>/api/ingest/load-sample</code></td><td>样例 CSV 幂等导入 + 当日事件联动</td><td>容器网络内开放（演示口径）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-ingest">grp-py-ingest</a></td></tr>
+        <tr><td>POST <code>/api/ingest/dataset/load</code></td><td>数据集后台加载（standard/dense；运行中 409）</td><td>容器网络内开放</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-dataset">grp-py-dataset</a></td></tr>
+        <tr><td>POST <code>/api/ingest/dataset/clear</code></td><td>清空业务数据（保留 IAM/菜单/字典/配置/审计）</td><td>容器网络内开放</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-dataset">grp-py-dataset</a></td></tr>
+        <tr><td>GET <code>/api/ingest/dataset/status</code></td><td>数据集任务进度（stage/percent/counts/error）</td><td>容器网络内开放</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-dataset">grp-py-dataset</a></td></tr>
+        <tr><td>POST <code>/api/simulator/start</code> / <code>/stop</code></td><td>模拟器启停</td><td>容器网络内开放（代码注释：正式版需登录态/服务令牌）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-simulator">grp-py-simulator</a></td></tr>
+        <tr><td>GET <code>/api/simulator/status</code></td><td>运行状态（车辆清单/ticks/演示事件数）</td><td>容器网络内开放</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-py-simulator">grp-py-simulator</a></td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>权限模型提示：</strong>/api/traj/* 四个 Java 端点没有 @RequiresPerm 权限点校验——只要登录即可调用，业务可见性完全由数据范围（车牌集合过滤）保证；"回放"菜单的 playback:view 权限点由前端路由守卫执行。这与 MDM/IAM 模块"接口级权限点"的模式不同，属现状事实。</p>
+    </blockquote>
+
+    <h2 id="s11">11 样例文件与种子数据</h2>
+    <table>
+      <thead><tr><th>文件</th><th>内容</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>samples/vehicle_gps_20260901.csv</code>（约 5.5MB）/ <code>...0902.csv</code></td><td>单车全天秒级轨迹（vehicle_id/plate_no/gps_time/经纬度/速度/方向/海拔/报警位/司机电话/司机身份证/里程）</td><td>load-sample 默认演示；幂等重导验证</td></tr>
+        <tr><td><code>samples/driver_events.json</code>（约 2.5MB）</td><td>DSM/ADAS 司机事件（event_code/event_time/坐标/extra.dsm_level）</td><td>load-sample 联动导入当日风险事件</td></tr>
+        <tr><td><code>samples/fleet_info_sheet1~3.csv</code></td><td>车队信息表</td><td>数据集生成参考（待核实其消费代码路径）</td></tr>
+        <tr><td><code>samples/dashcam_clips.zip</code> / <code>vehicle_photos.zip</code> / <code>driver_notes.txt</code></td><td>视频片段/照片/备注占位素材</td><td>视频智能（F24~F27）预留</td></tr>
+        <tr><td><code>02-traj-tables.sql</code></td><td>5 车 5 终端 5 司机与绑定（北京演示基线）</td><td>空库最小可跑；模拟器 fallback 清单与之对应</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>写库放 Python、查询放 Java</strong>：接入侧是 IO 密集批量写（execute_values 单 SQL 多行 + 分片），Python 脚本化迭代快；查询侧要与平台统一的认证/数据范围体系集成，Java 复用 UserContext 零成本。共享同库是两侧唯一耦合。</li>
+      <li><strong>服务令牌而非用户 JWT 做系统间鉴权</strong>：终端/网关没有"登录人"，共享密钥头是最简方案；与用户体系隔离，泄露面可独立轮换。</li>
+      <li><strong>幂等导入用"按窗删除再插"而非唯一约束</strong>：轨迹点天然允许同时刻多点（不同来源），加唯一约束会误伤真实数据；按设备+时间窗先清后插达到同等幂等效果且不扭曲模型。</li>
+      <li><strong>模拟器进程内 asyncio 而非独立服务</strong>：演示用途下与 processing-service 同生命周期最省心；roster 从库中动态选取，灌了数据集自动升级车队规模，没灌也有北京 5 车兜底。</li>
+      <li><strong>LATERAL 逐终端探测而非 DISTINCT ON 全扫</strong>：把"N 个终端各取最新 1 点"从全表排序转化为 N 次索引点查，注释留存了 53s→0.5s 的实测依据。</li>
+      <li><strong>轨迹查询全量返回而非分页</strong>：回放需要完整点序绘制折线，分页会破坏连续性；大窗口查询的数据量风险在 13 节登记。</li>
+      <li><strong>数据集后台线程 + 状态轮询</strong>：百万级生成是分钟级任务，同步 HTTP 会超时（nginx 对 ingest 给 300s 仍不够）；异步任务 + status 接口让前端可断续跟踪。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>模拟器/数据集/样例接口未鉴权</td>
+          <td>routes/simulator.py 注释"演示环境开放控制（容器网络边界内）；正式版本需登录态/服务令牌"；load-sample 与 dataset 三个端点无 Depends</td>
+          <td>若 processing-service 的 8000 端口或 nginx /api/ingest、/api/simulator 路径暴露到不可信网络，任何人可灌库/清库/控模拟器（clear 会删全部业务数据）</td>
+          <td>生产部署须在网关层摘除或加白名单；正式版按注释补齐令牌/登录态校验</td>
+        </tr>
+        <tr>
+          <td>服务令牌默认值</td>
+          <td>config.py service_token 默认 "change-me-service-token"</td>
+          <td>生产忘配则推送接口形同虚设</td>
+          <td>部署手册要求必配；可启动时对默认值告警</td>
+        </tr>
+        <tr>
+          <td>大时间窗轨迹查询无上限</td>
+          <td>queryTrack 无 LIMIT、无分页；dense 档单车月点数十万以上</td>
+          <td>单次查询可能拉回数十万行，拖垮 JVM 内存与浏览器</td>
+          <td>建议加时间窗上限/点数上限或抽稀参数（演进项）；前端目前不限制选窗</td>
+        </tr>
+        <tr>
+          <td>轨迹表无限增长</td>
+          <td>无分区、无归档任务；dense 数据集一次即千万级</td>
+          <td>长期运行后查询与备份成本上升</td>
+          <td>二期可按 gps_time 做月度分区 + 冷数据归档（建设清单 F36~F40 数据治理域）</td>
+        </tr>
+        <tr>
+          <td>plate_no 为空的点</td>
+          <td>推送报文 plateNo 可选；轨迹查询按车牌过滤</td>
+          <td>无车牌的点对受限用户不可见（null 不匹配 IN），超管可见但回放页选不到</td>
+          <td>接入规范要求推送方必带 plateNo；可在入库时按 identity_code 回查档案补全（演进）</td>
+        </tr>
+        <tr>
+          <td>模拟器与真实接入混跑</td>
+          <td>模拟器持续产点，与真实推送共用一表</td>
+          <td>演示数据污染生产统计</td>
+          <td>模拟器定位是演示/验证工具；正式接入 808 网关后应停用并清理演示数据</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-003-主数据管理.html">MOD-DBD-003 主数据管理</a></td><td>范围过滤的车牌集合、模拟器 roster、数据集档案都读/写 MDM 六张表；identity_code 关联终端档案</td><td>TrajectoryService.currentPlates；simulator._load_roster；dataset_gen INSERT</td></tr>
+        <tr><td><a href="MOD-DBD-005-实时监控与可视化.html">MOD-DBD-005 实时监控</a></td><td>/api/traj/latest 与 listLatestPointsForPush 是监控页 HTTP 数据源与 WebSocket 推送源；回放页接收监控页带参跳入</td><td>GpsPointMapper.listLatestPoints 双调用方</td></tr>
+        <tr><td><a href="MOD-DBD-006-终端报警中心.html">MOD-DBD-006 报警中心</a></td><td>模拟器演示事件成对写 traj_warn_info（报警中心数据源）；报警可跳回放</td><td>db.insert_warn_info</td></tr>
+        <tr><td><a href="MOD-DBD-007-电子围栏.html">MOD-DBD-007 电子围栏</a> / MOD-DBD-008 风控规则</td><td>入库旁路 cep_engine.evaluate_points 复用轨迹行做规则/围栏评估；location 列是空间判定输入</td><td>ingest.py / simulator.py 的 cep 调用</td></tr>
+        <tr><td>MOD-DBD-009 处置工单</td><td>演示 risk_event 落库即自动建 PENDING 工单</td><td>db.insert_risk_events</td></tr>
+        <tr><td>vps 网关对接（规划）</td><td>GATEWAY-CMP-001 已定方案：/api/ingest/traj 报文是未来 808/Kafka 接入适配层的落地契约</td><td>docs/GATEWAY-CMP-001 对比分析</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">同一个 CSV 导两遍会重复吗？</div><div class="vv">不会。导入前先按"设备 + 文件最小/最大 gps_time"删除旧点再插入；当日的司机事件也因 count_risk_events_on=0 检查只导一次。</div></div>
+      <div class="kv"><div class="k">推送接口报 401 是什么原因？</div><div class="vv">X-Service-Token 头缺失或与 processing-service 的 service_token 配置不一致；注意该令牌与用户登录 JWT 是两套体系。</div></div>
+      <div class="kv"><div class="k">单批最多能推多少点？</div><div class="vv">报文不限长，服务端按 5000 行分片入库；nginx client_max_body_size 220m 与 300s 超时是实际上限。</div></div>
+      <div class="kv"><div class="k">为什么受限用户在回放页选不到某辆车？</div><div class="vv">/api/traj/vehicles 已按数据范围过滤；即使手工构造 identityCode 调 /track，点位车牌不在可见集合内也会被过滤为空。</div></div>
+      <div class="kv"><div class="k">超管查得到但回放没数据的车是什么情况？</div><div class="vv">该车（终端）还没有任何轨迹点，或轨迹点的 plate_no 为空/与档案车牌不一致——回放页车辆清单来自"有轨迹的终端"，台账车无点不会出现。</div></div>
+      <div class="kv"><div class="k">模拟器停了，监控页的车还动吗？</div><div class="vv">不动。已产生的数据保留（轨迹/报警/事件不删），但不再新增点位；监控页最新点停留在最后上报时刻，按 refTime 口径会逐渐显示离线。</div></div>
+      <div class="kv"><div class="k">数据集加载中可以清空吗？</div><div class="vv">不可以，接口返回 409"数据集任务运行中，禁止清空"；同理运行中重复加载也 409。</div></div>
+      <div class="kv"><div class="k">清空数据集会删掉我的账号吗？</div><div class="vv">不会。clear_business_data 只清业务数据，IAM 用户/角色/菜单、字典、系统配置、审计日志保留。</div></div>
+      <div class="kv"><div class="k">不选时间查询会怎样？</div><div class="vv">按页面语义查询该车全部轨迹（无时间条件）；注意大历史量车可能返回非常多点（见 13 节风险）。</div></div>
+      <div class="kv"><div class="k">倍速切换为什么要先停再播？</div><div class="vv">实现上切换倍速时重启定时器（playing false→true）使新间隔立即生效，表现为一瞬间的重启，属正常行为。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>CSV 导入</td><td>load-sample 返回插入点数与时间范围；轨迹表可按设备查到</td><td>接口直调</td></tr>
+        <tr><td>2</td><td>导入幂等</td><td>同文件再导一次，该设备该日点数不翻倍</td><td>两次导入后 count 对比</td></tr>
+        <tr><td>3</td><td>推送鉴权</td><td>无/错 X-Service-Token 返回 401；正确令牌返回 inserted 数</td><td>curl 对照</td></tr>
+        <tr><td>4</td><td>推送分片</td><td>单批 &gt;5000 点全部入库，inserted 等于总数</td><td>构造大批量报文</td></tr>
+        <tr><td>5</td><td>CEP 旁路不阻断</td><td>规则引擎异常时推送仍返回 inserted（日志有 [cep] 错误）</td><td>故障注入（演示环境）</td></tr>
+        <tr><td>6</td><td>数据集加载</td><td>standard 档完成后车辆 500、轨迹百万级；status 进度到 100%</td><td>面板 + 数据库</td></tr>
+        <tr><td>7</td><td>数据集互斥与清空</td><td>运行中 load/clear 均 409；清空后业务表为空、账号可正常登录</td><td>接口直调</td></tr>
+        <tr><td>8</td><td>模拟器启停</td><td>start 后 ticks 递增、轨迹表持续新增；stop 后停止且数据保留</td><td>status 轮询 + 数据库</td></tr>
+        <tr><td>9</td><td>模拟器 roster</td><td>有数据集时 12 辆（10 市内 + 2 跨省）；清空数据集后回退北京 5 车</td><td>status 车辆清单</td></tr>
+        <tr><td>10</td><td>演示事件节律</td><td>risk_event 与 traj_warn_info 成对增长，间隔约 12~20 秒，不连续同一车</td><td>数据库观察</td></tr>
+        <tr><td>11</td><td>回放查询</td><td>选车选窗后折线绘制、点数提示正确；播放/倍速/滑块/方向正常</td><td>界面操作</td></tr>
+        <tr><td>12</td><td>范围过滤</td><td>省测试账号只见本省车辆轨迹；直输他省 identityCode 查 /track 返回空</td><td>双账号对照</td></tr>
+        <tr><td>13</td><td>路由带参</td><td>/playback?plateNo=xx&date=2026-09-01 自动选车、填全天窗并查询</td><td>地址栏直输</td></tr>
+        <tr><td>14</td><td>最新点性能</td><td>/api/traj/latest 在 500 车数据集上亚秒返回</td><td>计时调用</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>未找到充分证据或依赖运行环境</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>fleet_info_sheet1~3.csv 的消费路径</strong>：样例目录存在三份车队信息表，但未在阅读范围内找到引用它们的代码；可能供 dataset_gen 参考或纯素材。</li>
+      <li><strong>service_token 的生产注入</strong>：配置项支持环境变量覆盖并有默认值，生产实际注入方式以部署手册/运维配置为准。</li>
+      <li><strong>/api/ingest 与 /api/simulator 的生产暴露面</strong>：nginx 当前对这两个前缀无差别反代；正式环境是否摘除/加白名单属部署决策，代码注释已声明"演示环境开放"。</li>
+      <li><strong>轨迹表分区与归档</strong>：未见分区 DDL 与归档任务，数据治理域（F36~F40）建设中再行设计。</li>
+      <li><strong>CSV 中 driver_phone / driver_idcard 两列</strong>：导入时解析但未入库（仅十一个键进 rows），是否需要在司机档案联动中使用待确认。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>首次发布。以 2026-10-05 源代码为准编写：固化三条接入链路（HTTP 推送/CSV 幂等导入/模拟器）与 insert_gps_points 共同管道、X-Service-Token 鉴权、5000 分片、CEP 旁路不阻断、数据集 standard/dense 两档与互斥清空、模拟器 roster 与三种运动模型、演示事件节律、currentPlates 范围过滤、LATERAL 最新点优化、Playback.vue 回放交互与路由参数、/api/traj 无接口级权限点的现状等实现事实。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-004 轨迹数据接入、查询与回放 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

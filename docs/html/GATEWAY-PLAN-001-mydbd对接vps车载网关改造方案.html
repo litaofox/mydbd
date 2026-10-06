@@ -128,6 +128,7 @@ h1 strong,h2 strong,h3 strong{color:inherit;}
 <li><a href="#ch5-5">5.5 Java 平台改造</a></li>
 <li><a href="#ch5-6">5.6 前端改造</a></li>
 <li><a href="#ch5-7">5.7 基础设施与配置</a></li>
+<li><a href="#ch5-8">5.8 运行模式与参数配置（三模式）</a></li>
 </ul></li>
 <li><a href="#ch6">6. 分期实施与交付</a></li>
 <li><a href="#ch7">7. 验证方案</a></li>
@@ -225,7 +226,7 @@ h1 strong,h2 strong,h3 strong{color:inherit;}
 <h3 id="ch3-2">3.2 功能地图</h3>
 <pre>一期 · 数据看得见、报警管得住
   F1 真实车辆实时定位     F2 终端在线/离线状态     F3 车辆对照与未登记隔离
-  F4 主动安全报警闭环     F5 报警证据附件查看      F9 网关接入状态（运维）
+  F4 主动安全报警闭环     F5 报警证据附件查看      F9 运行模式页（运维）
 二期 · 连得上、拍得到
   F6 实时视频/回放/对讲   F7 远程拍照
 三期 · 管得深
@@ -279,8 +280,8 @@ h1 strong,h2 strong,h3 strong{color:inherit;}
 <h4>F8 TTS 语音下发 <span class="tag tag-p3">P3</span></h4>
 <p>复用 NotifyChannel 扩展点新增 JT808_TTS 渠道，经网关 /tts 向终端语音喊话（如疲劳干预）；终端离线回执失败并记录。</p>
 
-<h4>F9 网关接入状态（运维） <span class="tag tag-p0">P0</span></h4>
-<p>服务令牌保护的只读状态：开关、各 topic 最近处理时间/处理数/失败数、消费积压、死信条数、未登记终端入口。配合一个系统管理菜单页。</p>
+<h4>F9 运行模式页（运维） <span class="tag tag-p0">P0</span></h4>
+<p>服务令牌保护的只读状态：开关、各 topic 最近处理时间/处理数/失败数、消费积压、死信条数、未登记终端入口。配合一个系统管理菜单页（2026-10-06 实施定名「运行模式」，菜单 id=925，另含三模式切换、mock 投递启停与清除模拟数据，见正式文档库副本第 5.8/10.5 节）。</p>
 
 <h4>F10 原始报文留存 <span class="tag tag-p3">P3 · 可选</span></h4>
 <p>订阅 <code>jt808_raw_hex_topic</code> 落冷存储，供事后排障与协议审计。</p>
@@ -469,13 +470,84 @@ h1 strong,h2 strong,h3 strong{color:inherit;}
 
 <h3 id="ch5-7">5.7 基础设施与配置</h3>
 <ul>
-<li>docker-compose：processing 增 GATEWAY_ENABLED/KAFKA_BOOTSTRAP_SERVERS/KAFKA_GROUP_ID/GATEWAY_FILE_BASE_URL/GATEWAY_MEDIA_STRATEGY 等（默认空/关）；platform-app 二期增 GATEWAY_BASE_URL/TOKEN/VIDEO_WS_BASE。</li>
+<li>docker-compose：processing 增 <code>GATEWAY_MODE</code>（simulator/mock/gateway，默认 simulator）、<code>KAFKA_BOOTSTRAP_SERVERS</code>、<code>KAFKA_GROUP_ID</code>、<code>GATEWAY_FILE_BASE_URL</code>、<code>GATEWAY_MEDIA_STRATEGY</code> 等（详见 <a href="#ch5-8">5.8</a>，sys_config 优先于环境变量）。</li>
 <li>新增 <code>dev-infra</code> profile 受控的单节点 KRaft Kafka（默认不启动，供本地联调）。</li>
 <li>.env.example 补变量说明（不含真实口令）。</li>
 <li>portal.conf：一期增 <code>/api/gateway/</code> → processing；二期增 <code>/gateway-ws/</code> upgrade 反代。</li>
 <li>生产优先直连网关既有 Kafka（独立消费组 mydbd-ingest + 只读 ACL）。</li>
 <li>同步更新总体架构、DDL 文档与 CHANGELOG（实施阶段）。</li>
 </ul>
+
+<h3 id="ch5-8">5.8 运行模式与参数配置（演示 / 测试 / 正式三模式）</h3>
+<p>同一套消费代码通过配置切换数据来源，满足<strong>演示环境、测试环境、正式环境</strong>的便捷切换：mock 与 gateway 走完全相同的 consumer/mapper/入库/工单/附件链路，差异仅在 Kafka 地址与是否同时运行仿真投递器，杜绝"测试一套、生产一套"的代码漂移。</p>
+<table>
+<tr><th>模式</th><th>值（gateway.mode）</th><th>使用场景</th><th>数据来源</th><th>外部依赖</th></tr>
+<tr><td><strong>演示模式</strong>（出厂默认）</td><td><code>simulator</code></td><td>产品演示、功能回归、无网关环境</td><td>内置 simulator（既有功能）</td><td>无</td></tr>
+<tr><td><strong>测试模式</strong></td><td><code>mock</code></td><td>对接联调、全链路验收、压测</td><td>mock_producer 按 vps 契约投 JSON → dev-infra Kafka → 正式消费链路</td><td>dev-infra Kafka（compose profile）</td></tr>
+<tr><td><strong>正式模式</strong></td><td><code>gateway</code></td><td>生产，网关正式启用后</td><td>真实 vps 网关 Kafka 集群（独立只读消费组）</td><td>broker 网络可达 + 只读 ACL</td></tr>
+</table>
+
+<p><strong>各模式功能表现矩阵</strong>：</p>
+<table>
+<tr><th>功能</th><th>simulator 演示</th><th>mock 测试</th><th>gateway 正式</th></tr>
+<tr><td>实时定位 / 大屏 / 轨迹回放</td><td>模拟车辆数据（现有行为不变）</td><td>仿真车辆定位 ≤5s 上屏</td><td>真实在网车辆</td></tr>
+<tr><td>在线 / 离线状态</td><td>终端在线态列为空，走"最近 5 分钟有点"兜底口径</td><td>0102 上线 / 心跳 / 离线事件驱动 online_status</td><td>同左，真实上下线</td></tr>
+<tr><td>主动安全报警与工单</td><td>现有模拟器/CEP 事件</td><td>29 类 ADAS/DSM/盲区/激烈驾驶仿真，warnId 开闭环+自动建单</td><td>真实报警</td></tr>
+<tr><td>报警证据附件</td><td>不产生网关附件</td><td>mock:// 占位图转存，鉴权可查看</td><td>从 18009 流式转存</td></tr>
+<tr><td>未登记终端隔离 / 死信 / 消费统计</td><td>不产生数据</td><td>可构造验证（含未登记车辆）</td><td>持续监控</td></tr>
+<tr><td>运行模式页</td><td colspan="3" style="text-align:center">三模式均可访问；显示当前模式、运行状态、topic 统计、配置来源（db/env/default）</td></tr>
+</table>
+
+<p><strong>参数清单</strong>（内置系统参数，<code>is_system=1</code> 不可删；由 18 号迁移脚本播种到 <code>traj.sys_config</code>）：</p>
+<table>
+<tr><th>系统参数键</th><th>环境变量（回退）</th><th>含义</th><th>示例 / 默认</th><th>必填模式</th></tr>
+<tr><td><code>gateway.mode</code></td><td><code>GATEWAY_MODE</code></td><td>运行模式</td><td>simulator</td><td>始终</td></tr>
+<tr><td><code>gateway.kafka.bootstrap-servers</code></td><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td>Kafka broker 列表，逗号分隔</td><td>mock：<code>kafka:9092</code>；正式：<code>10.0.0.1:9092,10.0.0.2:9092</code></td><td>mock / gateway</td></tr>
+<tr><td><code>gateway.kafka.group-id</code></td><td><code>KAFKA_GROUP_ID</code></td><td>消费组（独立、只读）</td><td>mydbd-ingest</td><td>mock / gateway</td></tr>
+<tr><td><code>gateway.file-base-url</code></td><td><code>GATEWAY_FILE_BASE_URL</code></td><td>网关附件静态服务（18009）</td><td>http://10.0.0.1:18009</td><td>gateway（local 策略）</td></tr>
+<tr><td><code>gateway.media-strategy</code></td><td><code>GATEWAY_MEDIA_STRATEGY</code></td><td>local 转存平台卷 / proxy 仅记原始 URL</td><td>local</td><td>mock / gateway</td></tr>
+<tr><td><code>gateway.mock-delivery-enabled</code></td><td><code>GATEWAY_MOCK_DELIVERY</code></td><td>测试模式 mock 仿真投递启停；运行时启停即时生效并写回本参数，重启 processing 后保持</td><td>on</td><td>mock</td></tr>
+</table>
+<ul>
+<li><strong>配置优先级</strong>：系统参数（sys_config 非空值）&gt; 环境变量（.env / compose）&gt; 代码默认值。空字符串不覆盖环境变量，便于部署侧用环境变量兜底。</li>
+<li><strong>生效方式</strong>：processing 服务<strong>启动时读取一次</strong>，不做热生效；页面保存后提示"需重启 processing 服务后生效"，模式卡片对未生效的配置显示"待重启"角标。</li>
+<li><strong>权限与审计</strong>：页面查看需 <code>system:gateway:view</code>（超管/安全管理员），保存需 <code>system:config:edit</code>；无编辑权限时表单只读；修改经既有 ConfigController 审计切面留痕（SYSTEM/UPDATE/CONFIG）。</li>
+</ul>
+
+<p><strong>切换界面（系统管理 → 运行模式，/system/gateway；菜单 925 于 2026-10-06 由「网关接入状态」更名）</strong>：</p>
+<ul>
+<li>顶部"运行模式与接入配置"卡片：演示 / 测试 / 正式三张可选卡片（含场景说明、当前"运行中"/"待重启"角标）；</li>
+<li>选中 mock/gateway 后展开 Kafka 地址（必填）、消费组、附件地址、附件策略表单，含必填与取值校验；</li>
+<li>保存有二次确认弹窗，确认后逐键写 sys_config 并提示重启；保存接口复用现有 <code>PUT /api/system/config/{id}</code>；</li>
+<li>同一批参数在"系统管理 → 系统参数"列表中同样可见可改；页面下方持续展示运行状态、topic 统计、死信与未登记终端（10 秒自刷）。</li>
+</ul>
+
+<p><strong>测试数据与模拟器管控</strong>（原"系统参数"页内的测试工具整体迁入本页，与运行模式联动）：</p>
+<table>
+<tr><th>操作</th><th>simulator 演示</th><th>mock 测试</th><th>gateway 正式</th></tr>
+<tr><td>加载标准/稠密测试集、清空业务数据</td><td>可用</td><td>可用（清空后需重新加载，mock 投递才能恢复）</td><td><strong>禁用</strong>（防止清空在网车辆档案与真实业务数据）</td></tr>
+<tr><td>实时轨迹模拟器开关</td><td>可用</td><td>禁用（避免与 mock 投递双写混淆，绕过 Kafka 的数据破坏链路验证）</td><td><strong>禁用</strong>（防止假数据混入真实在网车辆）</td></tr>
+<tr><td>清除模拟数据（清运行数据、保留基础数据）</td><td>可用</td><td>可用</td><td><strong>禁用</strong>（保护真实业务数据）</td></tr>
+<tr><td>mock 仿真投递启停开关</td><td>—</td><td>可用（运行时启停即时生效；开关状态持久化，重启后保持）</td><td>—</td></tr>
+</table>
+<ul>
+<li><strong>前端</strong>：按 processing 运行中模式（启动期固化值）置灰控件，正式模式卡片顶部显示红色警示；无 <code>system:config:edit</code> 权限同样只读。</li>
+<li><strong>后端硬拦截</strong>：simulator/dataset 接口新增轻量鉴权（app/security.py）——JWT 验签（与 Java 平台共享 JWT_HMAC_SECRET，HS256）→ 运行模式校验 → 权限码 <code>system:config:edit</code>（超管直通），不满足分别返回 401/403；状态查询仅需登录态。此前这些接口完全无鉴权，属历史技术债，本次一并补齐。</li>
+</ul>
+
+<p><strong>环境切换操作</strong>：</p>
+<pre># 演示（默认，无需 Kafka）
+GATEWAY_MODE=simulator
+docker compose up -d
+
+# 测试（先起 dev-infra Kafka，再以 mock 模式重建 processing）
+docker compose --profile dev-infra up -d
+# 页面选"测试模式"，Kafka 填 kafka:9092，保存后：
+docker compose restart processing-app
+
+# 正式（页面选"正式模式"并填写真实 broker/18009，保存重启）
+docker compose restart processing-app</pre>
+<blockquote class="warn"><strong>切正式前检查清单</strong>：① broker 通告地址容器内可达；② mydbd-ingest 消费组只读 ACL；③ 车辆对照已同步、手机号=SIM 卡号已抽检；④ 18009 网络白名单；⑤ 先观察状态页无 DLQ、未登记终端已清零或已建档。</blockquote>
 
 <h2 id="ch6">6. 分期实施与交付</h2>
 <table>

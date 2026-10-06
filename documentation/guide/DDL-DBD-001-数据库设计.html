@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>数据库设计 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">DDL-DBD-001 数据库设计 · PostgreSQL 16 + PostGIS 3.4 · traj / mon 双 schema</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 概述</a></li>
+        <li><a href="#s2">2 ER 关系图</a></li>
+        <li><a href="#s3">3 轨迹数据域（02）</a></li>
+        <li><a href="#s4">4 实时监控域（03）</a></li>
+        <li><a href="#s5">5 主数据域（04）</a></li>
+        <li><a href="#s6">6 审计域（05）</a></li>
+        <li><a href="#s7">7 IAM 权限域（06）</a></li>
+        <li><a href="#s8">8 风控规则与事件域（07）</a></li>
+        <li><a href="#s9">9 处置工单域（08）</a></li>
+        <li><a href="#s10">10 系统配置与字典域（09）</a></li>
+        <li><a href="#s11">11 坐席干预域（10）</a></li>
+        <li><a href="#s12">12 通知域（11）</a></li>
+        <li><a href="#s13">13 监控大屏域（12）</a></li>
+        <li><a href="#s14">14 报警中心域（13）</a></li>
+        <li><a href="#s15">15 驾驶评分域（14）</a></li>
+        <li><a href="#s16">16 风险画像域（15）</a></li>
+        <li><a href="#s17">17 种子数据</a></li>
+        <li><a href="#s18">18 数据字典与枚举</a></li>
+        <li><a href="#s19">19 网关对接增量（v1.1，18 号脚本）</a></li>
+        <li><a href="#rev">20 修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="backlink"><a href="../index.html">← 返回文档中心</a></div>
+    <h1>DDL-DBD-001 数据库设计</h1>
+    <p class="cover-meta">文档编号 DDL-DBD-001<span class="sep">|</span>版本 v1.2.0<span class="sep">|</span>发布日期 2026-10-06<span class="sep">|</span>事实源 infra/postgres/init/ 目录 01~18 初始化 SQL 逐字转录</p>
+    <p>关联文档：<a href="ARC-DBD-001-系统架构设计.html">ARC-DBD-001 系统架构设计</a>　<a href="SYS-DBD-001-项目总体设计.html">SYS-DBD-001 项目总体设计</a>　<a href="DEP-DBD-001-部署与运维手册.html">DEP-DBD-001 部署与运维手册</a></p>
+
+    <h2 id="s1">1 概述</h2>
+    <p>平台使用单库 PostgreSQL 16 + PostGIS 3.4（<code>01-create-schemas.sql</code> 中 <code>CREATE EXTENSION IF NOT EXISTS postgis</code>），库内划分两个 schema。SQL 脚本对两个 schema 的原始注释如下：</p>
+    <table>
+      <thead><tr><th>Schema</th><th>SQL 注释（01-create-schemas.sql）</th><th>实际承载内容（按 18 个脚本统计）</th></tr></thead>
+      <tbody>
+        <tr><td><code>traj</code></td><td>北斗轨迹数据域：车辆/终端/驾驶员/轨迹点/报警/抓拍</td><td>除轨迹与主数据外，随版本演进还承载了组织架构（04）、操作审计（05）、IAM（06）、数据字典/系统参数/站内消息/文件元数据（09）、通知发送日志（11）等平台管理表，共 23 张</td></tr>
+        <tr><td><code>mon</code></td><td>监控分析域：风险预警事件、驾驶员视频分析任务</td><td>风险预警事件与视频分析任务（03），并扩展了风控规则/电子围栏（07）、处置工单（08）、坐席干预（10）、驾驶评分（14），共 10 张</td></tr>
+      </tbody>
+    </table>
+    <p>全库共 <b>33 张表</b>（traj 23 张、mon 10 张），另有 1 个序列（<code>mon.seq_risk_order_no</code>）和 1 个工单号格式化函数（<code>mon.fmt_order_no()</code>）。各域表数分布：</p>
+    <table>
+      <thead><tr><th>域</th><th>来源脚本</th><th>表数</th><th>表清单</th></tr></thead>
+      <tbody>
+        <tr><td>轨迹数据域</td><td>02-traj-tables.sql</td><td>9</td><td>traj_gps_point、traj_vehicle、traj_terminal、traj_driver、traj_vehicle_driver、traj_vehicle_terminal、traj_warn_info、traj_gps_photo、base_warn_type（均 traj）</td></tr>
+        <tr><td>实时监控域</td><td>03-mon-tables.sql</td><td>2</td><td>mon.risk_event、mon.video_analysis</td></tr>
+        <tr><td>主数据域</td><td>04-mdm-tables.sql</td><td>1</td><td>traj.traj_dept（另含 3 个绑定互斥部分唯一索引）</td></tr>
+        <tr><td>审计域</td><td>05-audit-tables.sql</td><td>1</td><td>traj.sys_audit_log</td></tr>
+        <tr><td>IAM 权限域</td><td>06-iam-tables.sql</td><td>6</td><td>traj.sys_user、sys_role、sys_menu、sys_user_role、sys_role_menu、sys_role_dept</td></tr>
+        <tr><td>风控规则与事件域</td><td>07-risk-tables.sql</td><td>3</td><td>mon.risk_rule、risk_geo_fence、risk_fence_state（另对 mon.risk_event 幂等加列）</td></tr>
+        <tr><td>处置工单域</td><td>08-work-order.sql</td><td>3</td><td>mon.risk_work_order、risk_order_log、risk_order_sla（另有序列与函数）</td></tr>
+        <tr><td>系统配置与字典域</td><td>09-system-config.sql</td><td>5</td><td>traj.sys_dict_type、sys_dict_item、sys_config、sys_message、sys_file</td></tr>
+        <tr><td>坐席干预域</td><td>10-risk-intervention.sql</td><td>1</td><td>mon.risk_intervention</td></tr>
+        <tr><td>通知域</td><td>11-notify.sql</td><td>1</td><td>traj.notify_send_log（另扩展 traj.sys_message 5 列）</td></tr>
+        <tr><td>监控大屏域</td><td>12-dashboard.sql</td><td>0</td><td>仅菜单 15 与角色授权，无新表</td></tr>
+        <tr><td>报警中心域</td><td>13-alarm-center.sql</td><td>0</td><td>仅补充索引、存量归一、字典与菜单，无新表</td></tr>
+        <tr><td>驾驶评分域</td><td>14-driving-score.sql</td><td>1</td><td>mon.driver_score</td></tr>
+        <tr><td>风险画像域</td><td>15-risk-profile.sql</td><td>0</td><td>仅补充 2 个聚合索引与菜单 302，无新表</td></tr>
+        <tr><td>种子数据（非结构）</td><td>16-province-test-data.sql / 17-analysis-menu.sql</td><td>0</td><td>仅 INSERT/UPDATE 种子，见第 17 章</td></tr>
+      </tbody>
+    </table>
+
+    <h3>1.1 命名与设计规范（从 SQL 归纳）</h3>
+    <ul>
+      <li><b>主键</b>：业务表一律 <code>id bigserial PRIMARY KEY</code>；关系表用复合主键（如 <code>sys_user_role(user_id, role_id)</code>）；<code>mon.risk_fence_state</code> 以 <code>(identity_code, fence_id)</code> 为复合主键；<code>mon.risk_order_sla</code> 以 <code>risk_level</code> 为主键；<code>traj.sys_audit_log.id</code> 为 <code>bigint</code>（应用层雪花 ID，非自增）；<code>traj.base_warn_type.id</code> 为 <code>integer</code>（字典显式编码）。</li>
+      <li><b>索引前缀</b>：普通索引 <code>idx_</code>，唯一索引 <code>uk_</code>；内联唯一约束也用 <code>uk_</code> 前缀（如 <code>CONSTRAINT uk_risk_order_event UNIQUE (event_id)</code>）。</li>
+      <li><b>部分唯一索引</b>：大量唯一索引带 <code>WHERE valid_mark = 1</code>，保证软删后编码可复用；04 脚本还用条件部分唯一索引实现绑定互斥（一车一有效终端、一终端一车、一车一主班司机）。</li>
+      <li><b>软删除</b>：多数业务表带 <code>valid_mark smallint NOT NULL DEFAULT 1</code>（1=有效 0=删除）；菜单表 <code>sys_menu</code> 例外——版本种子化维护，不做软删。审计日志表不继承该组公共字段。</li>
+      <li><b>审计列</b>：业务表普遍带 <code>creator / create_date / updater / update_date</code> 四列；<code>sys_audit_log</code> 为只追加表，只保留 <code>create_time</code>，不提供 updater/update_date/valid_mark。</li>
+      <li><b>注释方式</b>：表级用 <code>COMMENT ON TABLE</code>，关键列用 <code>COMMENT ON COLUMN</code> 或行内 <code>--</code> 注释；本文字段说明优先取 SQL 注释，无注释者按字段名与类型推断并标注"（推断）"。</li>
+      <li><b>幂等可重入</b>：所有脚本使用 <code>CREATE TABLE/INDEX IF NOT EXISTS</code>、<code>ON CONFLICT DO NOTHING</code>、<code>ALTER TABLE ... ADD COLUMN IF NOT EXISTS</code>，可重复执行；种子插入后普遍用 <code>setval</code> 对齐自增序列。</li>
+      <li><b>外键策略</b>：全库仅 <code>traj.sys_dict_item.dict_type_id</code> 声明了物理外键（<code>REFERENCES traj.sys_dict_type(id) ON DELETE CASCADE</code>），其余表间关系均为应用层维护的逻辑外键。</li>
+      <li><b>空间数据</b>：轨迹点 <code>location geometry(Point, 4326)</code>、电子围栏 <code>polygon_geom geometry(Polygon, 4326)</code>，均配 GiST 空间索引。</li>
+    </ul>
+
+    <h2 id="s2">2 ER 关系图</h2>
+    <p>按域分组排布核心表。实线箭头为 SQL 中声明的物理外键（仅 sys_dict_item → sys_dict_type 一处）；虚线箭头为应用层维护的逻辑引用。为控制图面密度，<code>risk_work_order.assignee_id → sys_user.id</code>、<code>notify_send_log.receiver_id → sys_user.id</code>、<code>risk_intervention.event_id → risk_event.id</code> 三处逻辑引用未画出，以文字说明代替。</p>
+    <svg viewBox="0 0 1260 580" width="100%" role="img" aria-label="数据库 ER 关系图：按主数据、轨迹、风控、工单、IAM、配置通知、审计分析七个域分组，虚线为逻辑外键，实线为声明外键" style="background:#fff;border:1px solid var(--border);border-radius:10px;margin:10px 0;">
+      <defs>
+        <marker id="fk-arr" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 z" fill="#1f5fbf"/>
+        </marker>
+        <marker id="lg-arr" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 z" fill="#7a869a"/>
+        </marker>
+      </defs>
+
+      <!-- ===== 逻辑外键连线（先画线，后画框，避免遮挡箭头） ===== -->
+      <g stroke="#7a869a" stroke-width="1.3" fill="none" stroke-dasharray="5,4" opacity="0.85">
+        <!-- A 主数据域内部 -->
+        <line x1="206" y1="70" x2="186" y2="70" marker-end="url(#lg-arr)"/>
+        <line x1="116" y1="108" x2="240" y2="88" marker-end="url(#lg-arr)"/>
+        <line x1="116" y1="144" x2="113" y2="164" marker-end="url(#lg-arr)"/>
+        <line x1="286" y1="108" x2="296" y2="88" marker-end="url(#lg-arr)"/>
+        <line x1="286" y1="144" x2="283" y2="164" marker-end="url(#lg-arr)"/>
+        <!-- 轨迹域 -> 主数据域 -->
+        <line x1="111" y1="304" x2="111" y2="200" marker-end="url(#lg-arr)"/>
+        <polyline points="356,322 384,322 384,70 356,70" marker-end="url(#lg-arr)"/>
+        <line x1="186" y1="374" x2="206" y2="374" marker-end="url(#lg-arr)"/>
+        <!-- driver_score -> driver -->
+        <line x1="206" y1="482" x2="281" y2="200" marker-end="url(#lg-arr)"/>
+        <!-- 风控域内部 -->
+        <line x1="545" y1="116" x2="495" y2="88" marker-end="url(#lg-arr)"/>
+        <line x1="625" y1="116" x2="675" y2="88" marker-end="url(#lg-arr)"/>
+        <line x1="690" y1="180" x2="700" y2="88" marker-end="url(#lg-arr)"/>
+        <!-- 工单域 -->
+        <line x1="852" y1="76" x2="665" y2="132" marker-end="url(#lg-arr)"/>
+        <line x1="1042" y1="70" x2="1022" y2="72" marker-end="url(#lg-arr)"/>
+        <line x1="937" y1="116" x2="937" y2="92" marker-end="url(#lg-arr)"/>
+        <!-- IAM 域内部 -->
+        <line x1="455" y1="364" x2="478" y2="340" marker-end="url(#lg-arr)"/>
+        <line x1="530" y1="364" x2="585" y2="340" marker-end="url(#lg-arr)"/>
+        <line x1="640" y1="364" x2="618" y2="340" marker-end="url(#lg-arr)"/>
+        <line x1="715" y1="364" x2="723" y2="340" marker-end="url(#lg-arr)"/>
+        <line x1="560" y1="420" x2="598" y2="340" marker-end="url(#lg-arr)"/>
+        <!-- sys_role_dept -> traj_dept（左侧外通道） -->
+        <polyline points="510,436 8,436 8,70 36,70" marker-end="url(#lg-arr)"/>
+        <!-- sys_user.dept_id -> traj_dept -->
+        <polyline points="420,322 405,322 405,420 20,420 20,78 36,78" marker-end="url(#lg-arr)"/>
+        <!-- sys_message.user_id -> sys_user（底部通道） -->
+        <polyline points="1097,384 1097,548 475,548 475,340" marker-end="url(#lg-arr)"/>
+      </g>
+      <!-- 物理外键（实线） -->
+      <line x1="1022" y1="310" x2="1002" y2="310" stroke="#1f5fbf" stroke-width="1.6" marker-end="url(#fk-arr)"/>
+
+      <!-- ===== A 主数据域 ===== -->
+      <rect x="16" y="16" width="352" height="228" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="30" y="38" font-size="12.5" font-weight="700" fill="#44506a">主数据域（traj · 02/04）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="36" y="52" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="111" y="67" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_dept</text>
+        <text x="111" y="81" text-anchor="middle" font-size="10" fill="#667085">企业/组织架构</text>
+        <rect x="206" y="52" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="281" y="67" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_vehicle</text>
+        <text x="281" y="81" text-anchor="middle" font-size="10" fill="#667085">车辆</text>
+        <rect x="36" y="108" width="160" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="116" y="123" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_vehicle_terminal</text>
+        <text x="116" y="137" text-anchor="middle" font-size="10" fill="#667085">车辆-终端关联</text>
+        <rect x="206" y="108" width="160" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="286" y="123" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_vehicle_driver</text>
+        <text x="286" y="137" text-anchor="middle" font-size="10" fill="#667085">车辆-司机关联</text>
+        <rect x="36" y="164" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="111" y="179" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_terminal</text>
+        <text x="111" y="193" text-anchor="middle" font-size="10" fill="#667085">终端</text>
+        <rect x="206" y="164" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="281" y="179" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_driver</text>
+        <text x="281" y="193" text-anchor="middle" font-size="10" fill="#667085">驾驶员</text>
+      </g>
+
+      <!-- ===== B 轨迹数据域 ===== -->
+      <rect x="16" y="272" width="352" height="136" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="30" y="294" font-size="12.5" font-weight="700" fill="#44506a">轨迹数据域（traj · 02）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="36" y="304" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="111" y="319" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_gps_point</text>
+        <text x="111" y="333" text-anchor="middle" font-size="10" fill="#667085">轨迹点（PostGIS）</text>
+        <rect x="206" y="304" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="281" y="319" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_gps_photo</text>
+        <text x="281" y="333" text-anchor="middle" font-size="10" fill="#667085">抓拍图片</text>
+        <rect x="36" y="356" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="111" y="371" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">traj_warn_info</text>
+        <text x="111" y="385" text-anchor="middle" font-size="10" fill="#667085">终端报警</text>
+        <rect x="206" y="356" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="281" y="371" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">base_warn_type</text>
+        <text x="281" y="385" text-anchor="middle" font-size="10" fill="#667085">报警类型字典</text>
+      </g>
+
+      <!-- ===== C 审计与分析快照 ===== -->
+      <rect x="16" y="432" width="352" height="92" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="30" y="454" font-size="12.5" font-weight="700" fill="#44506a">审计 / 分析快照（traj · 05 ｜ mon · 14）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="36" y="464" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="111" y="479" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_audit_log</text>
+        <text x="111" y="493" text-anchor="middle" font-size="10" fill="#667085">操作审计（traj）</text>
+        <rect x="206" y="464" width="150" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="281" y="479" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">driver_score</text>
+        <text x="281" y="493" text-anchor="middle" font-size="10" fill="#667085">驾驶评分日快照（mon）</text>
+      </g>
+
+      <!-- ===== D 实时监控与风控域 ===== -->
+      <rect x="400" y="16" width="400" height="224" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="414" y="38" font-size="12.5" font-weight="700" fill="#44506a">实时监控与风控域（mon · 03/07/15）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="420" y="52" width="150" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="495" y="67" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_rule</text>
+        <text x="495" y="81" text-anchor="middle" font-size="10" fill="#667085">风控规则（CEP）</text>
+        <rect x="590" y="52" width="170" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="675" y="67" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_geo_fence</text>
+        <text x="675" y="81" text-anchor="middle" font-size="10" fill="#667085">电子围栏</text>
+        <rect x="505" y="116" width="160" height="40" rx="6" fill="#fffbeb" stroke="#b45309"/>
+        <text x="585" y="132" text-anchor="middle" font-size="11.5" font-weight="700" fill="#7c4a06">risk_event</text>
+        <text x="585" y="147" text-anchor="middle" font-size="10" fill="#7c4a06">风险预警事件（枢纽）</text>
+        <rect x="420" y="180" width="160" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="500" y="195" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">video_analysis</text>
+        <text x="500" y="209" text-anchor="middle" font-size="10" fill="#667085">视频分析任务</text>
+        <rect x="600" y="180" width="170" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="685" y="195" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_fence_state</text>
+        <text x="685" y="209" text-anchor="middle" font-size="10" fill="#667085">围栏车辆状态机</text>
+      </g>
+
+      <!-- ===== E 处置工单域 ===== -->
+      <rect x="832" y="16" width="392" height="224" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="846" y="38" font-size="12.5" font-weight="700" fill="#44506a">处置工单域（mon · 08/10）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="852" y="52" width="170" height="40" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="937" y="68" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_work_order</text>
+        <text x="937" y="83" text-anchor="middle" font-size="10" fill="#667085">处置工单（与事件 1:1）</text>
+        <rect x="1042" y="52" width="160" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="1122" y="67" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_order_log</text>
+        <text x="1122" y="81" text-anchor="middle" font-size="10" fill="#667085">工单流转日志</text>
+        <rect x="852" y="116" width="170" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="937" y="131" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_intervention</text>
+        <text x="937" y="145" text-anchor="middle" font-size="10" fill="#667085">坐席干预记录</text>
+        <rect x="1042" y="116" width="160" height="36" rx="6" fill="#ecfdf3" stroke="#15803d"/>
+        <text x="1122" y="131" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14532d">risk_order_sla</text>
+        <text x="1122" y="145" text-anchor="middle" font-size="10" fill="#667085">SLA 时限配置</text>
+        <text x="852" y="182" font-size="10.5" fill="#667085" font-family="inherit">辅助对象：序列 seq_risk_order_no、</text>
+        <text x="852" y="196" font-size="10.5" fill="#667085" font-family="inherit">函数 fmt_order_no()（WO+日期+流水）</text>
+      </g>
+
+      <!-- ===== F IAM 权限域 ===== -->
+      <rect x="400" y="272" width="400" height="252" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="414" y="294" font-size="12.5" font-weight="700" fill="#44506a">IAM 权限域（traj · 06）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="420" y="304" width="110" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="475" y="319" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_user</text>
+        <text x="475" y="333" text-anchor="middle" font-size="10" fill="#667085">用户</text>
+        <rect x="545" y="304" width="110" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="600" y="319" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_role</text>
+        <text x="600" y="333" text-anchor="middle" font-size="10" fill="#667085">角色</text>
+        <rect x="670" y="304" width="110" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="725" y="319" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_menu</text>
+        <text x="725" y="333" text-anchor="middle" font-size="10" fill="#667085">菜单/权限点</text>
+        <rect x="420" y="364" width="150" height="32" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="495" y="384" text-anchor="middle" font-size="11" font-weight="700" fill="#16345f">sys_user_role</text>
+        <rect x="600" y="364" width="150" height="32" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="675" y="384" text-anchor="middle" font-size="11" font-weight="700" fill="#16345f">sys_role_menu</text>
+        <rect x="510" y="420" width="150" height="32" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="585" y="440" text-anchor="middle" font-size="11" font-weight="700" fill="#16345f">sys_role_dept</text>
+        <text x="420" y="486" font-size="10.5" fill="#667085" font-family="inherit">sys_user.dept_id → traj_dept.id；</text>
+        <text x="420" y="500" font-size="10.5" fill="#667085" font-family="inherit">sys_role_dept 支撑 data_scope=5 自定义数据范围</text>
+      </g>
+
+      <!-- ===== G 系统配置与通知域 ===== -->
+      <rect x="832" y="272" width="392" height="252" rx="10" fill="none" stroke="#98a2b3" stroke-dasharray="4,3"/>
+      <text x="846" y="294" font-size="12.5" font-weight="700" fill="#44506a">系统配置与通知域（traj · 09/11）</text>
+      <g font-family="Consolas,monospace">
+        <rect x="852" y="292" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="927" y="307" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_dict_type</text>
+        <text x="927" y="321" text-anchor="middle" font-size="10" fill="#667085">字典类型</text>
+        <rect x="1022" y="292" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="1097" y="307" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_dict_item</text>
+        <text x="1097" y="321" text-anchor="middle" font-size="10" fill="#667085">字典项</text>
+        <rect x="852" y="348" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="927" y="363" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_config</text>
+        <text x="927" y="377" text-anchor="middle" font-size="10" fill="#667085">系统参数</text>
+        <rect x="1022" y="348" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="1097" y="363" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_message</text>
+        <text x="1097" y="377" text-anchor="middle" font-size="10" fill="#667085">站内消息</text>
+        <rect x="852" y="404" width="150" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="927" y="419" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">sys_file</text>
+        <text x="927" y="433" text-anchor="middle" font-size="10" fill="#667085">文件元数据（预留）</text>
+        <rect x="1022" y="404" width="160" height="36" rx="6" fill="#eef4ff" stroke="#1f5fbf"/>
+        <text x="1102" y="419" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16345f">notify_send_log</text>
+        <text x="1102" y="433" text-anchor="middle" font-size="10" fill="#667085">通知发送日志</text>
+      </g>
+
+      <!-- 图例 -->
+      <line x1="420" y1="556" x2="450" y2="556" stroke="#1f5fbf" stroke-width="1.6" marker-end="url(#fk-arr)"/>
+      <text x="458" y="560" font-size="11" fill="#44506a">声明外键（REFERENCES）</text>
+      <line x1="640" y1="556" x2="670" y2="556" stroke="#7a869a" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#lg-arr)"/>
+      <text x="678" y="560" font-size="11" fill="#44506a">逻辑外键（应用层维护）</text>
+    </svg>
+
+    <h2 id="s3">3 轨迹数据域（02-traj-tables.sql）</h2>
+    <p>北斗轨迹数据核心域：轨迹点、车辆、终端、驾驶员、两张绑定关系表、终端报警与抓拍图片，以及报警类型字典。脚本头部注明"依据 DDL-TRAJ-001"，尾部含演示种子数据（见第 17 章）。</p>
+
+    <h3 id="tbl-traj_traj_gps_point">3.1 traj.traj_gps_point（轨迹点表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：轨迹点表（SQL 表注释），承载终端上报的逐点定位数据，是轨迹回放、里程统计与 CEP 计算的输入。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>否</td><td>—</td><td>终端身份编码（推断，对应 traj_terminal.identity_code）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>车牌号（推断）</td></tr>
+        <tr><td>gps_time</td><td><code>timestamp</code></td><td>否</td><td>—</td><td>GPS 定位时间（推断）</td></tr>
+        <tr><td>lng</td><td><code>numeric(10,6)</code></td><td>否</td><td>—</td><td>经度（推断）</td></tr>
+        <tr><td>lat</td><td><code>numeric(10,6)</code></td><td>否</td><td>—</td><td>纬度（推断）</td></tr>
+        <tr><td>speed</td><td><code>integer</code></td><td>是</td><td>—</td><td>速度（推断）</td></tr>
+        <tr><td>direction</td><td><code>integer</code></td><td>是</td><td>—</td><td>航向角（推断）</td></tr>
+        <tr><td>altitude</td><td><code>integer</code></td><td>是</td><td>—</td><td>海拔（推断）</td></tr>
+        <tr><td>location</td><td><code>geometry(Point,4326)</code></td><td>否</td><td>—</td><td>空间位置，WGS84 坐标系（PostGIS），与 lng/lat 冗余存储以支持空间查询</td></tr>
+        <tr><td>alarm_flag</td><td><code>smallint</code></td><td>否</td><td>0</td><td>报警标志（推断：0=无报警）</td></tr>
+        <tr><td>mileage</td><td><code>numeric(12,2)</code></td><td>是</td><td>—</td><td>里程（推断）</td></tr>
+        <tr><td>receive_time</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>平台接收时间（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>入库时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_gps_point_identity_time</code></td><td>(identity_code, gps_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_traj_gps_point_plate_time</code></td><td>(plate_no, gps_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_traj_gps_point_time</code></td><td>(gps_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_traj_gps_point_location</code></td><td>(location)</td><td>GiST 空间索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_vehicle">3.2 traj.traj_vehicle（车辆基础信息表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：车辆基础信息表（SQL 表注释），车辆主数据，"车牌号+车牌颜色"在有效记录内唯一。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>dept_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>所属组织 ID（推断，逻辑引用 traj_dept.id）</td></tr>
+        <tr><td>vehicle_no</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>车牌号（推断）</td></tr>
+        <tr><td>vehicle_plate_color</td><td><code>varchar(10)</code></td><td>否</td><td>—</td><td>车牌颜色（推断，字典 plate_color）</td></tr>
+        <tr><td>vin</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车辆识别代号 VIN（推断）</td></tr>
+        <tr><td>vehicle_type</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车辆类型（推断，如重型货车/冷链车）</td></tr>
+        <tr><td>operation_type</td><td><code>smallint</code></td><td>是</td><td>1</td><td>营运类型（推断）</td></tr>
+        <tr><td>vehicle_industry</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>所属行业（推断）</td></tr>
+        <tr><td>road_license_no</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>道路运输证号（推断）</td></tr>
+        <tr><td>province_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>省份行政区划代码（推断）</td></tr>
+        <tr><td>city_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>城市行政区划代码（推断）</td></tr>
+        <tr><td>county_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>区县行政区划代码（推断）</td></tr>
+        <tr><td>vehicle_color</td><td><code>varchar(10)</code></td><td>是</td><td>—</td><td>车身颜色（推断）</td></tr>
+        <tr><td>vehicle_brand</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>车辆品牌（推断）</td></tr>
+        <tr><td>owner_name</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>车主名称（推断）</td></tr>
+        <tr><td>owner_phone</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>车主电话（推断）</td></tr>
+        <tr><td>remark</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除（由部分唯一索引用法归纳）</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>uk_traj_vehicle_no_color</code> 部分唯一索引约束（vehicle_no, vehicle_plate_color）在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_vehicle_dept</code></td><td>(dept_id)</td><td>B-tree</td></tr>
+        <tr><td><code>uk_traj_vehicle_no_color</code></td><td>(vehicle_no, vehicle_plate_color) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_terminal">3.3 traj.traj_terminal（终端信息表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：终端信息表（SQL 表注释），车载终端主数据，identity_code 是终端上报数据的身份键。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>否</td><td>—</td><td>终端身份编码（推断；轨迹点、报警、事件均按此关联）</td></tr>
+        <tr><td>tl_mac</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>终端 MAC 地址（推断）</td></tr>
+        <tr><td>oem_code</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>厂商 OEM 编码（推断）</td></tr>
+        <tr><td>tl_model</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>终端型号（推断，种子如 GT06N）</td></tr>
+        <tr><td>sim_account</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>SIM 卡号/账号（推断）</td></tr>
+        <tr><td>protocol_type</td><td><code>varchar(8)</code></td><td>是</td><td>—</td><td>通信协议类型（推断，字典 protocol_type：JT808/JT1078/OTHER）</td></tr>
+        <tr><td>equipment_type</td><td><code>varchar(8)</code></td><td>是</td><td>—</td><td>设备类型（推断，字典 equipment_type；种子值为 '4'/'2' 数字编码）</td></tr>
+        <tr><td>video_channel</td><td><code>smallint</code></td><td>是</td><td>—</td><td>视频通道数（推断，0=无视频能力）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=启用 0=停用）</td></tr>
+        <tr><td>remark</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；identity_code 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_traj_terminal_identity</code></td><td>(identity_code) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_driver">3.4 traj.traj_driver（驾驶员信息表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：驾驶员信息表（SQL 表注释），从业资格证号在有效记录内唯一。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>driver_name</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>驾驶员姓名（推断）</td></tr>
+        <tr><td>sex</td><td><code>smallint</code></td><td>否</td><td>1</td><td>性别（推断：1=男 2=女，字典 driver_sex）</td></tr>
+        <tr><td>idcard</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>身份证号（推断；种子数据已脱敏）</td></tr>
+        <tr><td>contact_phone</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>联系电话（推断；种子数据已脱敏）</td></tr>
+        <tr><td>license_code</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>从业资格证号（推断；有效记录内唯一）</td></tr>
+        <tr><td>licence_category</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>准驾车型（推断，如 A2/B2/C1）</td></tr>
+        <tr><td>driver_img</td><td><code>varchar(128)</code></td><td>是</td><td>—</td><td>驾驶员照片地址（推断）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=在岗/启用，字典 driver_status）</td></tr>
+        <tr><td>remark</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；license_code 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_traj_driver_license</code></td><td>(license_code) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_vehicle_driver">3.5 traj.traj_vehicle_driver（车辆-司机关联表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>（表结构）+ <code>04-mdm-tables.sql</code>（互斥索引 uk_traj_vd_vehicle_main）。用途：车辆与驾驶员的绑定关系，支持解绑留痕。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>vehicle_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>车辆 ID（逻辑引用 traj_vehicle.id）</td></tr>
+        <tr><td>driver_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>驾驶员 ID（逻辑引用 traj_driver.id）</td></tr>
+        <tr><td>driver_type</td><td><code>smallint</code></td><td>是</td><td>1</td><td>司机类型（推断：1=主班司机；互斥索引 uk_traj_vd_vehicle_main 针对 driver_type=1）</td></tr>
+        <tr><td>bind_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>绑定时间（推断）</td></tr>
+        <tr><td>unbind_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>解绑时间（推断）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>绑定状态（推断：1=绑定中 0=已解绑）</td></tr>
+        <tr><td>remark</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；同一车辆-司机组合在 valid_mark=1 时唯一；一辆车同一时刻仅一名有效主班司机（04 脚本互斥索引）。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_vd_vehicle</code></td><td>(vehicle_id)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>idx_traj_vd_driver</code></td><td>(driver_id)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>uk_traj_vd_vehicle_driver</code></td><td>(vehicle_id, driver_id) WHERE valid_mark = 1</td><td>部分唯一索引（02）</td></tr>
+        <tr><td><code>uk_traj_vd_vehicle_main</code></td><td>(vehicle_id) WHERE status = 1 AND valid_mark = 1 AND driver_type = 1</td><td>部分唯一索引（04，一车一主班司机）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_vehicle_terminal">3.6 traj.traj_vehicle_terminal（车辆-终端关联表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>（表结构）+ <code>04-mdm-tables.sql</code>（互斥索引 uk_traj_vt_vehicle_active / uk_traj_vt_terminal_active）。用途：车辆与终端的绑定关系，双向互斥。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>vehicle_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>车辆 ID（逻辑引用 traj_vehicle.id）</td></tr>
+        <tr><td>terminal_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>终端 ID（逻辑引用 traj_terminal.id）</td></tr>
+        <tr><td>bind_type</td><td><code>smallint</code></td><td>否</td><td>1</td><td>绑定类型（推断）</td></tr>
+        <tr><td>bind_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>绑定时间（推断）</td></tr>
+        <tr><td>install_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>安装时间（推断）</td></tr>
+        <tr><td>installer</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>安装人（推断）</td></tr>
+        <tr><td>unbind_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>解绑时间（推断）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>绑定状态（推断：1=绑定中 0=已解绑）</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；04 脚本两个条件部分唯一索引构成"并发场景下的最终防线"（SQL 注释原文）。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_vt_vehicle</code></td><td>(vehicle_id)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>idx_traj_vt_terminal</code></td><td>(terminal_id)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>uk_traj_vt_vehicle_active</code></td><td>(vehicle_id) WHERE status = 1 AND valid_mark = 1</td><td>部分唯一索引（04，一车一有效终端）</td></tr>
+        <tr><td><code>uk_traj_vt_terminal_active</code></td><td>(terminal_id) WHERE status = 1 AND valid_mark = 1</td><td>部分唯一索引（04，一终端一车）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_warn_info">3.7 traj.traj_warn_info（报警信息表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>（表结构与基础索引）+ <code>13-alarm-center.sql</code>（复合索引 idx_traj_warn_status_time、handle_status 存量归一与默认值）。用途：终端报警信息表（SQL 表注释），记录一次报警的起止区间与处置结果。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>source_id</td><td><code>varchar(50)</code></td><td>否</td><td>—</td><td>来源报警 ID（推断，用于幂等去重）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(50)</code></td><td>否</td><td>—</td><td>车牌号（推断）</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码（推断）</td></tr>
+        <tr><td>start_warn_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>报警开始时间（推断）</td></tr>
+        <tr><td>end_warn_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>报警结束时间（推断）</td></tr>
+        <tr><td>start_gps_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>起始点 GPS 时间（推断）</td></tr>
+        <tr><td>end_gps_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>结束点 GPS 时间（推断）</td></tr>
+        <tr><td>start_lng</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>起始经度（字符串存储，推断）</td></tr>
+        <tr><td>start_lat</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>起始纬度（字符串存储，推断）</td></tr>
+        <tr><td>end_lng</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>结束经度（字符串存储，推断）</td></tr>
+        <tr><td>end_lat</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>结束纬度（字符串存储，推断）</td></tr>
+        <tr><td>start_speed</td><td><code>integer</code></td><td>是</td><td>—</td><td>起始速度（推断）</td></tr>
+        <tr><td>end_speed</td><td><code>integer</code></td><td>是</td><td>—</td><td>结束速度（推断）</td></tr>
+        <tr><td>type_id</td><td><code>integer</code></td><td>否</td><td>—</td><td>报警类型 ID（推断，逻辑引用 base_warn_type.id）</td></tr>
+        <tr><td>warn_continue_mark</td><td><code>smallint</code></td><td>是</td><td>—</td><td>报警持续标志（推断）</td></tr>
+        <tr><td>rule_id</td><td><code>bigint</code></td><td>否</td><td>0</td><td>关联规则 ID（推断；默认 0 表示无规则）</td></tr>
+        <tr><td>handle_status</td><td><code>smallint</code></td><td>是</td><td>0（13 脚本补齐默认值并归一存量 NULL）</td><td>处置状态（字典 alarm_handle_status：0=待处理 1=已确认 2=已解除）</td></tr>
+        <tr><td>handle_result_code</td><td><code>varchar(2)</code></td><td>是</td><td>—</td><td>处置结果编码（推断）</td></tr>
+        <tr><td>handle_result_msg</td><td><code>varchar(200)</code></td><td>是</td><td>—</td><td>处置结果说明（推断）</td></tr>
+        <tr><td>handler</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>处置人（推断）</td></tr>
+        <tr><td>creator</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_warn_plate_time</code></td><td>(plate_no, start_warn_time DESC)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>idx_traj_warn_type</code></td><td>(type_id)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>idx_traj_warn_status</code></td><td>(handle_status)</td><td>B-tree（02）</td></tr>
+        <tr><td><code>idx_traj_warn_status_time</code></td><td>(handle_status, start_warn_time DESC)</td><td>B-tree（13，报警中心默认列表/latest 查询）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_traj_gps_photo">3.8 traj.traj_gps_photo（车辆拍照信息表）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：车辆拍照信息表（SQL 表注释），保存终端抓拍/指令拍照的图片元数据。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>photo_id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键（列名非 id，为表内特例）</td></tr>
+        <tr><td>truck_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>车辆 ID（推断，逻辑引用 traj_vehicle.id）</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码（推断）</td></tr>
+        <tr><td>channel_id</td><td><code>integer</code></td><td>是</td><td>—</td><td>摄像头通道号（推断）</td></tr>
+        <tr><td>file_name</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>文件名（推断）</td></tr>
+        <tr><td>url</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>图片访问地址（推断）</td></tr>
+        <tr><td>photo_size</td><td><code>integer</code></td><td>是</td><td>—</td><td>图片大小（推断，字节）</td></tr>
+        <tr><td>track_id</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>关联轨迹/事件标识（推断）</td></tr>
+        <tr><td>task_id</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>任务 ID（推断，关联视频分析任务）</td></tr>
+        <tr><td>req_source</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>请求来源（推断）</td></tr>
+        <tr><td>cmd_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>拍照指令下发时间（推断）</td></tr>
+        <tr><td>gps_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>拍摄时 GPS 时间（推断）</td></tr>
+        <tr><td>receive_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>平台接收时间（推断）</td></tr>
+        <tr><td>create_time</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>入库时间（推断；列名为 create_time，非公共列 create_date）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>photo_id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_photo_truck</code></td><td>(truck_id)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_traj_photo_file</code></td><td>(file_name)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_base_warn_type">3.9 traj.base_warn_type（报警类型字典）</h3>
+    <p>来源：<code>02-traj-tables.sql</code>。用途：报警类型字典（无 SQL 表注释；按表名、字段与种子数据归纳），树形结构（pid 指向父类型），种子含超速报警、疲劳驾驶、围栏越界、紧急求助、设备故障 5 类。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>integer</code></td><td>否</td><td>—</td><td>主键，显式编码（非自增声明）</td></tr>
+        <tr><td>pid</td><td><code>integer</code></td><td>否</td><td>-1</td><td>父类型 ID（推断：-1=根节点）</td></tr>
+        <tr><td>name</td><td><code>varchar(50)</code></td><td>否</td><td>—</td><td>报警类型名称（推断）</td></tr>
+        <tr><td>grade_level</td><td><code>smallint</code></td><td>否</td><td>2</td><td>报警等级（推断：数值越小越严重，种子为 1/2/3）</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>'system'</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。索引：无显式索引（仅主键）。</p>
+
+    <h2 id="s4">4 实时监控域（03-mon-tables.sql）</h2>
+    <p>mon schema 的起始域：风险预警事件（ADAS/DSM/北斗多源）与驾驶员监控视频分析任务。脚本尾部含 5 条演示事件种子（见第 17 章）。</p>
+
+    <h3 id="tbl-mon_risk_event">4.1 mon.risk_event（风险预警事件）</h3>
+    <p>来源：<code>03-mon-tables.sql</code>（表结构与基础索引）+ <code>07-risk-tables.sql</code>（幂等加列 rule_id/fence_id/title 与索引 idx_mon_risk_rule）+ <code>15-risk-profile.sql</code>（聚合索引 idx_mon_risk_identity_time / idx_mon_risk_plate_time）。用途：风险预警事件（ADAS/DSM/北斗）（SQL 表注释），是风控域的枢纽表：向上接规则/围栏命中，向下 1:1 生成处置工单。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>event_code</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>ADAS/DSM/北斗事件码（SQL 行内注释）</td></tr>
+        <tr><td>event_source</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>事件来源：ADAS / DSM / national / vendor ...（SQL 行内注释；种子另用 '北斗'）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车牌号（推断）</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码（推断）</td></tr>
+        <tr><td>event_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>事件发生时间（推断）</td></tr>
+        <tr><td>lng</td><td><code>numeric(10,6)</code></td><td>是</td><td>—</td><td>经度（推断）</td></tr>
+        <tr><td>lat</td><td><code>numeric(10,6)</code></td><td>是</td><td>—</td><td>纬度（推断）</td></tr>
+        <tr><td>speed</td><td><code>integer</code></td><td>是</td><td>—</td><td>速度（推断）</td></tr>
+        <tr><td>risk_level</td><td><code>smallint</code></td><td>是</td><td>2</td><td>风险等级：1低 2中 3高（SQL 行内注释）</td></tr>
+        <tr><td>confidence</td><td><code>numeric(5,2)</code></td><td>是</td><td>—</td><td>置信度（推断，0~1 或百分制，种子为 0.79~1.00）</td></tr>
+        <tr><td>media_url</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>佐证媒体地址（推断）</td></tr>
+        <tr><td>handle_status</td><td><code>smallint</code></td><td>否</td><td>0</td><td>处置状态（推断：0=未处置，08 脚本按 handle_status=0 补单；种子取 0/1）</td></tr>
+        <tr><td>handle_remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>处置备注（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>rule_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>F18 命中规则 id（围栏事件为空）（07 脚本 COMMENT ON COLUMN）</td></tr>
+        <tr><td>fence_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>F18 命中围栏 id（规则事件为空）（07 脚本 COMMENT ON COLUMN）</td></tr>
+        <tr><td>title</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>F18 事件中文名快照（规则事后改名不影响历史）（07 脚本 COMMENT ON COLUMN）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_mon_risk_time</code></td><td>(event_time DESC)</td><td>B-tree（03）</td></tr>
+        <tr><td><code>idx_mon_risk_level</code></td><td>(risk_level)</td><td>B-tree（03）</td></tr>
+        <tr><td><code>idx_mon_risk_status</code></td><td>(handle_status)</td><td>B-tree（03）</td></tr>
+        <tr><td><code>idx_mon_risk_rule</code></td><td>(rule_id)</td><td>B-tree（07）</td></tr>
+        <tr><td><code>idx_mon_risk_identity_time</code></td><td>(identity_code, event_time DESC)</td><td>B-tree（15，画像聚合）</td></tr>
+        <tr><td><code>idx_mon_risk_plate_time</code></td><td>(plate_no, event_time DESC)</td><td>B-tree（15，画像聚合）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-mon_video_analysis">4.2 mon.video_analysis（驾驶员监控视频分析任务）</h3>
+    <p>来源：<code>03-mon-tables.sql</code>。用途：驾驶员监控视频分析任务（SQL 表注释），task_id 全局唯一。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>task_id</td><td><code>varchar(64)</code></td><td>否</td><td>—</td><td>任务 ID（推断，全局唯一）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车牌号（推断）</td></tr>
+        <tr><td>channel</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>分析通道：DSM / ADAS（SQL 行内注释）</td></tr>
+        <tr><td>clip_url</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>视频片段地址（推断）</td></tr>
+        <tr><td>status</td><td><code>varchar(16)</code></td><td>否</td><td>'PENDING'</td><td>任务状态（推断：PENDING=待分析，其余取值由应用层约束）</td></tr>
+        <tr><td>result_summary</td><td><code>varchar(500)</code></td><td>是</td><td>—</td><td>分析结果摘要（推断）</td></tr>
+        <tr><td>event_count</td><td><code>integer</code></td><td>否</td><td>0</td><td>识别出的事件数（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；task_id 唯一索引。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_mon_video_task</code></td><td>(task_id)</td><td>唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s5">5 主数据域（04-mdm-tables.sql）</h2>
+    <p>依据 MOD-MDM-001 主数据管理模块设计（SQL 脚本头注释）。本章新增 1 张组织架构表；另创建 3 个绑定互斥部分唯一索引（作用于 3.5/3.6 节的关系表，已列入对应表的索引清单），SQL 注释称其为"并发场景下的最终防线"。脚本还含 2 条部门种子与序列对齐语句（见第 17 章）。</p>
+
+    <h3 id="tbl-traj_traj_dept">5.1 traj.traj_dept（企业与组织架构表）</h3>
+    <p>来源：<code>04-mdm-tables.sql</code>。用途：企业与组织架构表（SQL 表注释），树形结构（parent_id 自引用），支撑车辆归属与 IAM 数据范围。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>parent_id</td><td><code>bigint</code></td><td>否</td><td>0</td><td>上级组织ID，0=根节点（COMMENT ON COLUMN）</td></tr>
+        <tr><td>dept_name</td><td><code>varchar(60)</code></td><td>否</td><td>—</td><td>组织名称（推断）</td></tr>
+        <tr><td>dept_code</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>组织编码（推断；有效且非空时唯一）</td></tr>
+        <tr><td>dept_type</td><td><code>smallint</code></td><td>否</td><td>2</td><td>组织类型：1=运输企业 2=车队/部门（COMMENT ON COLUMN）</td></tr>
+        <tr><td>contact_person</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>联系人（推断）</td></tr>
+        <tr><td>contact_phone</td><td><code>varchar(30)</code></td><td>是</td><td>—</td><td>联系电话（推断）</td></tr>
+        <tr><td>province_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>省份行政区划代码（推断）</td></tr>
+        <tr><td>city_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>城市行政区划代码（推断）</td></tr>
+        <tr><td>county_code</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>区县行政区划代码（推断）</td></tr>
+        <tr><td>address</td><td><code>varchar(120)</code></td><td>是</td><td>—</td><td>地址（推断）</td></tr>
+        <tr><td>sort_no</td><td><code>integer</code></td><td>否</td><td>0</td><td>排序号（推断）</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；dept_code 在 valid_mark=1 且非空时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_traj_dept_parent</code></td><td>(parent_id)</td><td>B-tree</td></tr>
+        <tr><td><code>uk_traj_dept_code</code></td><td>(dept_code) WHERE valid_mark = 1 AND dept_code IS NOT NULL</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s6">6 审计域（05-audit-tables.sql）</h2>
+    <p>操作审计日志（F34 / MOD-AUDIT-001）。脚本头注释明确两条设计约束：只追加表，应用层不提供 UPDATE/DELETE 接口；不继承 BaseEntity 公共字段（无 updater/update_date/valid_mark）。</p>
+
+    <h3 id="tbl-traj_sys_audit_log">6.1 traj.sys_audit_log（操作审计日志）</h3>
+    <p>来源：<code>05-audit-tables.sql</code>。用途：操作审计日志（只追加，F34）（SQL 表注释），记录一次请求的身份、动作、对象、结果与耗时，行级 SHA-256 指纹防篡改。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>主键；应用雪花ID（SQL 行内注释，非数据库自增）</td></tr>
+        <tr><td>trace_id</td><td><code>varchar(48)</code></td><td>是</td><td>—</td><td>单次请求追踪ID（行内注释）；一次请求一个，关联同请求产生的多条记录（COMMENT ON COLUMN）</td></tr>
+        <tr><td>user_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>操作人；登录失败时为请求中用户名；匿名为 NULL（行内注释）</td></tr>
+        <tr><td>module</td><td><code>varchar(32)</code></td><td>否</td><td>—</td><td>模块编码 AUTH/MDM/MONITOR/CEP/WORK_ORDER/VIDEO/AUDIT...（行内注释）</td></tr>
+        <tr><td>action</td><td><code>varchar(32)</code></td><td>否</td><td>—</td><td>动作编码 LOGIN/LOGIN_FAIL/CREATE/UPDATE/DELETE/EXPORT/VIDEO_VIEW/HANDLE/QUERY（行内注释）</td></tr>
+        <tr><td>action_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>动作中文名快照（行内注释）</td></tr>
+        <tr><td>object_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>对象类型 VEHICLE/TERMINAL/DRIVER/DEPT/USER...（行内注释）</td></tr>
+        <tr><td>object_id</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>对象主键（SpEL 提取，字符串存储）（行内注释）</td></tr>
+        <tr><td>request_method</td><td><code>varchar(8)</code></td><td>是</td><td>—</td><td>GET/POST/PUT/DELETE（行内注释）</td></tr>
+        <tr><td>request_uri</td><td><code>varchar(256)</code></td><td>是</td><td>—</td><td>不含 query 的路径（行内注释）</td></tr>
+        <tr><td>query_string</td><td><code>varchar(512)</code></td><td>是</td><td>—</td><td>查询串（截断）（行内注释）</td></tr>
+        <tr><td>request_body</td><td><code>text</code></td><td>是</td><td>—</td><td>脱敏并截断 2000 字符后的 JSON（行内注释）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>—</td><td>1=成功，0=失败（HTTP&gt;=400 或业务 code 非 0）（COMMENT ON COLUMN）</td></tr>
+        <tr><td>result_code</td><td><code>integer</code></td><td>是</td><td>—</td><td>业务 code（0/40901/40101...）（行内注释）</td></tr>
+        <tr><td>error_msg</td><td><code>varchar(500)</code></td><td>是</td><td>—</td><td>失败消息（截断）（行内注释）</td></tr>
+        <tr><td>cost_ms</td><td><code>integer</code></td><td>是</td><td>—</td><td>接口耗时毫秒（行内注释）</td></tr>
+        <tr><td>client_ip</td><td><code>varchar(45)</code></td><td>是</td><td>—</td><td>X-Forwarded-For 首段，回落 remoteAddr（行内注释）</td></tr>
+        <tr><td>user_agent</td><td><code>varchar(256)</code></td><td>是</td><td>—</td><td>User-Agent（截断）（行内注释）</td></tr>
+        <tr><td>content_hash</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>本行规范化字段串 SHA-256，行级防篡改指纹（本期不做哈希链）（COMMENT ON COLUMN）</td></tr>
+        <tr><td>create_time</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>事件产生时刻（行内注释）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_audit_time</code></td><td>(create_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_audit_user_time</code></td><td>(user_name, create_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_audit_module_act</code></td><td>(module, action, create_time DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_audit_object</code></td><td>(object_type, object_id)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 IAM 权限域（06-iam-tables.sql）</h2>
+    <p>用户与权限（F33），依据 MOD-IAM-001 用户与权限模块设计（SQL 脚本头注释）。模型为经典 RBAC + 数据范围：用户-角色、角色-菜单权限点、角色-自定义部门三张关系表。脚本注释声明：admin 超管用户由后端 module-iam 首启 DataInitializer 自动创建，不把密码哈希写死在 SQL。菜单/权限点为版本种子化维护，不做软删（故 sys_menu 无 valid_mark/updater 列）。</p>
+
+    <h3 id="tbl-traj_sys_user">7.1 traj.sys_user（系统用户表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>。用途：系统用户表（IAM）（SQL 表注释），含登录安全（失败计数/锁定）与 TOTP 双因子字段。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>username</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>登录名（推断；有效记录内唯一）</td></tr>
+        <tr><td>password_hash</td><td><code>varchar(120)</code></td><td>否</td><td>—</td><td>密码哈希（推断；不写死在 SQL，由后端初始化）</td></tr>
+        <tr><td>real_name</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>真实姓名（推断）</td></tr>
+        <tr><td>phone</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>手机号（推断）</td></tr>
+        <tr><td>email</td><td><code>varchar(80)</code></td><td>是</td><td>—</td><td>邮箱（推断）</td></tr>
+        <tr><td>dept_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>所属组织 ID（推断，逻辑引用 traj_dept.id，数据范围基准）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>1=启用 0=停用（SQL 行内注释）</td></tr>
+        <tr><td>mfa_enabled</td><td><code>smallint</code></td><td>否</td><td>0</td><td>1=已开通 TOTP（SQL 行内注释）</td></tr>
+        <tr><td>mfa_secret</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>已确认生效的 Base32 密钥（SQL 行内注释）</td></tr>
+        <tr><td>mfa_pending_secret</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>绑定流程中待确认密钥（SQL 行内注释）</td></tr>
+        <tr><td>fail_count</td><td><code>integer</code></td><td>否</td><td>0</td><td>连续登录失败次数（推断，配合 login.max_fail 参数）</td></tr>
+        <tr><td>locked_until</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>锁定截止时间（推断）</td></tr>
+        <tr><td>pwd_update_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>密码最近修改时间（推断）</td></tr>
+        <tr><td>last_login_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最近登录时间（推断）</td></tr>
+        <tr><td>last_login_ip</td><td><code>varchar(45)</code></td><td>是</td><td>—</td><td>最近登录 IP（推断）</td></tr>
+        <tr><td>remark</td><td><code>varchar(200)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；username 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_sys_user_username</code></td><td>(username) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+        <tr><td><code>idx_sys_user_dept</code></td><td>(dept_id)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_sys_user_status</code></td><td>(status)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_sys_role">7.2 traj.sys_role（系统角色表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>。用途：系统角色表（IAM）（SQL 表注释），种子含 4 个内置角色（SUPER_ADMIN/SAFE_ADMIN/DISPATCHER/FLEET_CAPTAIN）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>role_code</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>角色编码（推断；有效记录内唯一）</td></tr>
+        <tr><td>role_name</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>角色名称（推断）</td></tr>
+        <tr><td>data_scope</td><td><code>smallint</code></td><td>否</td><td>3</td><td>数据范围：1=全部 2=本企业及以下 3=本部门及以下 4=仅本部门 5=自定义（COMMENT ON COLUMN）</td></tr>
+        <tr><td>built_in</td><td><code>smallint</code></td><td>否</td><td>0</td><td>1=内置（禁删、禁改编码/数据范围）（SQL 行内注释）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=启用 0=停用）</td></tr>
+        <tr><td>remark</td><td><code>varchar(200)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；role_code 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_sys_role_code</code></td><td>(role_code) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_sys_menu">7.3 traj.sys_menu（菜单与按钮权限点表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>（表结构）；后续 07/08/09/11/12/13/14/15/17 脚本持续以显式 id 幂等补充菜单行。用途：菜单与按钮权限点表（IAM 种子维护）（SQL 表注释），三级结构，不做软删。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键（种子统一显式指定 id，插入后 setval 对齐序列）</td></tr>
+        <tr><td>parent_id</td><td><code>bigint</code></td><td>否</td><td>0</td><td>父菜单 ID（推断：0=根节点）</td></tr>
+        <tr><td>menu_name</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>菜单/按钮名称（推断）</td></tr>
+        <tr><td>menu_type</td><td><code>smallint</code></td><td>否</td><td>—</td><td>1=目录 2=菜单 3=按钮（COMMENT ON COLUMN）</td></tr>
+        <tr><td>perm_code</td><td><code>varchar(60)</code></td><td>是</td><td>—</td><td>权限点编码（推断，如 monitor:view；非空时唯一）</td></tr>
+        <tr><td>path</td><td><code>varchar(120)</code></td><td>是</td><td>—</td><td>前端路由路径（推断）</td></tr>
+        <tr><td>icon</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>图标名（推断）</td></tr>
+        <tr><td>sort_no</td><td><code>integer</code></td><td>否</td><td>0</td><td>排序号（推断）</td></tr>
+        <tr><td>visible</td><td><code>smallint</code></td><td>否</td><td>1</td><td>是否可见（推断：1=显示 0=隐藏）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=启用 0=停用）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；perm_code 非空时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_sys_menu_parent</code></td><td>(parent_id)</td><td>B-tree</td></tr>
+        <tr><td><code>uk_sys_menu_perm</code></td><td>(perm_code) WHERE perm_code IS NOT NULL</td><td>部分唯一索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_sys_user_role">7.4 traj.sys_user_role（用户-角色关系表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>。用途：用户-角色关系表（SQL 表注释）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>user_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>用户 ID（逻辑引用 sys_user.id）</td></tr>
+        <tr><td>role_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>角色 ID（逻辑引用 sys_role.id）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：复合主键 <code>(user_id, role_id)</code>。索引：无显式索引（仅主键）。</p>
+
+    <h3 id="tbl-traj_sys_role_menu">7.5 traj.sys_role_menu（角色-菜单/权限点关系表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>（表结构）；07/08/09/11/12/13/14/15/17 脚本持续幂等补充授权行。用途：角色-菜单/权限点关系表（SQL 表注释）；授权含祖先目录节点，便于直接建树（06 脚本注释）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>role_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>角色 ID（逻辑引用 sys_role.id）</td></tr>
+        <tr><td>menu_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>菜单/权限点 ID（逻辑引用 sys_menu.id）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：复合主键 <code>(role_id, menu_id)</code>。索引：无显式索引（仅主键）。</p>
+
+    <h3 id="tbl-traj_sys_role_dept">7.6 traj.sys_role_dept（角色-自定义数据范围部门关系表）</h3>
+    <p>来源：<code>06-iam-tables.sql</code>。用途：角色-自定义数据范围部门关系表（data_scope=5）（SQL 表注释）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>role_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>角色 ID（逻辑引用 sys_role.id）</td></tr>
+        <tr><td>dept_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>组织 ID（逻辑引用 traj_dept.id）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：复合主键 <code>(role_id, dept_id)</code>。索引：无显式索引（仅主键）。</p>
+
+    <h2 id="s8">8 风控规则与事件域（07-risk-tables.sql）</h2>
+    <p>F18 风控规则引擎（CEP）：规则配置、电子围栏、围栏-车辆状态机，并对 mon.risk_event 幂等扩展 3 列（已并入 4.1 节字段表）。脚本幂等可重复执行；尾部含 8 条内置规则与 1 个演示围栏种子（见第 17 章）。</p>
+
+    <h3 id="tbl-mon_risk_rule">8.1 mon.risk_rule（风控规则配置）</h3>
+    <p>来源：<code>07-risk-tables.sql</code>。用途：F18 风控规则（CEP）配置（SQL 表注释），rule_name 是事件 title 的快照来源。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>rule_code</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>规则编码：SPEED_GENERAL / DSM_FATIGUE / COMBO_FATIGUE_SPEED ...（SQL 行内注释；有效记录内唯一）</td></tr>
+        <tr><td>rule_name</td><td><code>varchar(80)</code></td><td>否</td><td>—</td><td>中文名称，事件 title 的快照来源（SQL 行内注释）</td></tr>
+        <tr><td>rule_type</td><td><code>varchar(16)</code></td><td>否</td><td>—</td><td>规则类型：SPEED / FATIGUE / SIGNAL / COMBO（SQL 行内注释）</td></tr>
+        <tr><td>event_code</td><td><code>varchar(40)</code></td><td>否</td><td>—</td><td>产出事件编码；SIGNAL 类即信号码（SQL 行内注释）</td></tr>
+        <tr><td>risk_level</td><td><code>smallint</code></td><td>否</td><td>2</td><td>风险等级：1低 2中 3高（SQL 行内注释）</td></tr>
+        <tr><td>params</td><td><code>jsonb</code></td><td>否</td><td>'{}'::jsonb</td><td>规则参数（推断，如 {"speedKmh":100}、{"continuousMin":240,"gapMin":10}）</td></tr>
+        <tr><td>cooldown_sec</td><td><code>integer</code></td><td>否</td><td>300</td><td>同车同规则去重窗口（秒）（SQL 行内注释）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>1启用 0停用（SQL 行内注释）</td></tr>
+        <tr><td>built_in</td><td><code>smallint</code></td><td>否</td><td>0</td><td>1内置（不可删）（SQL 行内注释）</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；rule_code 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_risk_rule_code</code></td><td>(rule_code) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+        <tr><td><code>idx_risk_rule_type</code></td><td>(rule_type) WHERE valid_mark = 1</td><td>部分 B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-mon_risk_geo_fence">8.2 mon.risk_geo_fence（电子围栏）</h3>
+    <p>来源：<code>07-risk-tables.sql</code>。用途：F18 电子围栏（圆/多边形）（SQL 表注释），圆形用圆心+半径，多边形用 PostGIS Polygon。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>fence_name</td><td><code>varchar(80)</code></td><td>否</td><td>—</td><td>围栏名称（推断；有效记录内唯一）</td></tr>
+        <tr><td>fence_type</td><td><code>varchar(10)</code></td><td>否</td><td>—</td><td>围栏类型：CIRCLE / POLYGON（SQL 行内注释）</td></tr>
+        <tr><td>center_lng</td><td><code>numeric(10,6)</code></td><td>是</td><td>—</td><td>圆心经度（推断，CIRCLE 时使用）</td></tr>
+        <tr><td>center_lat</td><td><code>numeric(10,6)</code></td><td>是</td><td>—</td><td>圆心纬度（推断，CIRCLE 时使用）</td></tr>
+        <tr><td>radius_m</td><td><code>integer</code></td><td>是</td><td>—</td><td>圆形半径（米）（SQL 行内注释）</td></tr>
+        <tr><td>polygon_geom</td><td><code>geometry(Polygon,4326)</code></td><td>是</td><td>—</td><td>多边形（SQL 行内注释；WGS84，POLYGON 时使用）</td></tr>
+        <tr><td>trigger_dir</td><td><code>smallint</code></td><td>否</td><td>2</td><td>触发方向：1进入报警 2离开报警 3进出都报（SQL 行内注释）</td></tr>
+        <tr><td>risk_level</td><td><code>smallint</code></td><td>否</td><td>2</td><td>风险等级：1低 2中 3高（沿用全库约定）</td></tr>
+        <tr><td>cooldown_sec</td><td><code>integer</code></td><td>否</td><td>600</td><td>冷却窗口（秒）（推断，同围栏同车去重）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态：1启用 0停用（推断）</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>creator</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；fence_name 在 valid_mark=1 时唯一。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_risk_fence_name</code></td><td>(fence_name) WHERE valid_mark = 1</td><td>部分唯一索引</td></tr>
+        <tr><td><code>idx_risk_fence_geom</code></td><td>(polygon_geom)</td><td>GiST 空间索引</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-mon_risk_fence_state">8.3 mon.risk_fence_state（围栏-车辆状态机）</h3>
+    <p>来源：<code>07-risk-tables.sql</code>。用途：F18 围栏车辆状态机（首见只初始化不补报）（SQL 表注释），记录每车每围栏的进出状态与最近事件时间，用于 ENTER/EXIT 判定与冷却。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>否</td><td>—</td><td>终端身份编码（复合主键之一）</td></tr>
+        <tr><td>fence_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>围栏 ID（复合主键之一，逻辑引用 risk_geo_fence.id）</td></tr>
+        <tr><td>inside</td><td><code>smallint</code></td><td>否</td><td>0</td><td>最近一个点是否在围栏内（SQL 行内注释）</td></tr>
+        <tr><td>last_point_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最近轨迹点时间（推断）</td></tr>
+        <tr><td>last_enter_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最近 ENTER 事件时间（冷却）（SQL 行内注释）</td></tr>
+        <tr><td>last_exit_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最近 EXIT 事件时间（冷却）（SQL 行内注释）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>最后更新时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：复合主键 <code>(identity_code, fence_id)</code>。索引：无显式索引（仅主键）。</p>
+
+    <h2 id="s9">9 处置工单域（08-work-order.sql）</h2>
+    <p>F20 处置工单流转：工单、流转日志、SLA 配置，另含工单号序列与格式化函数、存量未处置事件补单迁移、菜单权限（见第 17 章）。依赖 03（mon.risk_event）、06（traj.sys_*）、07 脚本（SQL 脚本头注释）。</p>
+    <p>辅助数据库对象（非表）：</p>
+    <ul>
+      <li>序列 <code>mon.seq_risk_order_no</code>：工单号流水。</li>
+      <li>函数 <code>mon.fmt_order_no() RETURNS text</code>：生成工单号，格式 <code>WO</code> + <code>YYYYMMDD</code> + 6 位左补零流水（nextval % 1000000），LANGUAGE sql。</li>
+    </ul>
+
+    <h3 id="tbl-mon_risk_work_order">9.1 mon.risk_work_order（处置工单）</h3>
+    <p>来源：<code>08-work-order.sql</code>。用途：F20 处置工单（与 risk_event 1:1）（SQL 表注释），内嵌事件快照使列表免 join，状态机 PENDING → PROCESSING → CLOSED，含 SLA 与升级字段。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>order_no</td><td><code>varchar(24)</code></td><td>否</td><td>—</td><td>工单号（fmt_order_no() 生成；全表唯一）</td></tr>
+        <tr><td>event_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>关联风险事件 ID（逻辑引用 risk_event.id；唯一约束保证 1:1）</td></tr>
+        <tr><td>event_title</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>事件标题快照（SQL 注释"事件快照（列表免 join）"）</td></tr>
+        <tr><td>event_code</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>事件码快照</td></tr>
+        <tr><td>event_source</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>事件来源快照</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车牌号快照</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码快照</td></tr>
+        <tr><td>risk_level</td><td><code>smallint</code></td><td>否</td><td>2</td><td>风险等级：1低 2中 3高（SQL 行内注释）</td></tr>
+        <tr><td>event_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>事件发生时间快照</td></tr>
+        <tr><td>status</td><td><code>varchar(16)</code></td><td>否</td><td>'PENDING'</td><td>状态机：PENDING 待处理 / PROCESSING 处理中 / CLOSED 已闭环（COMMENT ON COLUMN）</td></tr>
+        <tr><td>assignee_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>当前处理人 ID（推断，逻辑引用 sys_user.id）</td></tr>
+        <tr><td>assignee_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>当前处理人姓名快照（推断）</td></tr>
+        <tr><td>assign_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>分派时间（推断）</td></tr>
+        <tr><td>claim_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>认领时间（推断）</td></tr>
+        <tr><td>close_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>闭环时间（推断）</td></tr>
+        <tr><td>close_result</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>闭环结果：PHONE_REMIND/EDUCATION/SUSPEND/FALSE_ALARM/OTHER（COMMENT ON COLUMN；另见字典 close_result，两处取值不完全一致，见 18 章）</td></tr>
+        <tr><td>close_remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>闭环备注（推断）</td></tr>
+        <tr><td>deadline</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>处置截止时间（推断，event_time + sla_limit_min）</td></tr>
+        <tr><td>sla_limit_min</td><td><code>integer</code></td><td>是</td><td>—</td><td>SLA 处置时限（分钟）（推断，快照自 risk_order_sla）</td></tr>
+        <tr><td>grace_min</td><td><code>integer</code></td><td>是</td><td>—</td><td>升级宽限（分钟）（推断，快照自 risk_order_sla）</td></tr>
+        <tr><td>overdue</td><td><code>smallint</code></td><td>否</td><td>0</td><td>是否超时（推断：1=已超时）</td></tr>
+        <tr><td>escalated</td><td><code>smallint</code></td><td>否</td><td>0</td><td>是否已升级（推断：1=已升级）</td></tr>
+        <tr><td>escalate_time</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>升级时间（推断）</td></tr>
+        <tr><td>reopen_count</td><td><code>smallint</code></td><td>否</td><td>0</td><td>重开次数（推断）</td></tr>
+        <tr><td>valid_mark</td><td><code>smallint</code></td><td>否</td><td>1</td><td>有效标记：1=有效 0=逻辑删除</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>CONSTRAINT uk_risk_order_event UNIQUE (event_id)</code>（与事件 1:1）；order_no 唯一索引。建表后 setval 对齐 id 序列。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>uk_risk_order_no</code></td><td>(order_no)</td><td>唯一索引</td></tr>
+        <tr><td><code>idx_risk_order_status</code></td><td>(status, valid_mark)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_risk_order_assignee</code></td><td>(assignee_id)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_risk_order_deadline</code></td><td>(deadline)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_risk_order_escal</code></td><td>(escalated, overdue)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_risk_order_eventtime</code></td><td>(event_time DESC)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-mon_risk_order_log">9.2 mon.risk_order_log（工单流转日志）</h3>
+    <p>来源：<code>08-work-order.sql</code>。用途：F20 工单流转日志（SQL 表注释），记录每次状态变迁与经办人。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>order_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>工单 ID（逻辑引用 risk_work_order.id）</td></tr>
+        <tr><td>action</td><td><code>varchar(16)</code></td><td>否</td><td>—</td><td>动作：CREATE/ASSIGN/CLAIM/TRANSFER/CLOSE/REOPEN/ESCALATE（SQL 行内注释）</td></tr>
+        <tr><td>from_status</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>变更前状态（推断）</td></tr>
+        <tr><td>to_status</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>变更后状态（推断）</td></tr>
+        <tr><td>from_user_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>转出处理人 ID（推断，TRANSFER 场景）</td></tr>
+        <tr><td>to_user_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>转入处理人 ID（推断）</td></tr>
+        <tr><td>from_user_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>转出处理人姓名快照（推断）</td></tr>
+        <tr><td>to_user_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>转入处理人姓名快照（推断）</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>operator_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>操作人 ID（推断）</td></tr>
+        <tr><td>operator_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>操作人姓名快照（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_risk_order_log_order</code></td><td>(order_id, id)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-mon_risk_order_sla">9.3 mon.risk_order_sla（工单处置时限配置）</h3>
+    <p>来源：<code>08-work-order.sql</code>。用途：F20 工单处置时限（高 15/中 60/低 240，宽限 10/30/60）（SQL 表注释），按风险等级一行一条，建表即种子 3 行。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>risk_level</td><td><code>smallint</code></td><td>否</td><td>—</td><td>风险等级（主键：1低 2中 3高）</td></tr>
+        <tr><td>limit_min</td><td><code>integer</code></td><td>否</td><td>—</td><td>处置时限（分钟）（推断；种子：高 15 / 中 60 / 低 240）</td></tr>
+        <tr><td>grace_min</td><td><code>integer</code></td><td>否</td><td>—</td><td>升级宽限（分钟）（推断；种子：高 10 / 中 30 / 低 60）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>risk_level</code> 主键；无其他约束。索引：无显式索引（仅主键）。</p>
+
+    <h2 id="s10">10 系统配置与字典域（09-system-config.sql）</h2>
+    <p>F35 系统配置与通知中心的基础部分：数据字典（类型+项）、系统参数，以及两张预留表（站内消息、文件元数据）。sys_dict_item 是全库唯一声明物理外键的表。字典与参数种子见第 17 章，取值归纳见第 18 章。</p>
+
+    <h3 id="tbl-traj_sys_dict_type">10.1 traj.sys_dict_type（字典类型表）</h3>
+    <p>来源：<code>09-system-config.sql</code>。用途：数据字典类型（无 SQL 表注释，按表名与种子归纳），dict_code 全局唯一。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>dict_code</td><td><code>varchar(64)</code></td><td>否</td><td>—</td><td>字典编码（如 plate_color、risk_level；唯一约束 uk_dict_type_code）</td></tr>
+        <tr><td>dict_name</td><td><code>varchar(128)</code></td><td>否</td><td>—</td><td>字典名称（推断）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=启用 0=停用）</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>CONSTRAINT uk_dict_type_code UNIQUE (dict_code)</code>。索引：无显式索引（唯一约束隐含）。</p>
+
+    <h3 id="tbl-traj_sys_dict_item">10.2 traj.sys_dict_item（字典项表）</h3>
+    <p>来源：<code>09-system-config.sql</code>（主体）；11/13/14 脚本追加 notify_event_type、alarm_handle_status、score_level 等类型的字典项。用途：数据字典项（无 SQL 表注释，按结构归纳）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>dict_type_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>字典类型 ID，<b>物理外键</b> REFERENCES traj.sys_dict_type(id) ON DELETE CASCADE</td></tr>
+        <tr><td>item_label</td><td><code>varchar(128)</code></td><td>否</td><td>—</td><td>显示文本（推断）</td></tr>
+        <tr><td>item_value</td><td><code>varchar(128)</code></td><td>否</td><td>—</td><td>存储值（推断；同类型内唯一）</td></tr>
+        <tr><td>sort</td><td><code>int</code></td><td>否</td><td>0</td><td>排序号（推断）</td></tr>
+        <tr><td>status</td><td><code>smallint</code></td><td>否</td><td>1</td><td>状态（推断：1=启用 0=停用）</td></tr>
+        <tr><td>css_class</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>前端样式类（推断）</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>CONSTRAINT uk_dict_item_type_value UNIQUE (dict_type_id, item_value)</code>；外键 <code>dict_type_id REFERENCES traj.sys_dict_type(id) ON DELETE CASCADE</code>。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_dict_item_type</code></td><td>(dict_type_id)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_sys_config">10.3 traj.sys_config（系统参数表）</h3>
+    <p>来源：<code>09-system-config.sql</code>（表结构与首批参数）；11 脚本追加 5 个 notify.* 参数。用途：系统参数（无 SQL 表注释，按结构归纳），config_key 全局唯一。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>config_key</td><td><code>varchar(128)</code></td><td>否</td><td>—</td><td>参数键（如 password.min_length；唯一约束 uk_config_key）</td></tr>
+        <tr><td>config_value</td><td><code>text</code></td><td>是</td><td>—</td><td>参数值（推断，按 value_type 解析）</td></tr>
+        <tr><td>config_name</td><td><code>varchar(128)</code></td><td>否</td><td>—</td><td>参数名称（推断）</td></tr>
+        <tr><td>value_type</td><td><code>varchar(16)</code></td><td>否</td><td>'STRING'</td><td>值类型（推断；种子使用 STRING/INT/BOOL）</td></tr>
+        <tr><td>is_system</td><td><code>smallint</code></td><td>否</td><td>0</td><td>是否系统内置（推断：1=内置，notify.* 参数为 0 即可运维调整）</td></tr>
+        <tr><td>remark</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+        <tr><td>updater</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>最后修改人（推断）</td></tr>
+        <tr><td>update_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>最后修改时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>CONSTRAINT uk_config_key UNIQUE (config_key)</code>。索引：无显式索引（唯一约束隐含）。</p>
+
+    <h3 id="tbl-traj_sys_message">10.4 traj.sys_message（站内消息表）</h3>
+    <p>来源：<code>09-system-config.sql</code>（预留表结构）+ <code>11-notify.sql</code>（幂等加列 biz_type/biz_id/level/event_type/read_date 与 2 个索引）。用途：站内消息（09 脚本注释"预留：站内消息"；F19 起正式启用为消息中心）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>user_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>接收用户 ID（推断，逻辑引用 sys_user.id）</td></tr>
+        <tr><td>title</td><td><code>varchar(255)</code></td><td>否</td><td>—</td><td>消息标题（推断）</td></tr>
+        <tr><td>content</td><td><code>text</code></td><td>是</td><td>—</td><td>消息正文（推断）</td></tr>
+        <tr><td>msg_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>消息类型（推断）</td></tr>
+        <tr><td>is_read</td><td><code>smallint</code></td><td>否</td><td>0</td><td>是否已读（推断：0=未读 1=已读）</td></tr>
+        <tr><td>biz_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>业务类型（11 脚本加列，推断：关联业务种类）</td></tr>
+        <tr><td>biz_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>业务 ID（11 脚本加列，推断：如工单 id）</td></tr>
+        <tr><td>level</td><td><code>smallint</code></td><td>否</td><td>1</td><td>风险等级（11 脚本加列；配合 notify.popup.min_level 弹窗）</td></tr>
+        <tr><td>event_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>通知事件类型（11 脚本加列，字典 notify_event_type）</td></tr>
+        <tr><td>read_date</td><td><code>timestamp</code></td><td>是</td><td>—</td><td>阅读时间（11 脚本加列，推断）</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_message_user_read</code></td><td>(user_id, is_read, id DESC)</td><td>B-tree（11）</td></tr>
+        <tr><td><code>idx_message_biz</code></td><td>(biz_type, biz_id)</td><td>B-tree（11）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="tbl-traj_sys_file">10.5 traj.sys_file（文件元数据表）</h3>
+    <p>来源：<code>09-system-config.sql</code>。用途：文件元数据（09 脚本注释"预留：文件元数据"，当前为预留表）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>file_name</td><td><code>varchar(255)</code></td><td>否</td><td>—</td><td>文件名（推断）</td></tr>
+        <tr><td>file_path</td><td><code>varchar(512)</code></td><td>否</td><td>—</td><td>存储路径（推断）</td></tr>
+        <tr><td>file_size</td><td><code>bigint</code></td><td>是</td><td>—</td><td>文件大小（推断，字节）</td></tr>
+        <tr><td>content_type</td><td><code>varchar(128)</code></td><td>是</td><td>—</td><td>MIME 类型（推断）</td></tr>
+        <tr><td>biz_type</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>业务类型（推断）</td></tr>
+        <tr><td>creator</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>创建人（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。索引：无显式索引（仅主键）。</p>
+
+    <h2 id="s11">11 坐席干预域（10-risk-intervention.sql）</h2>
+    <p>F21 坐席干预记录：坐席对风险事件/工单执行的人工干预动作留痕（脚本仅含表与 3 个索引，无表注释，列含义按字段名与默认值归纳）。</p>
+
+    <h3 id="tbl-mon_risk_intervention">11.1 mon.risk_intervention（坐席干预记录）</h3>
+    <p>来源：<code>10-risk-intervention.sql</code>。用途：F21 坐席干预记录（SQL 脚本头注释；无表级 COMMENT）。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>order_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>关联工单 ID（推断，逻辑引用 risk_work_order.id）</td></tr>
+        <tr><td>event_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>关联事件 ID（推断，逻辑引用 risk_event.id）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(40)</code></td><td>是</td><td>—</td><td>车牌号快照（推断）</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码快照（推断）</td></tr>
+        <tr><td>action_type</td><td><code>varchar(20)</code></td><td>否</td><td>—</td><td>干预动作类型（推断；SQL 未枚举，由应用层约束）</td></tr>
+        <tr><td>action_result</td><td><code>varchar(20)</code></td><td>否</td><td>'SUCCESS'</td><td>干预结果（推断：SUCCESS=成功）</td></tr>
+        <tr><td>operator_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>操作人 ID（推断）</td></tr>
+        <tr><td>operator_name</td><td><code>varchar(64)</code></td><td>是</td><td>—</td><td>操作人姓名快照（推断）</td></tr>
+        <tr><td>source</td><td><code>varchar(16)</code></td><td>否</td><td>'MANUAL'</td><td>干预来源（推断：MANUAL=人工）</td></tr>
+        <tr><td>remark</td><td><code>varchar(500)</code></td><td>是</td><td>—</td><td>备注</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_intervention_order</code></td><td>(order_id)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_intervention_event</code></td><td>(event_id)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_intervention_time</code></td><td>(create_date)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 通知域（11-notify.sql）</h2>
+    <p>F19 报警分级与多渠道通知：扩展 sys_message（已并入 10.4 节字段表）、新增通知发送日志、种子 5 个 notify.* 系统参数与 notify_event_type 字典、消息中心菜单 924 并对 role 1~4 全员授权（见第 17 章）。</p>
+
+    <h3 id="tbl-traj_notify_send_log">12.1 traj.notify_send_log（通知发送日志）</h3>
+    <p>来源：<code>11-notify.sql</code>。用途：通知发送日志（SQL 脚本注释"通知发送日志"；无表级 COMMENT），按渠道记录每次通知投递结果。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>event_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>通知事件类型（推断，字典 notify_event_type）</td></tr>
+        <tr><td>biz_type</td><td><code>varchar(32)</code></td><td>是</td><td>—</td><td>业务类型（推断）</td></tr>
+        <tr><td>biz_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>业务 ID（推断）</td></tr>
+        <tr><td>channel</td><td><code>varchar(20)</code></td><td>是</td><td>—</td><td>通知渠道（推断：站内/短信/语音/App 推送，对应 notify.*.enabled 参数）</td></tr>
+        <tr><td>receiver_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>接收人 ID（推断，逻辑引用 sys_user.id）</td></tr>
+        <tr><td>title</td><td><code>varchar(255)</code></td><td>是</td><td>—</td><td>通知标题（推断）</td></tr>
+        <tr><td>level</td><td><code>smallint</code></td><td>是</td><td>—</td><td>风险等级（推断）</td></tr>
+        <tr><td>status</td><td><code>varchar(16)</code></td><td>是</td><td>—</td><td>发送状态（推断；SQL 未枚举，由应用层约束）</td></tr>
+        <tr><td>detail</td><td><code>varchar(500)</code></td><td>是</td><td>—</td><td>发送明细/失败原因（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；无其他约束。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_notify_log_biz</code></td><td>(biz_id, event_type)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_notify_log_time</code></td><td>(create_date DESC)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s13">13 监控大屏域（12-dashboard.sql）</h2>
+    <p>F15 监控总览大屏（RES-DBD-001 §3.2/§3.3 锁定）。本脚本<b>不创建任何表</b>，仅做两件事（脚本头注释声明"RES 锁定本脚本仅菜单+授权"）：</p>
+    <ul>
+      <li>插入菜单 <code>(15, 10, '监控总览大屏', 2, 'monitor:dashboard:view', '/dashboard', 'DataBoard', 8, 1, 1)</code>，并 setval 对齐 sys_menu 序列；</li>
+      <li>对 role 1~4（SUPER_ADMIN/SAFE_ADMIN/DISPATCHER/FLEET_CAPTAIN）授权菜单 15。</li>
+    </ul>
+    <p>脚本注释另注明：参数 <code>monitor.online.window.minutes</code> 不在本脚本种子，后端读取缺省回落 5，需要调整时由运维在 F35 系统参数页（traj.sys_config）新增该键。大屏的数据来源是既有表（traj_gps_point、risk_event、risk_work_order 等），无独立存储结构。</p>
+
+    <h2 id="s14">14 报警中心域（13-alarm-center.sql）</h2>
+    <p>F17 终端报警中心（MOD-MON-004 §2.3/§2.4/§5）。本脚本<b>不创建新表</b>，对既有结构做四项演进（全幂等，可重复执行）：</p>
+    <table>
+      <thead><tr><th>类别</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>索引补充</td><td><code>idx_traj_warn_status_time ON traj.traj_warn_info (handle_status, start_warn_time DESC)</code>（§2.3 默认列表/latest 复合索引，已列入 3.7 节）</td></tr>
+        <tr><td>存量归一</td><td><code>UPDATE traj.traj_warn_info SET handle_status = 0 WHERE handle_status IS NULL</code>，并 <code>ALTER COLUMN handle_status SET DEFAULT 0</code>（§2.4）</td></tr>
+        <tr><td>字典</td><td>新增字典类型 <code>alarm_handle_status</code>（终端报警处置状态）：0=待处理 1=已确认 2=已解除（§5.1）</td></tr>
+        <tr><td>菜单与授权</td><td>菜单 <code>(16, 10, '终端报警中心', 2, 'alarm:view', '/alarms', 'Bell', 9, 1, 1)</code> 与按钮 <code>(926, 16, '报警处置', 3, 'alarm:handle')</code>；role1 全量补齐，role2/role3 查看+处置，role4 仅查看（§5.2）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 驾驶评分域（14-driving-score.sql）</h2>
+    <p>F22 驾驶行为评分模型：mon.driver_score 日快照表 + score_level 字典 + 分析决策菜单 300/301（菜单与授权见第 17 章）。</p>
+
+    <h3 id="tbl-mon_driver_score">15.1 mon.driver_score（驾驶行为日评分快照）</h3>
+    <p>来源：<code>14-driving-score.sql</code>。用途：F22 驾驶行为日评分快照（重算=upsert，无逻辑删除）（SQL 表注释），同一司机同一日期仅一行。</p>
+    <table>
+      <thead><tr><th>字段名</th><th>类型</th><th>可空</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td><code>bigserial</code></td><td>否</td><td>自增</td><td>主键</td></tr>
+        <tr><td>score_date</td><td><code>date</code></td><td>否</td><td>—</td><td>评分日期（推断；与 driver_id 联合唯一）</td></tr>
+        <tr><td>driver_id</td><td><code>bigint</code></td><td>否</td><td>—</td><td>驾驶员 ID（推断，逻辑引用 traj_driver.id）</td></tr>
+        <tr><td>identity_code</td><td><code>varchar(100)</code></td><td>是</td><td>—</td><td>终端身份编码快照（推断）</td></tr>
+        <tr><td>plate_no</td><td><code>varchar(50)</code></td><td>是</td><td>—</td><td>车牌号快照（推断）</td></tr>
+        <tr><td>dept_id</td><td><code>bigint</code></td><td>是</td><td>—</td><td>所属组织 ID 快照（推断）</td></tr>
+        <tr><td>score</td><td><code>numeric(5,1)</code></td><td>否</td><td>—</td><td>得分：0~100，1 位小数（SQL 行内注释）</td></tr>
+        <tr><td>level</td><td><code>char(1)</code></td><td>否</td><td>—</td><td>等级：A~E（字典 score_level）（SQL 行内注释）</td></tr>
+        <tr><td>features</td><td><code>jsonb</code></td><td>否</td><td>'{}'::jsonb</td><td>评分特征明细（推断，模型输入/扣分项快照）</td></tr>
+        <tr><td>sample_points</td><td><code>integer</code></td><td>是</td><td>—</td><td>参与评分的轨迹点样本数（推断）</td></tr>
+        <tr><td>event_count</td><td><code>integer</code></td><td>是</td><td>—</td><td>当日风险事件数（推断）</td></tr>
+        <tr><td>create_date</td><td><code>timestamp</code></td><td>否</td><td>CURRENT_TIMESTAMP</td><td>创建时间（推断）</td></tr>
+      </tbody>
+    </table>
+    <p>主键与约束：<code>id</code> 主键；<code>CONSTRAINT uk_driver_score_date_driver UNIQUE (score_date, driver_id)</code>。</p>
+    <table>
+      <thead><tr><th>索引名</th><th>列</th><th>类型</th></tr></thead>
+      <tbody>
+        <tr><td><code>idx_driver_score_date</code></td><td>(score_date DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_driver_score_driver</code></td><td>(driver_id, score_date DESC)</td><td>B-tree</td></tr>
+        <tr><td><code>idx_driver_score_dept</code></td><td>(dept_id, score_date DESC)</td><td>B-tree</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s16">16 风险画像域（15-risk-profile.sql）</h2>
+    <p>F23 风险趋势与画像。本脚本<b>不创建新表</b>（脚本注释明确：300 目录与 301 驾驶评分由 14 脚本负责，本脚本不重复插入），只做三件事：</p>
+    <ul>
+      <li>菜单 <code>(302, 300, '风险趋势与画像', 2, 'analysis:profile:view', '/analysis/profiles', 'TrendCharts', 32, 1, 1)</code>，setval 对齐序列；</li>
+      <li>授权：role1 全量补齐；role2 授目录 300 与菜单 302（调度员/车队长不授权）；</li>
+      <li>聚合查询索引补齐：<code>idx_mon_risk_identity_time</code> 与 <code>idx_mon_risk_plate_time</code>（均建于 mon.risk_event，已列入 4.1 节索引表）。画像数据由 risk_event 实时聚合得出，无独立物化表。</li>
+    </ul>
+
+    <h2 id="s17">17 种子数据</h2>
+    <p>各初始化脚本在建表之外均含幂等种子（ON CONFLICT DO NOTHING 或 WHERE NOT EXISTS），汇总如下。16/17 两个脚本为纯种子脚本，不含表结构。</p>
+    <table>
+      <thead><tr><th>脚本</th><th>种子内容</th></tr></thead>
+      <tbody>
+        <tr><td>02-traj-tables.sql</td><td>演示主数据：5 辆车（京A12345 等）、5 台终端（TERM_001~005，GT06N/JT808）、5 名驾驶员（张伟等，证件与电话已脱敏）、5 组车辆-终端绑定、5 组车辆-司机绑定；base_warn_type 5 类（超速报警/疲劳驾驶/围栏越界/紧急求助/设备故障）</td></tr>
+        <tr><td>03-mon-tables.sql</td><td>5 条首屏演示风险事件（DSM_FATIGUE、ADAS_FCW、DSM_DISTRACTION、ADAS_LDW、BEIDOU_SPEED，北京坐标，近 3 小时内）</td></tr>
+        <tr><td>04-mdm-tables.sql</td><td>2 个根部门（id=1 北京物流公司、id=2 北京配送中心，与 02 车辆 dept_id 对齐），并 setval 对齐 traj_dept 序列</td></tr>
+        <tr><td>06-iam-tables.sql</td><td>19 个菜单/权限点（实时监控组 10~13、主数据组 100~104 及按钮 201~204、系统管理组 900~903 及按钮 911/912）；4 个内置角色（SUPER_ADMIN/SAFE_ADMIN/DISPATCHER/FLEET_CAPTAIN，均 built_in=1）；角色-权限点授予（超管全量，其余按角色职责裁剪）；admin 用户本身由后端 DataInitializer 创建，不在 SQL 内</td></tr>
+        <tr><td>07-risk-tables.sql</td><td>8 条内置风控规则（SPEED_GENERAL、SPEED_SEVERE、FATIGUE_DRIVE、DSM_FATIGUE、DSM_DISTRACTION、ADAS_FCW、ADAS_LDW、COMBO_FATIGUE_SPEED，均 built_in=1）；1 个演示围栏（国贸圆形 3km，进出都报，可删）；菜单 904/905 与按钮 913/914 及授权</td></tr>
+        <tr><td>08-work-order.sql</td><td>SLA 3 行（高 15+10 / 中 60+30 / 低 240+60 分钟）；存量未处置事件（handle_status=0）补单迁移与 CREATE 流转日志补录；菜单 14 与按钮 915/916 及授权</td></tr>
+        <tr><td>09-system-config.sql</td><td>11 个字典类型、41 个字典项（见第 18 章）；5 个系统参数（password.min_length=8、password.max_length=20、login.max_fail=5、login.lock_minutes=15、sla.grace_ratio=0.2）；菜单 920/921 与按钮 922/923 及授权</td></tr>
+        <tr><td>11-notify.sql</td><td>5 个 notify.* 参数（弹窗最低等级 3、提示音开、短信/语音/推送关）；notify_event_type 字典 5 项；消息中心菜单 924 并对 role 1~4 授权</td></tr>
+        <tr><td>12-dashboard.sql</td><td>菜单 15（监控总览大屏）+ role 1~4 授权（无表种子）</td></tr>
+        <tr><td>13-alarm-center.sql</td><td>alarm_handle_status 字典 3 项；菜单 16 与按钮 926 及授权；handle_status 存量归一</td></tr>
+        <tr><td>14-driving-score.sql</td><td>score_level 字典 5 项；分析决策目录 300 与驾驶评分菜单 301 及授权</td></tr>
+        <tr><td>15-risk-profile.sql</td><td>菜单 302（风险趋势与画像）及授权（无表种子）</td></tr>
+        <tr><td>16-province-test-data.sql（纯种子）</td><td>4 个省级企业节点（上海市 310000、江苏省 320000、安徽省 340000、山东省 370000，dept_code 为 PROV_ 前缀），并将演示企业 id=10/20/30/40 挂到对应省级节点下；注释说明原为 31 省、2026-10-05 精简为 4 省；省份测试用户由 module-iam 的 ProvinceTestUserInitializer 创建，密码不写死在 SQL</td></tr>
+        <tr><td>17-analysis-menu.sql（纯种子）</td><td>分析决策下 2 个目录（310 报表查询、340 统计分析）+ 19 个"功能建设中"占位菜单（311~323 报表查询 13 项、341~346 统计分析 6 项，路径 /analysis/coming/&lt;code&gt;），ON CONFLICT (id) DO UPDATE 幂等；role 1~4 全量可见，并补授 300 目录给调度监控员/企业车队长</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s18">18 数据字典与枚举</h2>
+    <p>本章归纳常用代码字段的取值含义，来源分三类：sys_dict_type/sys_dict_item 种子（09/11/13/14 脚本）、列级 COMMENT 或行内注释、CHECK/默认值约定。全库无 CHECK 约束，枚举均靠字典表与应用层约束。</p>
+
+    <h3>18.1 通用约定</h3>
+    <table>
+      <thead><tr><th>字段</th><th>取值</th><th>含义与出处</th></tr></thead>
+      <tbody>
+        <tr><td>valid_mark</td><td>1 / 0</td><td>有效 / 逻辑删除（由各表 DEFAULT 1 与部分唯一索引 WHERE valid_mark=1 归纳）</td></tr>
+        <tr><td>status（smallint 通用）</td><td>1 / 0</td><td>启用 / 停用（sys_user、risk_rule 行内注释明确 1启用 0停用）</td></tr>
+        <tr><td>risk_level</td><td>1 / 2 / 3</td><td>低 / 中 / 高（risk_event、risk_rule、risk_work_order 行内注释；字典 risk_level 同值）</td></tr>
+        <tr><td>built_in</td><td>1 / 0</td><td>内置（禁删、禁改编码）/ 非内置（sys_role、risk_rule 行内注释）</td></tr>
+        <tr><td>dept_type</td><td>1 / 2</td><td>运输企业 / 车队·部门（COMMENT ON COLUMN traj_dept.dept_type）</td></tr>
+        <tr><td>menu_type</td><td>1 / 2 / 3</td><td>目录 / 菜单 / 按钮（COMMENT ON COLUMN sys_menu.menu_type）</td></tr>
+        <tr><td>data_scope</td><td>1 / 2 / 3 / 4 / 5</td><td>全部 / 本企业及以下 / 本部门及以下 / 仅本部门 / 自定义（COMMENT ON COLUMN sys_role.data_scope；=5 时配合 sys_role_dept）</td></tr>
+        <tr><td>audit status</td><td>1 / 0</td><td>成功 / 失败（HTTP&gt;=400 或业务 code 非 0）（COMMENT ON COLUMN sys_audit_log.status）</td></tr>
+        <tr><td>sys_message.is_read</td><td>0 / 1</td><td>未读 / 已读（DEFAULT 0，推断）</td></tr>
+        <tr><td>fence inside</td><td>0 / 1</td><td>最近轨迹点是否在围栏内（risk_fence_state 行内注释）</td></tr>
+      </tbody>
+    </table>
+
+    <h3>18.2 业务代码枚举（按字段）</h3>
+    <table>
+      <thead><tr><th>字段（所在表）</th><th>取值</th><th>含义</th><th>出处</th></tr></thead>
+      <tbody>
+        <tr><td>risk_rule.rule_type</td><td>SPEED / FATIGUE / SIGNAL / COMBO</td><td>超速类 / 疲劳类 / 终端信号类 / 组合类</td><td>07 行内注释 + 8 条内置规则</td></tr>
+        <tr><td>risk_geo_fence.fence_type</td><td>CIRCLE / POLYGON</td><td>圆形（圆心+半径）/ 多边形（polygon_geom）</td><td>07 行内注释</td></tr>
+        <tr><td>risk_geo_fence.trigger_dir</td><td>1 / 2 / 3</td><td>进入报警 / 离开报警 / 进出都报</td><td>07 行内注释</td></tr>
+        <tr><td>risk_event.event_source</td><td>ADAS / DSM / national / vendor / 北斗</td><td>事件来源</td><td>03 行内注释 + 种子</td></tr>
+        <tr><td>risk_event.handle_status</td><td>0 / 1</td><td>未处置 / 已处置（08 脚本按 0 补单；种子取 0/1）</td><td>03 DEFAULT + 08 迁移逻辑（推断）</td></tr>
+        <tr><td>risk_work_order.status</td><td>PENDING / PROCESSING / CLOSED</td><td>待处理 / 处理中 / 已闭环</td><td>COMMENT ON COLUMN + 字典 order_status</td></tr>
+        <tr><td>risk_work_order.close_result</td><td>列注释：PHONE_REMIND / EDUCATION / SUSPEND / FALSE_ALARM / OTHER；字典 close_result：PHONE_REMIND 电话提醒 / EDUCATION 安全教育 / REPORT_PENALTY 通报处罚 / TRAFFIC_VIOLATION 交通违法 / FALSE_ALARM 误报</td><td>工单闭环方式（两处枚举不完全一致：列注释含 SUSPEND/OTHER，字典含 REPORT_PENALTY/TRAFFIC_VIOLATION，以字典为运行时可选项、列注释为设计说明，差异如实记录）</td><td>COMMENT ON COLUMN vs 09 字典种子</td></tr>
+        <tr><td>risk_order_log.action</td><td>CREATE / ASSIGN / CLAIM / TRANSFER / CLOSE / REOPEN / ESCALATE</td><td>建单 / 分派 / 认领 / 转办 / 闭环 / 重开 / 升级</td><td>08 行内注释</td></tr>
+        <tr><td>video_analysis.status</td><td>PENDING（默认）</td><td>待分析；其余状态 SQL 未枚举，由应用层约束</td><td>03 DEFAULT（推断）</td></tr>
+        <tr><td>video_analysis.channel</td><td>DSM / ADAS</td><td>分析通道</td><td>03 行内注释</td></tr>
+        <tr><td>traj_warn_info.handle_status</td><td>0 / 1 / 2</td><td>待处理 / 已确认 / 已解除</td><td>字典 alarm_handle_status（13）</td></tr>
+        <tr><td>driver_score.level</td><td>A / B / C / D / E</td><td>优秀 A≥90 / 良好 B≥75 / 一般 C≥60 / 较差 D≥40 / 危险 E&lt;40</td><td>字典 score_level（14）</td></tr>
+        <tr><td>risk_intervention.source</td><td>MANUAL（默认）</td><td>人工干预；其余取值 SQL 未枚举</td><td>10 DEFAULT（推断）</td></tr>
+        <tr><td>risk_intervention.action_result</td><td>SUCCESS（默认）</td><td>干预成功；其余取值 SQL 未枚举</td><td>10 DEFAULT（推断）</td></tr>
+        <tr><td>sys_config.value_type</td><td>STRING / INT / BOOL</td><td>参数值类型</td><td>09/11 参数种子</td></tr>
+        <tr><td>sys_audit_log.module</td><td>AUTH / MDM / MONITOR / CEP / WORK_ORDER / VIDEO / AUDIT ...</td><td>模块编码</td><td>05 行内注释</td></tr>
+        <tr><td>sys_audit_log.action</td><td>LOGIN / LOGIN_FAIL / CREATE / UPDATE / DELETE / EXPORT / VIDEO_VIEW / HANDLE / QUERY</td><td>动作编码</td><td>05 行内注释</td></tr>
+        <tr><td>base_warn_type.grade_level</td><td>1 / 2 / 3（默认 2）</td><td>报警等级（种子：超速 1、疲劳 1、围栏越界 2、紧急求助 1、设备故障 3）</td><td>02 DEFAULT + 种子</td></tr>
+      </tbody>
+    </table>
+
+    <h3>18.3 字典类型与字典项种子清单（sys_dict_type / sys_dict_item）</h3>
+    <table>
+      <thead><tr><th>dict_code</th><th>字典名</th><th>字典项（label=value）</th><th>来源脚本</th></tr></thead>
+      <tbody>
+        <tr><td>plate_color</td><td>车牌颜色</td><td>蓝色=BLUE、黄色=YELLOW、绿色=GREEN、白色=WHITE、黑色=BLACK</td><td>09</td></tr>
+        <tr><td>protocol_type</td><td>协议类型</td><td>JT808=JT808、JT1078=JT1078、其他=OTHER</td><td>09</td></tr>
+        <tr><td>equipment_type</td><td>设备类型</td><td>北斗终端=GNSS、DSM=DSM、ADAS=ADAS、屏机一体=ALL_IN_ONE</td><td>09</td></tr>
+        <tr><td>terminal_status</td><td>终端状态</td><td>在线=ONLINE、离线=OFFLINE、停用=DISABLED</td><td>09</td></tr>
+        <tr><td>driver_sex</td><td>驾驶员性别</td><td>男=MALE、女=FEMALE</td><td>09</td></tr>
+        <tr><td>driver_status</td><td>驾驶员状态</td><td>在岗=ACTIVE、离岗=INACTIVE、停用=DISABLED</td><td>09</td></tr>
+        <tr><td>risk_event_code</td><td>风险事件码</td><td>疲劳驾驶=DSM_FATIGUE、分心驾驶=DSM_DISTRACTION、前向碰撞=ADAS_FCW、车道偏离=ADAS_LDW、偏离路线=GEO_EXIT、未系安全带=V_PCW</td><td>09</td></tr>
+        <tr><td>risk_level</td><td>风险等级</td><td>低=1、中=2、高=3</td><td>09</td></tr>
+        <tr><td>close_result</td><td>闭环结果</td><td>电话提醒=PHONE_REMIND、安全教育=EDUCATION、通报处罚=REPORT_PENALTY、交通违法=TRAFFIC_VIOLATION、误报=FALSE_ALARM</td><td>09</td></tr>
+        <tr><td>order_status</td><td>工单状态</td><td>待处理=PENDING、处理中=PROCESSING、已闭环=CLOSED</td><td>09</td></tr>
+        <tr><td>alarm_type</td><td>终端报警类型</td><td>紧急报警=EMERGENCY、超速=OVER_SPEED、疲劳=FATIGUE、偏离路线=ROUTE_DEVIATION</td><td>09</td></tr>
+        <tr><td>notify_event_type</td><td>通知事件类型</td><td>工单生成=ORDER_CREATE、工单分派=ORDER_ASSIGN、超时升级=ORDER_ESCALATE、工单闭环=ORDER_CLOSE、系统通知=SYSTEM</td><td>11</td></tr>
+        <tr><td>alarm_handle_status</td><td>终端报警处置状态</td><td>待处理=0、已确认=1、已解除=2</td><td>13</td></tr>
+        <tr><td>score_level</td><td>驾驶行为评分等级</td><td>优秀=A、良好=B、一般=C、较差=D、危险=E（备注：A≥90 B≥75 C≥60 D≥40 E&lt;40）</td><td>14</td></tr>
+      </tbody>
+    </table>
+
+    <h3>18.4 系统参数种子（sys_config）</h3>
+    <table>
+      <thead><tr><th>config_key</th><th>值</th><th>名称</th><th>类型</th><th>is_system</th><th>备注</th><th>来源</th></tr></thead>
+      <tbody>
+        <tr><td>password.min_length</td><td>8</td><td>密码最小长度</td><td>INT</td><td>1</td><td>—</td><td>09</td></tr>
+        <tr><td>password.max_length</td><td>20</td><td>密码最大长度</td><td>INT</td><td>1</td><td>—</td><td>09</td></tr>
+        <tr><td>login.max_fail</td><td>5</td><td>登录失败锁定次数</td><td>INT</td><td>1</td><td>—</td><td>09</td></tr>
+        <tr><td>login.lock_minutes</td><td>15</td><td>锁定时长(分钟)</td><td>INT</td><td>1</td><td>—</td><td>09</td></tr>
+        <tr><td>sla.grace_ratio</td><td>0.2</td><td>临期阈值比例</td><td>STRING</td><td>1</td><td>工单剩余时限低于该比例视为临期</td><td>09</td></tr>
+        <tr><td>notify.popup.min_level</td><td>3</td><td>弹窗最低风险等级</td><td>INT</td><td>0</td><td>等级≥该值的站内通知在坐席端弹出卡片并响铃</td><td>11</td></tr>
+        <tr><td>notify.sound.enabled</td><td>true</td><td>通知提示音</td><td>BOOL</td><td>0</td><td>坐席端高风险通知是否播放提示音</td><td>11</td></tr>
+        <tr><td>notify.sms.enabled</td><td>false</td><td>短信通知渠道</td><td>BOOL</td><td>0</td><td>对接短信厂商后开启</td><td>11</td></tr>
+        <tr><td>notify.voice.enabled</td><td>false</td><td>语音外呼渠道</td><td>BOOL</td><td>0</td><td>对接语音网关后开启</td><td>11</td></tr>
+        <tr><td>notify.push.enabled</td><td>false</td><td>App 推送渠道</td><td>BOOL</td><td>0</td><td>对接推送服务后开启</td><td>11</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s19">19 网关对接增量（v1.1，18-gateway-integration.sql）</h2>
+    <p>2026-10-06 GATEWAY-PLAN-001 一期（P0+P1）新增 <code>18-gateway-integration.sql</code>，<strong>全量幂等</strong>（ADD COLUMN/CREATE/INDEX IF NOT EXISTS、种子 ON CONFLICT），已对存量库手工执行。表数量由 33 张（traj 23 / mon 10）增至 <strong>38 张（traj 28 / mon 10）</strong>。变更逐项转录如下：</p>
+    <h4>19.1 既有表扩列与索引</h4>
+    <table>
+      <thead><tr><th>表</th><th>变更</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>traj.traj_gps_point</td><td><code>alarm_flag</code> smallint → <strong>bigint</strong>；新增 <code>ext jsonb</code>；新增部分唯一索引 <code>uk_traj_gps_point_track (identity_code, (ext-&gt;&gt;'trackId')) WHERE ext ? 'trackId'</code></td><td>32 位报警位图 smallint 存不下；ext 承载 trackId/gpsType/delay/status/recordSpeed/additions 等网关原始字段；同终端同 trackId 幂等去重（仅网关数据带 trackId，存量/模拟器数据不受影响）</td></tr>
+        <tr><td>traj.traj_terminal</td><td>新增 <code>gateway_truck_id bigint</code>、<code>online_status smallint NOT NULL DEFAULT 0</code>、<code>last_heartbeat_time</code>、<code>last_online_time</code>、<code>last_offline_time timestamp</code>；索引 <code>idx_traj_terminal_truck</code></td><td>网关双锚点（手机号 identity_code / truckId）；online_status 0 离线 1 在线，由鉴权/心跳/离线事件维护</td></tr>
+        <tr><td>traj.traj_gps_photo</td><td>新增 <code>warn_id varchar(32)</code>、<code>media_type smallint DEFAULT 0</code>、<code>file_status smallint</code>、<code>source varchar(20) DEFAULT 'gateway'</code>；索引 <code>idx_traj_photo_warn</code></td><td>抓拍图片关联网关报警事件</td></tr>
+        <tr><td>mon.risk_event</td><td>新增 <code>source_id varchar(50)</code> + 部分唯一索引 <code>uk_risk_event_source WHERE source_id IS NOT NULL</code></td><td>外部来源唯一标识（网关 warnId），防止重复建单</td></tr>
+      </tbody>
+    </table>
+    <h4>19.2 新增表（5 张，均在 traj schema）</h4>
+    <table>
+      <thead><tr><th>表</th><th>主键 / 索引</th><th>用途与关键字段</th></tr></thead>
+      <tbody>
+        <tr><td>traj.traj_warn_media</td><td>id bigserial；<code>uk(warn_id, file_name)</code>、idx(warn_id)</td><td>网关报警附件转存记录（一报警多附件）：file_type 0 图片/1 音频/2 视频、file_size、url、local_path、file_status、receive_time</td></tr>
+        <tr><td>traj.gateway_event_map</td><td>type_id integer PK</td><td>苏标 typeId → 平台 event_code/default_level（1 低 2 中 3 高）映射；32 条种子：ADAS 101001~101011、DSM 102001~102011、盲区 104001~104003、激烈驾驶 105001~105007</td></tr>
+        <tr><td>traj.gateway_dlq</td><td>id bigserial；idx(create_time DESC)</td><td>死信表：topic、partition_id、offset_val、payload、error；毒消息隔离不阻塞消费</td></tr>
+        <tr><td>traj.gateway_ingest_stat</td><td>topic varchar(64) PK</td><td>各 topic 消费统计：msg_count、err_count、last_time、update_time（内存聚合后批量落库）</td></tr>
+        <tr><td>traj.gateway_unknown_terminal</td><td>id bigserial；<code>uk(COALESCE(phone_number,''), COALESCE(truck_id,-1))</code></td><td>未登记终端隔离区：phone_number、truck_id、plate_no、msg_count、first_seen、last_seen；归属不明的报文不丢弃</td></tr>
+      </tbody>
+    </table>
+    <h4>19.3 字典与菜单种子</h4>
+    <ul>
+      <li><code>traj.base_warn_type</code> 扩 32 行（id 101001~105007，pid=-1，grade_level 沿用 1 高/2 中/3 低口径），报警中心既有 JOIN 直接显示新类型，无需改 SQL。</li>
+      <li><code>traj.sys_menu</code> 新增 id=925「运行模式」（2026-10-06 由「网关接入状态」更名；parent 900 系统管理，menu_type=2，perm_code <code>system:gateway:view</code>，path /system/gateway，icon Connection），并向角色 1/2 授权（sys_role_menu）；插入后 setval 对齐菜单序列。</li>
+      <li><code>traj.sys_config</code> 追加 6 个 <code>is_system=1</code> 网关内置参数（gateway.mode、gateway.kafka.bootstrap-servers、gateway.kafka.group-id、gateway.file-base-url、gateway.media-strategy、gateway.mock-delivery-enabled），ON CONFLICT (config_key) DO NOTHING 幂等播种；其中 gateway.mock-delivery-enabled 为测试模式仿真投递启停键（on/off），运行时启停即时写回、重启 processing 后保持。</li>
+    </ul>
+
+    <h2 id="rev">20 修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>修订说明</th><th>作者</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>首次发布：按 infra/postgres/init/ 01~17 共 17 个初始化 SQL 逐表转录 33 张表（traj 23 / mon 10），含 ER 关系图、种子数据清单与数据字典枚举</td><td>mydbd 文档组</td></tr>
+        <tr><td>v1.1.0</td><td>2026-10-06</td><td>新增第 19 章：18-gateway-integration.sql 全量变更（4 张既有表扩列/索引、5 张网关新表、32 行报警字典与菜单 925 种子），表总数更正为 38 张（traj 28 / mon 10）</td><td>mydbd 文档组</td></tr>
+        <tr><td>v1.2.0</td><td>2026-10-06</td><td>§19.3 菜单 925 更名「运行模式」；补记 sys_config 6 个网关内置参数种子（含测试模式仿真投递启停键 gateway.mock-delivery-enabled，运行时写回、重启保持）</td><td>mydbd 文档组</td></tr>
+      </tbody>
+    </table>
+
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

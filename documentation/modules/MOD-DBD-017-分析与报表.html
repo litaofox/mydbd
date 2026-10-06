@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-017 分析与报表 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-017 分析与报表 ｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#part-product">产品篇</a>
+        <ul>
+          <li><a href="#p-scope">1. 模块定位与整体状态</a></li>
+          <li><a href="#p-matrix">2. 功能项与菜单矩阵</a></li>
+          <li><a href="#p-scenes">3. 业务场景</a></li>
+          <li><a href="#p-flow">4. 通用操作流程</a></li>
+          <li><a href="#p-scope-rules">5. 数据范围七条强制口径</a></li>
+          <li><a href="#p-value">6. 业务价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#part-tech">技术篇</a>
+        <ul>
+          <li><a href="#t-current">7. 现状架构（代码实证）</a></li>
+          <li><a href="#t-score">8. 已上线：驾驶评分（F54/F55/F57 部分底座）</a></li>
+          <li><a href="#g1">9. 报表查询组 F41～F53</a></li>
+          <li><a href="#g2">10. 统计分析组 F54～F59</a></li>
+          <li><a href="#t-export">11. 异步导出与下载中心（规划）</a></li>
+          <li><a href="#t-schema">12. 数据模型与来源汇总</a></li>
+          <li><a href="#t-choice">13. 选型与实施顺序</a></li>
+          <li><a href="#t-risk">14. 风险与对策</a></li>
+          <li><a href="#t-accept">15. 验收标准</a></li>
+          <li><a href="#t-api">16. 拟新增接口清单</a></li>
+          <li><a href="#t-perf">17. 性能与容量设计</a></li>
+          <li><a href="#t-fe">18. 前端实现约定</a></li>
+        </ul>
+      </li>
+      <li><a href="#deps">规划依赖关系</a></li>
+      <li><a href="#todo">待核实项</a></li>
+      <li><a href="#revisions">修订记录</a></li>
+    </ul>
+  </div></aside>
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-017 分析与报表</h1>
+    <div class="cover-meta">
+      编号：MOD-DBD-017<span class="sep">｜</span>版本：v1.0.0<span class="sep">｜</span>日期：2026-10-05<span class="sep">｜</span>
+      状态：<span class="badge amber">部分具备</span><span class="sep">｜</span>覆盖功能项：F41～F59（19 项）<span class="sep">｜</span>
+      代码锚点：17-analysis-menu.sql、ComingSoon.vue、ScoreList.vue、RiskProfile.vue、ScoreController、mon.driver_score
+    </div>
+
+    <span class="part-tag product" id="part-product">产品篇</span>
+
+    <h2 id="p-scope">1. 模块定位与整体状态</h2>
+    <p>分析与报表模块面向企业管理者、安全管理人员与调度运营，提供车辆运行、驾驶行为、在线质量、油耗成本、周期安全、商机与数据质量等 19 个分析功能（F41～F59）。整体状态为<strong class="badge amber">部分具备</strong>：</p>
+    <ul>
+      <li><strong>已上线：</strong>19 个菜单与占位路由（4 个角色全部授权）、驾驶评分（301 菜单，ScoreList.vue）、风险趋势与画像（302 菜单，RiskProfile.vue）。</li>
+      <li><strong>未实现：</strong>F41～F59 共 19 项报表/分析页均为 ComingSoon 占位，无后端统计逻辑；其中大量功能依赖尚未建成的数据底座（F12 派生统计、F02 在线状态、F05 CAN/OBD、F08 清洗、F36 质量）。</li>
+    </ul>
+    <div class="kvlist">
+      <div class="kv"><div class="k">菜单结构</div><div class="vv">分析决策（300）下两组：报表查询（310，F41～F53 共 13 项）、统计分析（340，F54～F59 共 6 项）</div></div>
+      <div class="kv"><div class="k">授权角色</div><div class="vv">平台超级管理员、企业管理员、安全管理员、调度员（17-analysis-menu.sql 四角色全授权）</div></div>
+      <div class="kv"><div class="k">对标依据</div><div class="vv">FUNC-REF-001 功能参考（对标产品的节点、查询条件、结果列、业务场景）</div></div>
+    </div>
+
+    <h2 id="p-matrix">2. 功能项与菜单矩阵</h2>
+    <table>
+      <tr><th>F 码</th><th>菜单 ID</th><th>路由 code</th><th>名称</th><th>现状</th></tr>
+      <tr><td>F41</td><td>311</td><td>track-report</td><td>轨迹报表</td><td><span class="badge gray">占位</span></td></tr>
+      <tr><td>F42</td><td>312</td><td>mileage</td><td>里程报表</td><td><span class="badge gray">占位</span></td></tr>
+      <tr><td>F43</td><td>313</td><td>driving</td><td>行驶报表</td><td><span class="badge gray">占位</span></td></tr>
+      <tr><td>F44</td><td>314</td><td>parking</td><td>停车报表</td><td><span class="badge gray">占位</span></td></tr>
+      <tr><td>F45</td><td>315</td><td>idling</td><td>怠速报表</td><td><span class="badge gray">占位（依赖 F05）</span></td></tr>
+      <tr><td>F46</td><td>316</td><td>driver-driving</td><td>司机驾驶报表</td><td><span class="badge gray">占位（依赖 F31）</span></td></tr>
+      <tr><td>F47</td><td>317</td><td>offline</td><td>离线报表</td><td><span class="badge gray">占位（依赖 F02）</span></td></tr>
+      <tr><td>F48</td><td>318</td><td>faulty-vehicle</td><td>故障车报表</td><td><span class="badge gray">占位（依赖 F02/F29）</span></td></tr>
+      <tr><td>F49</td><td>319</td><td>fuel-consumption</td><td>油耗报表</td><td><span class="badge gray">占位（依赖 F05+油量列）</span></td></tr>
+      <tr><td>F50</td><td>320</td><td>refuel</td><td>加油报表</td><td><span class="badge gray">第三波（依赖 F05）</span></td></tr>
+      <tr><td>F51</td><td>321</td><td>online-rate</td><td>实时在线率</td><td><span class="badge gray">占位（依赖 F02）</span></td></tr>
+      <tr><td>F52</td><td>322</td><td>vehicle-work</td><td>车辆工作情况</td><td><span class="badge gray">占位</span></td></tr>
+      <tr><td>F53</td><td>323</td><td>service-charge</td><td>服务费报表</td><td><span class="badge gray">占位（全新数据模型）</span></td></tr>
+      <tr><td>F54</td><td>341</td><td>vehicle-analysis</td><td>车辆周期安全分析</td><td><span class="badge amber">部分（评分可复用）</span></td></tr>
+      <tr><td>F55</td><td>342</td><td>enterprise-analysis</td><td>企业周期安全分析</td><td><span class="badge amber">部分（可聚合）</span></td></tr>
+      <tr><td>F56</td><td>343</td><td>ent-security-analysis</td><td>企业安全综合分析</td><td><span class="badge amber">部分（F15/F23 覆盖）</span></td></tr>
+      <tr><td>F57</td><td>344</td><td>driver-analysis</td><td>司机周期安全分析</td><td><span class="badge green">评分已上线</span></td></tr>
+      <tr><td>F58</td><td>345</td><td>business-opportunity</td><td>车辆商机分析</td><td><span class="badge gray">占位（全新模型）</span></td></tr>
+      <tr><td>F59</td><td>346</td><td>track-integrity</td><td>轨迹完整率</td><td><span class="badge gray">占位（依赖 F08/F36）</span></td></tr>
+    </table>
+    <p>另已上线：301 驾驶评分（ScoreList.vue，perm analysis:score:view）、302 风险趋势与画像（RiskProfile.vue），它们是 F54/F55/F57 的部分能力底座。</p>
+
+    <h2 id="p-scenes">3. 业务场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">企业负责人 · 周例会</div>
+        <div class="sc-name">一页看清车队安全与运行</div>
+        <div class="sc-desc">企业周期安全分析与综合看板：车辆数、里程、报警、百公里报警、评分排名与趋势，支撑例会通报。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员 · 日常考核</div>
+        <div class="sc-name">司机评分与车辆报警排名</div>
+        <div class="sc-desc">司机周期安全分析（从业资格证、里程时长、百公里报警、评分）、车辆周期安全分析逐车核查。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度员 · 排班</div>
+        <div class="sc-name">离线车/故障车早知道</div>
+        <div class="sc-desc">离线报表、故障车报表、实时在线率决定当天哪些车能派、哪些要抢修。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">车队长 · 成本控制</div>
+        <div class="sc-name">油耗与加油异常管理</div>
+        <div class="sc-desc">油耗报表看百公里油耗、加油报表识别异常加油位置/油量跳变，结合出车率评估车辆价值（商机分析）。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">客服/收费 · 服务费</div>
+        <div class="sc-name">服务费到期催缴</div>
+        <div class="sc-desc">服务费报表按到期状态/日期管理客户缴费，联动到期提醒。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">数据/运维 · 数据质量</div>
+        <div class="sc-name">轨迹完整率验收设备质量</div>
+        <div class="sc-desc">按车统计连续里程、完整率、错误定位、漂移数，合格率低的终端批量排查（联动 F36）。</div>
+      </div>
+    </div>
+
+    <h2 id="p-flow">4. 通用操作流程</h2>
+    <div class="flow">
+      <div class="step"><div class="s-title">选择功能</div><div class="s-desc">分析决策 → 报表查询 / 统计分析 → 具体报表菜单</div></div>
+      <div class="step"><div class="s-title">设置条件</div><div class="s-desc">时间（快捷时间/周月周期）、对象（车牌/司机/用户/企业维度切换）；后端按当前用户 deptScope 自动裁剪范围</div></div>
+      <div class="step"><div class="s-title">在线浏览</div><div class="s-desc">分页表格 + 汇总卡 + 趋势图（部分功能）；钻取到明细/详情抽屉</div></div>
+      <div class="step"><div class="s-title">导出</div><div class="s-desc">小结果集同步导出；大跨度（如 F59 最多 10 天）走异步导出任务</div></div>
+      <div class="step"><div class="s-title">下载中心</div><div class="s-desc">任务完成后按执行人隔离下载文件；范围条件随任务快照固化</div></div>
+    </div>
+
+    <h2 id="p-scope-rules">5. 数据范围七条强制口径</h2>
+    <p>以下七条为本模块所有功能必须遵守的数据权限规则（基于 <code>UserInfo.deptScope</code>：null=不限制，空集合=不可见任何数据）：</p>
+    <ol>
+      <li><strong>统一约束</strong>：全部报表受 deptScope 约束；null=不限制、空集合=直接返回空结果。</li>
+      <li><strong>车辆锚点唯一</strong>：车辆类报表以 <code>traj_vehicle.dept_id</code> 为唯一锚点；GPS 数据经车牌/标识 JOIN 或 EXISTS 关联车辆，dept_id 为空的车辆对受限角色不可见。</li>
+      <li><strong>司机经绑定映射</strong>：司机类报表（traj_driver 无 dept_id）经 F31 车-司机绑定关系（traj_vehicle_driver）映射到其驾驶车辆的 dept_id 并集。</li>
+      <li><strong>企业先裁剪后聚合</strong>：企业聚合类报表先按范围裁剪企业行（自定义数据范围须补全组织祖先链），再在裁剪结果上聚合，禁止"全量聚合后过滤"。</li>
+      <li><strong>异步导出快照</strong>：导出任务固化执行人当时的数据范围快照；生成的文件按执行人隔离，他人不可见、不可下载。</li>
+      <li><strong>推送同样过滤</strong>：实时 WebSocket 推送必须按数据范围过滤后再下发；现状全量广播是已知缺口，相关实时报表（F51）上线前必须先关闭/修复全量广播。</li>
+      <li><strong>"用户"维度映射</strong>：对标产品的"用户"维度统一映射为"用户所属部门 → 该部门锚定的车辆集"，不引入独立用户-车辆关系。</li>
+    </ol>
+
+    <h2 id="p-value">6. 业务价值</h2>
+    <ul>
+      <li><strong>管理闭环</strong>：运行数据→周期安全评分→排名通报→整改，覆盖车、司机、企业三层。</li>
+      <li><strong>口径统一</strong>：所有里程/时长/报警/在线指标共享 F12/F02/F08 同一数据底座，报表之间不打架。</li>
+      <li><strong>权限可控</strong>：七条范围口径保证企业只能看自己的车与司机，支撑多租户式运营。</li>
+      <li><strong>渐进交付</strong>：菜单、授权、占位已全量上线，数据底座（F02/F05/F08/F12）每建成一个，对应报表即可激活。</li>
+    </ul>
+
+    <span class="part-tag" id="part-tech">技术篇</span>
+
+    <h2 id="t-current">7. 现状架构（代码实证）</h2>
+    <h3>7.1 菜单与路由</h3>
+    <ul>
+      <li><code>17-analysis-menu.sql</code>：菜单组 310 报表查询、340 统计分析挂在 300 分析决策下；311～323、341～346 共 19 项；全部 4 个角色授权。</li>
+      <li>前端路由 <code>/analysis/coming/:code</code> → <code>views/analysis/ComingSoon.vue</code>；COMING_NAMES 维护 19 个 code→中文名映射：track-report、mileage、driving、parking、idling、driver-driving、offline、faulty-vehicle、fuel-consumption、refuel、online-rate、vehicle-work、service-charge、vehicle-analysis、enterprise-analysis、ent-security-analysis、driver-analysis、business-opportunity、track-integrity。</li>
+    </ul>
+    <h3>7.2 已上线功能</h3>
+    <table>
+      <tr><th>功能</th><th>前端</th><th>后端</th></tr>
+      <tr><td>驾驶评分（301）</td><td>ScoreList.vue（分页/趋势/汇总/重算入口，perm analysis:score:view）</td><td>ScoreController：/api/analysis/score 的 page/trend/summary/recalc</td></tr>
+      <tr><td>风险趋势与画像（302）</td><td>RiskProfile.vue</td><td>复用 monitor/risk 现有查询</td></tr>
+    </table>
+    <h3>7.3 数据底座现状</h3>
+    <ul>
+      <li>traj_gps_point 只有原始点（无油量、无清洗标记、无派生统计）；无在线状态统一出口；无 CAN/OBD。</li>
+      <li>因此 F42～F52 多数报表<strong>在物理上没有数据可聚合</strong>，占位是如实状态，不是仅缺页面。</li>
+    </ul>
+    <h3>7.4 现有接口与权限点</h3>
+    <table>
+      <tr><th>接口</th><th>方法</th><th>权限点</th><th>说明</th></tr>
+      <tr><td>/api/analysis/score/page</td><td>GET</td><td>analysis:score:view</td><td>评分明细分页（ScoreList）</td></tr>
+      <tr><td>/api/analysis/score/trend</td><td>GET</td><td>analysis:score:view</td><td>评分趋势序列</td></tr>
+      <tr><td>/api/analysis/score/summary</td><td>GET</td><td>analysis:score:view</td><td>汇总卡片（均分/等级分布等）</td></tr>
+      <tr><td>/api/analysis/score/recalc</td><td>POST</td><td>analysis:score:recalc</td><td>异步重算（≤92 天、AtomicBoolean 互斥；超管/安全管理员）</td></tr>
+      <tr><td>/api/monitor/risks 系列</td><td>GET</td><td>monitor:risk:view</td><td>302 风险趋势与画像复用，不另建查询</td></tr>
+      <tr><td>/api/monitor/video-analyses</td><td>GET</td><td>monitor:view</td><td>P11 视频分析任务只读列表</td></tr>
+    </table>
+    <p>19 个占位菜单当前不产生任何 /api/report/*、/api/stat/* 请求（ComingSoon 为纯静态页）；新报表接口统一在第 16 节登记。</p>
+    <h3>7.5 数据量基线（2026-10-05 演示库）</h3>
+    <table>
+      <tr><th>对象</th><th>现状 / 估算量级</th><th>对报表设计的约束</th></tr>
+      <tr><td>车辆 / 企业</td><td>500 辆 / 4 家企业（沪鲁苏皖）</td><td>企业聚合是小结果集，瓶颈在轨迹明细</td></tr>
+      <tr><td>traj_gps_point</td><td>存量约 888.9 万点；按 500 车 ×0.2Hz 估增量 ≈864 万点/日、≈2.6 亿点/月</td><td>明细必须限定时间窗 + 车辆 + (vehicle, gps_time) 索引/分区，禁止全表扫</td></tr>
+      <tr><td>mon.risk_event</td><td>311 事件（演示量）</td><td>真实上量后周期聚合走索引 + 预聚合</td></tr>
+      <tr><td>mon.driver_score</td><td>按日出快照，约 1.5 万行/月（500 司机口径）</td><td>周/月汇总直接在快照上聚合，不重算事件</td></tr>
+    </table>
+
+    <h2 id="t-score">8. 已上线：驾驶评分（mon.driver_score）</h2>
+    <p>驾驶评分是本模块唯一真实在跑的统计模型，F57 已具备、F54/F55 可部分复用：</p>
+    <table>
+      <tr><th>要点</th><th>口径（ScoreConstants 代码实证）</th></tr>
+      <tr><td>快照表</td><td>mon.driver_score：score_date、driver_id、identity_code、plate_no、dept_id、score numeric(5,1)、level char(1)、features jsonb、sample_points、event_count；唯一键 (score_date, driver_id)</td></tr>
+      <tr><td>事件白名单</td><td>8 个事件码：SPEED_GENERAL、SPEED_SEVERE、FATIGUE_DRIVE、DSM_FATIGUE、DSM_DISTRACTION、ADAS_FCW、ADAS_LDW、COMBO_FATIGUE_SPEED</td></tr>
+      <tr><td>扣分</td><td>三级事件 level3=8 分、level2=4 分、level1=2 分；急加减速每次 0.5 分、单日封顶 5 分</td></tr>
+      <tr><td>急加减速阈值</td><td>加速度 2.5m/s²；参与计算的邻点时间差最大 30 秒</td></tr>
+      <tr><td>样本门槛</td><td>≥200 个定位点且 ≥30 分钟才有当日评分（不足不出分）</td></tr>
+      <tr><td>等级</td><td>A≥90、B≥75、C≥60、D≥40、E&lt;40</td></tr>
+      <tr><td>重算</td><td>上限 92 天；POST recalc 异步执行、AtomicBoolean 互斥（同一时刻只允许一个重算任务）；仅超管/安全管理员；@AuditLog 留痕</td></tr>
+      <tr><td>定时</td><td>ScoreScheduler cron <code>0 0 1 * * ?</code> 每日 01:00 跑 T+1 评分</td></tr>
+    </table>
+    <h3>8.1 评分算例（口径演示，数值为构造样例）</h3>
+    <pre><code>司机 A 当日：定位点 420 个（≥200）、驾驶时长 52 分钟（≥30 分钟）→ 出分
+  严重超速 SPEED_SEVERE    ×1  level3  →  -8
+  一般超速 SPEED_GENERAL   ×2  level2  →  -8
+  分心驾驶 DSM_DISTRACTION ×1  level2  →  -4
+  急加减速检出 14 次 ×0.5 = 7 分，单日封顶 5 分 → -5
+  得分 = 100 - 8 - 8 - 4 - 5 = 75.0 → 等级 B（B≥75，边界含等号）
+
+司机 B 当日：定位点 180 个（&lt;200）或驾驶时长 25 分钟（&lt;30）→ 当日不出分、不写快照
+司机 C 当日：无白名单事件且样本达标 → 100 分，等级 A</code></pre>
+    <h3>8.2 features jsonb 快照结构（文档口径）</h3>
+    <pre><code>{
+  "base": 100,
+  "events": [
+    {"code": "SPEED_SEVERE", "level": 3, "count": 1, "deduct": 8},
+    {"code": "SPEED_GENERAL", "level": 2, "count": 2, "deduct": 8},
+    {"code": "DSM_DISTRACTION", "level": 2, "count": 1, "deduct": 4}
+  ],
+  "hard_accel_brake": {"count": 14, "raw_deduct": 7.0, "deduct": 5.0, "capped": true},
+  "total_deduct": 25.0,
+  "sample_points": 420,
+  "drive_minutes": 52
+}</code></pre>
+    <h3>8.3 定时与重算时序</h3>
+    <ul>
+      <li>ScoreScheduler 每日 01:00（cron <code>0 0 1 * * ?</code>）跑 T+1：取前一日样本达标司机，按 ScoreConstants 口径 upsert 快照，唯一键 (score_date, driver_id)。</li>
+      <li>手工 recalc：POST 后异步执行；AtomicBoolean 保证同一时刻全库只允许一个重算任务，重复提交直接拒绝；范围上限 92 天。</li>
+      <li>权限：仅平台超级管理员、安全管理员可触发；@AuditLog 记录重算时间窗与操作人。</li>
+      <li>F54/F55/F57 的周月汇总只读取快照，不与定时/重算任务争抢写。</li>
+    </ul>
+    <h3>8.4 与对标产品评分的差异说明</h3>
+    <ul>
+      <li>现状评分是<strong>司机日评分</strong>（白名单 8 码、100 分扣减制）；对标 F54 是<strong>车辆周期评分</strong>（按"百公里报警 × 规则级别权重"），两者数据源可共用、公式不可混用。</li>
+      <li>现状无"标准统计 / 内部统计"规则属性，F54 上线前须在规则模型扩展该字段并回填（见待核实）。</li>
+      <li>急加减速不是 808 报警码，而是平台按相邻点加速度（2.5m/s²、邻点时差 ≤30s）检出，仅影响评分、不产生 risk_event。</li>
+    </ul>
+
+    <h2 id="g1">9. 报表查询组 F41～F53</h2>
+    <blockquote class="warn">本节 13 项均为设计规划，尚未实现；当前页面全部为 ComingSoon 占位，无后端统计逻辑。</blockquote>
+    <p>以下 13 项<strong class="badge gray">均未实现</strong>（占位页）。每项给出"对标口径 / 设计级方案（来源表 + 聚合 + 导出）/ 依赖"。</p>
+
+    <h3 id="r-common">9.0 报表组通用规范（13 项全部适用）</h3>
+    <table>
+      <tr><th>规范项</th><th>统一口径</th></tr>
+      <tr><td>时间窗上限（在线浏览）</td><td>明细类 ≤7 天；日级统计 ≤92 天（对齐评分重算窗口）；周/月/年维度走预聚合，不受明细窗口限制</td></tr>
+      <tr><td>分页</td><td>默认每页 20 行，最大 200 行；禁止前端一次拉全量</td></tr>
+      <tr><td>同步导出</td><td>结果集 ≤5000 行可同步导出 xlsx；超出走第 11 节异步导出</td></tr>
+      <tr><td>空结果语义</td><td>deptScope 为空集合时直接返回空页，不报错、不通过响应差异泄露"车辆是否存在"</td></tr>
+      <tr><td>对象选择</td><td>车牌多选（限范围内）、司机多选（经 F31 绑定）；"用户/企业"维度按口径⑦④映射</td></tr>
+      <tr><td>时间基准</td><td>统计切分一律用 gps_time（业务时间）；receive_time 仅在 F41 作为列展示与时延分析</td></tr>
+      <tr><td>慢查询红线</td><td>P95 ≤2 秒、P99 ≤5 秒；超阈值 SQL 不上线，改走预聚合或异步导出</td></tr>
+    </table>
+    <p><strong>导出文件约定：</strong>文件名 = 报表中文名_时间窗_导出时间（如 <code>里程报表_20260928-20261004_20261005.zip</code>）；xlsx 第一个 sheet 为汇总口径说明（查询条件、范围、生成时间、操作人），其后为明细；中文表头、数值单位在列名标注（km/h、L、秒）。</p>
+
+    <h3 id="r-sql">9.16 范围裁剪 SQL 骨架（13 项统一写法）</h3>
+    <p>所有车辆类报表 SQL 必须以 traj_vehicle 为锚点先做范围裁剪，再 JOIN 统计；禁止先聚合后过滤。统一骨架：</p>
+    <pre><code>-- deptScope == null  : 不拼接 scope 子句（平台超管，不限制）
+-- deptScope == []    : Service 层直接返回空页，不进 SQL（fail-closed）
+-- deptScope == [...] : 拼接以下锚点过滤
+SELECT t.stat_date, v.plate_no, t.mileage_km
+FROM traj.traj_daily_stat t
+JOIN traj.traj_vehicle v ON v.id = t.vehicle_id
+WHERE v.dept_id = ANY (:deptScope)           -- 唯一锚点：车辆归属组织
+  AND t.stat_date BETWEEN :begin AND :end
+  AND (:vehicleIds IS NULL OR t.vehicle_id = ANY (:vehicleIds));
+
+-- 司机维度：经 F31 绑定并集映射，禁止直接用 traj_driver（该表无 dept_id）
+SELECT ...
+FROM traj.traj_daily_stat t
+WHERE t.vehicle_id IN (
+  SELECT vehicle_id FROM traj.traj_vehicle_driver
+  WHERE driver_id = :driverId AND valid = TRUE);</code></pre>
+    <ul>
+      <li>禁止用 province_code、车牌简称/首字作为过滤条件（外省车牌可挂本公司，归属在范围内即可见，该字段仅作档案展示）。</li>
+      <li>EXISTS 与 JOIN 二选一：仅需存在性判断时用 EXISTS，避免 JOIN 产生重复行后再 DISTINCT。</li>
+      <li>企业维度先按 deptScope 裁剪企业车辆集合，再在结果集上聚合（口径④"先裁剪后聚合"）。</li>
+    </ul>
+
+    <h3 id="f41">9.1 F41 轨迹报表</h3>
+    <p><strong>查询条件：</strong>车牌号 + 起止日期时间。<strong>对标结果列：</strong>序号、车牌、颜色、状态、速度、方向、里程、油量(L)、油量原始值、定位时间、上点时间（receive_time）、经度、纬度、位置描述、所属企业、补点标记。</p>
+    <p><strong>设计级方案：</strong>来源 traj_gps_point JOIN traj_vehicle（dept_id、车牌颜色）；位置描述取 GeocodeController 逆地理（mydbd.amap.key）；双时间列直接暴露 gps_time/receive_time 以识别上点时延；油量列与补点标记依赖 MOD-014 18 号迁移（ext 油量、is_backfill）；导出为明细分页 Excel，数据量大时按时间段分片异步导出。</p>
+
+    <h3 id="f42">9.2 F42 里程报表</h3>
+    <p><strong>对标口径：</strong>按年、按周维度统计每车总里程。<strong>结果列：</strong>车牌、车牌颜色、所属企业、总里程。</p>
+    <p><strong>设计级方案：</strong>读 F12 traj_daily_stat.mileage_km（周/年对日分片求和）；无派生层前不上线（不用终端 mileage 读数冒充，终端读数口径不一）。依赖：F12、七条范围口径（车辆锚点 dept_id）。</p>
+
+    <h3 id="f43">9.3 F43 行驶报表</h3>
+    <p><strong>对标口径：</strong>支持对象维度切换（车牌 / 司机 / 用户 / 企业）+ 快捷时间；输出总行驶时长、总里程、总次数（趟次）；提供<strong>汇总表与明细表双导出</strong>。</p>
+    <p><strong>设计级方案：</strong>汇总取 traj_daily_stat，明细取 traj_trip_segment（seg_type=DRIVING）；司机维度经 traj_vehicle_driver 绑定并集映射；用户维度按"用户所属部门→车辆集"（口径⑦）。依赖：F12、F31。</p>
+
+    <h3 id="f44">9.4 F44 停车报表</h3>
+    <p><strong>对标口径：</strong>停车总时长、停车次数；汇总 + 明细双导出（明细含停车起止时间、位置、时长）。</p>
+    <p><strong>设计级方案：</strong>traj_trip_segment（PARKING 段），最小停车时长 3 分钟（F12 配置）；位置取段中点逆地理。依赖：F12。</p>
+
+    <h3 id="f45">9.5 F45 怠速报表</h3>
+    <p><strong>业务定义：</strong>发动机运转且车辆静止（速度=0 且 ACC ON / 转速高于怠速阈值）。</p>
+    <p><strong>设计级方案：</strong>严格口径依赖 F05 CAN/OBD 的 ACC、转速信号（IDLING 段、idling_s）。<strong>F05 未上线前该报表不上真实数据</strong>；如需先行试运行，只能用"速度=0 持续时长"近似口径，页面必须显著标注"近似口径，未接入车况信号"，避免与正式口径混用。依赖：F05、F12。</p>
+
+    <h3 id="f46">9.6 F46 司机驾驶报表</h3>
+    <p><strong>对标口径：</strong>以司机登录/登出（插卡/身份识别）为驾驶段边界；结果列驾驶证号、登录时间、登出时间、驾驶时长、里程、起始位置、结束位置。</p>
+    <p><strong>设计级方案：</strong>终端登录事件（808 驾驶员身份识别相关消息，随 F01/F31 落地）生成司机驾驶段；司机经 traj_vehicle_driver 绑定映射车辆与 dept_id（traj_driver 无 dept_id，遵守口径③）。依赖：F31 绑定、F01 终端身份信号、F12。</p>
+
+    <h3 id="f47">9.7 F47 离线报表</h3>
+    <p><strong>对标口径：</strong>按周统计；输出离线率、一周各日在线/离线矩阵列、最后上点时间、企业联系人/车主。</p>
+    <p><strong>设计级方案：</strong>F02 统一在线状态（traj_terminal.online_status/last_offline_time + 心跳），按日物化在线时长矩阵；联系人取企业/车辆资料。当前三处 5 分钟窗口口径（DashboardMapper 等）必须先收口。依赖：F02、F29/F30 资料。</p>
+
+    <h3 id="f48">9.8 F48 故障车报表</h3>
+    <p><strong>对标结果列：</strong>故障类型、定位时间、上点时间、离线时长、最后位置、设备号、SIM 卡号、联系人。</p>
+    <p><strong>设计级方案：</strong>F02 离线事件 + traj_terminal 终端资料（sim_account，F29）；故障类型按离线时长阈值/心跳异常分级；最后位置取末点逆地理。依赖：F02、F29。</p>
+
+    <h3 id="f49">9.9 F49 油耗报表</h3>
+    <p><strong>对标口径：</strong>按日输出油耗(L)、里程(km)、百公里油耗。</p>
+    <p><strong>设计级方案：</strong>需要 F05 油量曲线与 traj_gps_point <strong>新增油量字段（当前不存在）</strong>：日油耗=日末次油量-首次油量+当日加油量，或按 CAN 喷油量积分（依车型信号能力选型）；里程取 traj_daily_stat。依赖：F05、F12、18 号迁移油量列。</p>
+
+    <h3 id="f50">9.10 F50 加油报表</h3>
+    <p><strong>对标结果列：</strong>油量、加油类型、加油时间、加油位置。</p>
+    <p><strong>设计级方案：</strong>连续油量曲线的陡增事件检测（F05），结合位置逆地理与停留段确认；在 F05 油量数据稳定前列为第三波交付，不提前上线（误报加油会直接引发对账纠纷）。依赖：F05、F12 停车段。</p>
+
+    <h3 id="f51">9.11 F51 实时在线率（企业维度）</h3>
+    <p><strong>对标口径：</strong>入网数、在线数、离线数、故障数 + 在线率、离线率、故障率（<strong>三率合计 100%</strong>）。</p>
+    <p><strong>设计级方案：</strong>F02 统一在线状态实时聚合；<strong>先按 deptScope 裁剪企业车辆行再聚合</strong>（口径④），分母为该企业入网车辆总数；实时推送须先修复全量 WebSocket 广播（口径⑥）。依赖：F02。</p>
+
+    <h3 id="f52">9.12 F52 车辆工作情况</h3>
+    <p><strong>对标口径：</strong>按日输出里程、工作时长、日均平均速度、日最高速度、日最高速度位置，并配趋势图。</p>
+    <p><strong>设计级方案：</strong>traj_daily_stat（mileage_km、driving_s、max_speed、max_speed_time、max_speed_lng/lat，F12 已规划）；日均速度=里程/工作时长；位置逆地理。依赖：F12。</p>
+
+    <h3 id="f53">9.13 F53 服务费报表</h3>
+    <p><strong>对标结果列：</strong>到期状态、到期日、服务费金额、终端信息、SIM、车架号。</p>
+    <p><strong>设计级方案：</strong><strong>全新数据模型</strong>（客户-车辆-服务合同/缴费记录表，现库无对应），与到期提醒功能联动；终端/SIM 取 traj_terminal（F29），车架号取车辆资料。依赖：新建合同/缴费模型、F29。</p>
+
+    <h3 id="r-quick">9.14 13 项报表查询条件与结果列速查</h3>
+    <table>
+      <tr><th>F 码</th><th>主查询条件</th><th>核心结果列（节选）</th><th>特殊规则</th></tr>
+      <tr><td>F41</td><td>车牌 + 起止时刻</td><td>速度/方向/里程/油量/双时间/经纬度/位置描述/补点标记</td><td>明细 ≤7 天，超期异步</td></tr>
+      <tr><td>F42</td><td>年 / 周 + 车辆</td><td>车牌、颜色、企业、总里程</td><td>仅取 traj_daily_stat</td></tr>
+      <tr><td>F43</td><td>维度切换 + 快捷时间</td><td>行驶时长、总里程、趟次</td><td>汇总/明细双导出</td></tr>
+      <tr><td>F44</td><td>车辆 + 周期</td><td>停车总时长/次数、明细起止与位置</td><td>最小停车 3 分钟</td></tr>
+      <tr><td>F45</td><td>车辆 + 周期</td><td>怠速次数、怠速总时长</td><td>F05 前仅近似口径且页面标注</td></tr>
+      <tr><td>F46</td><td>司机 + 周期</td><td>驾驶证号、登录/登出、时长、里程、起讫位置</td><td>以终端身份识别为段边界</td></tr>
+      <tr><td>F47</td><td>按周 + 企业</td><td>离线率、七日在线矩阵、最后上点、联系人</td><td>三处 5 分钟口径先收口</td></tr>
+      <tr><td>F48</td><td>周期 + 企业</td><td>故障类型、离线时长、最后位置、设备号、SIM</td><td>故障分级按离线时长阈值</td></tr>
+      <tr><td>F49</td><td>车辆 + 日</td><td>油耗(L)、里程、百公里油耗</td><td>依赖新增油量列</td></tr>
+      <tr><td>F50</td><td>车辆 + 周期</td><td>油量、加油类型、时间、位置</td><td>第三波交付，防对账纠纷</td></tr>
+      <tr><td>F51</td><td>企业（实时）</td><td>入网/在线/离线/故障数与三率</td><td>三率合计 100%，先修广播</td></tr>
+      <tr><td>F52</td><td>车辆 + 日</td><td>里程、工作时长、日均/最高速度及位置</td><td>配趋势图</td></tr>
+      <tr><td>F53</td><td>到期状态/日期</td><td>到期日、金额、终端、SIM、车架号</td><td>全新合同模型</td></tr>
+    </table>
+
+    <h3 id="r-consistency">9.15 报表间口径一致性矩阵</h3>
+    <table>
+      <tr><th>指标</th><th>唯一取数来源</th><th>禁止事项</th></tr>
+      <tr><td>总里程</td><td>F12 traj_daily_stat.mileage_km</td><td>禁止各报表用点距自算或直接用终端 mileage 读数</td></tr>
+      <tr><td>行驶/停车时长、趟次</td><td>traj_trip_segment</td><td>禁止按速度阈值在各报表重复实现状态机</td></tr>
+      <tr><td>在线/离线/三率</td><td>F02 统一在线状态与日在线矩阵</td><td>禁止再用"最近 5 分钟有点"各自判断</td></tr>
+      <tr><td>报警数/百公里报警</td><td>mon.risk_event（冷却去重后的同一集合）</td><td>禁止把 video_analysis 占位任务数当报警</td></tr>
+      <tr><td>司机评分</td><td>mon.driver_score 快照</td><td>禁止报表页现算扣分（口径漂移风险）</td></tr>
+      <tr><td>位置描述</td><td>GeocodeController 逆地理统一出口</td><td>禁止各服务自调第三方地图接口（key 集中管理）</td></tr>
+    </table>
+
+    <h2 id="g2">10. 统计分析组 F54～F59</h2>
+    <blockquote class="warn">本节除 F57 司机周期安全分析的评分核心已上线（见第 8 节）外，F54/F55/F56/F58/F59 均为设计规划，尚未实现。</blockquote>
+
+    <h3 id="f54">10.1 F54 车辆周期安全分析</h3>
+    <p><strong>对标口径：</strong>周/月周期；结果列车牌、企业、地区、经营范围、里程、时长、报警数、百公里报警量、安全评分、查看报告。</p>
+    <p><strong>评分公式（对标产品口径）：</strong><code>评分 = 100 − Σ（百公里报警量 × 规则级别权重）</code>。规则范围特殊口径：<strong>"标准统计"类规则（含已禁用的标准规则）参与计算，"内部统计"类规则不参与</strong>——现 ScoreConstants 只有事件白名单 8 码，没有标准/内部分类，需新建规则统计属性映射。</p>
+    <p><strong>设计级方案：</strong>里程时长取 F12 日分片；报警按 mon.risk_event 在周期内聚合（按 rule 配置的级别权重）；地区取 F10 adcode；经营范围取 11 项经营范围字典；报告页下钻明细。依赖：F12、规则属性扩展。</p>
+    <h4>10.1.1 评分算例（权重为示例值，详设固化）</h4>
+    <pre><code>车辆 X，周期内里程 1200 km：
+  严重超速 2 次（级别权重 8）、一般超速 4 次（权重 4）、疲劳驾驶 1 次（权重 8）
+  扣分 = Σ_type (次数_type ÷ 里程 × 100 × 权重_type)
+       = (2×8 + 4×4 + 1×8) ÷ 1200 × 100 = 40 ÷ 1200 × 100 = 3.33
+  周期评分 = 100 − 3.33 = 96.7
+注：① 8 个白名单码之外的规则是否计入，由"标准统计/内部统计"属性决定；
+    ② 已禁用的"标准统计"规则仍参与历史周期计算；
+    ③ 权重具体取值需安全业务确认，不可直接照搬本算例。</code></pre>
+
+    <h3 id="f55">10.2 F55 企业周期安全分析</h3>
+    <p><strong>对标口径：</strong>以企业为行：车辆数、里程、时长、报警数、百公里报警量、评分。</p>
+    <p><strong>设计级方案：</strong>严格按口径④<strong>先裁剪企业行（自定义范围补祖先链）再聚合</strong> F54 的车辆行结果；企业评分为车辆评分加权（权重=里程占比，详设固化）。依赖：F54、F12、组织树。</p>
+
+    <h3 id="f56">10.3 F56 企业安全综合分析看板</h3>
+    <p><strong>对标内容：</strong>10 个指标卡、报警分类图、报警趋势/类型/高风险时段三图、车辆安全排名、报告模板管理、PDF 导出、AI 助手入口。</p>
+    <p><strong>现状：</strong>F15 实时监控大盘、F23 风险看板已覆盖部分指标与图表（部分具备）；报告模板、PDF 导出、AI 助手未建。</p>
+    <p><strong>设计级方案：</strong>指标卡数据来自 F51/F54/F55 聚合服务；图表复用现有前端图表组件；报告模板做模板表 + 占位符渲染；PDF 服务端生成（中文字体、定时推送可选）；AI 助手的具体话术与交互<strong>未见实页确认（见待核实）</strong>，仅预留入口。依赖：F51/F54/F55。</p>
+    <h4>10.3.1 规划指标卡与图表清单</h4>
+    <table>
+      <tr><th>区域</th><th>内容</th><th>取数</th></tr>
+      <tr><td>指标卡 ×10</td><td>入网车辆、在线车辆、在线率、总里程、总行驶时长、报警总数、百公里报警、平均评分、高危车辆数、待处置工单数</td><td>F51 + F54/F55 + 现有工单计数</td></tr>
+      <tr><td>报警分类图</td><td>按 8 白名单码 + 其他规则分类占比</td><td>risk_event 周期聚合</td></tr>
+      <tr><td>趋势图</td><td>报警量/百公里报警按日折线</td><td>mv_vehicle_safety_weekly 等</td></tr>
+      <tr><td>类型图</td><td>报警类型 TOP 排名</td><td>同上</td></tr>
+      <tr><td>高风险时段</td><td>24 小时分桶热力（夜间高亮）</td><td>risk_event 按小时分桶</td></tr>
+      <tr><td>车辆排名</td><td>评分倒序/报警正序 TOP N，下钻 F54 报告</td><td>F54 车辆行</td></tr>
+      <tr><td>报告区</td><td>模板管理、占位符渲染、PDF 导出、定时推送（可选）</td><td>新建模板表 + 服务端 PDF</td></tr>
+    </table>
+
+    <h3 id="f57">10.4 F57 司机周期安全分析</h3>
+    <p><strong>对标结果列：</strong>从业资格证号、里程、时长、报警数、百公里报警量、评分。</p>
+    <p><strong>现状：</strong>mon.driver_score 日快照 + ScoreList 已提供评分/趋势/汇总（含等级 A～E、样本门槛），<span class="badge green">本项核心已具备</span>；缺从业资格证号列展示（取 F31 司机资料）、百公里报警量（需 F12 里程）与周期（周/月）聚合视图。</p>
+    <p><strong>设计级方案：</strong>评分沿用 ScoreConstants 口径不改；在日快照上做周/月汇总并 JOIN 司机资料与 F12 里程。依赖：F12、F31。</p>
+
+    <h3 id="f58">10.5 F58 车辆商机分析</h3>
+    <p><strong>对标内容：</strong>保险信息（保险公司、金额、险种）、出车率、运营时段分布（夜间/凌晨/上午/下午/黄昏）、路段分布（高速/省道）、千公里事故数、违章、违法记录。</p>
+    <p><strong>设计级方案：</strong><strong>全新数据模型</strong>：车辆保险表（8 项险种字典）、违章/违法/事故记录表（多为外部数据导入/接口）；出车率由 F12 段数据计算；运营时段由 night_mileage 等时段分桶；路段由 F10 road_id 等级聚合；车辆状态用车辆状态字典。依赖：新建业务模型 + 外部数据导入、F12、F10。</p>
+    <h4>10.5.1 新建模型核心字段（规划）</h4>
+    <table>
+      <tr><th>表</th><th>核心字段</th><th>数据来源</th></tr>
+      <tr><td>biz_vehicle_insurance</td><td>vehicle_id、保险公司、保单号、险种（交强/商业三者/车损/车上人员/盗抢/玻璃/不计免赔/其他 8 项字典）、保额、保费、起止日期</td><td>手工录入/导入</td></tr>
+      <tr><td>biz_vehicle_violation</td><td>vehicle_id、违章时间、地点、代码、扣分、罚款、处理状态</td><td>第三方接口或 Excel 导入（授权待定）</td></tr>
+      <tr><td>biz_vehicle_accident</td><td>vehicle_id、事故时间、地点、等级、责任划分、千公里事故统计关联</td><td>手工/保险理赔导入</td></tr>
+      <tr><td>biz_service_contract（F53）</td><td>customer_id、vehicle_id、合同金额、起止日期、缴费记录、到期状态</td><td>手工录入</td></tr>
+    </table>
+    <p>以上表均带 vehicle_id 并经 traj_vehicle.dept_id 接入七条范围口径；外部导入文件走管理端导入（行数校验、失败行回执），不允许直接写库。</p>
+
+    <h3 id="f59">10.6 F59 轨迹完整率</h3>
+    <p><strong>交付方式：</strong>异步计算（日期范围 ≤10 天、阈值参数过滤），结果经下载中心交付。</p>
+    <p><strong>结果列：</strong>连续里程、轨迹里程、轨迹完整率、错误定位数、定位总数、错误占比、合格率、漂移总数。</p>
+    <h3>10.6.1 连续里程判定口径（必须严格实现）</h3>
+    <ul>
+      <li>相邻点距离 <strong>≤2km</strong> 视为连续；</li>
+      <li>连续出现 <strong>5 段</strong> 距离 &gt;2km 且 ≤10km 的间隔，则<strong>从第 6 段起判为不连续</strong>；之后若出现一段 &lt;2km，则计数归零重新开始；</li>
+      <li>相邻点距离 <strong>&gt;10km</strong> 直接判不连续。</li>
+    </ul>
+    <h3>10.6.2 错误点五规则 + 漂移</h3>
+    <ol>
+      <li>经纬度超出有效范围；</li>
+      <li>海拔不在 −200～6000 米；</li>
+      <li>速度 &lt;0 或 &gt;160km/h；</li>
+      <li>方向角不在 0～360 度；</li>
+      <li>定位时间晚于接收时间 20 小时以上；</li>
+      <li>漂移：连续点按距离÷时间等效速度 &gt;160km/h。</li>
+    </ol>
+    <p><strong>指标公式：</strong>合格率=合格点数÷定位总数；轨迹完整率=连续里程÷轨迹总里程。判定函数与 F08 清洗共用同一套规则代码（MOD-DBD-015 原则②）。依赖：F08/F36 质量标记；异步导出框架（第 11 节）。</p>
+    <h3>10.6.3 连续里程判定边界用例（验收标准数据集）</h3>
+    <table>
+      <tr><th>#</th><th>相邻点间隔序列（km）</th><th>期望判定</th></tr>
+      <tr><td>1</td><td>1, 1, 1, 1, 1, 11</td><td>前 5 段连续；第 6 段 &gt;10km，直接不连续</td></tr>
+      <tr><td>2</td><td>3, 3, 3, 3, 3, 3</td><td>连续 5 段 (2,10] 仍计连续；<strong>从第 6 段起</strong>判不连续</td></tr>
+      <tr><td>3</td><td>3, 3, 3, 3, 3, 3, 1.5, 3</td><td>第 6 段不连续；遇 1.5km（&lt;2）计数归零；其后第 1 个 3km 重新计为连续</td></tr>
+      <tr><td>4</td><td>2, 2, 2</td><td>≤2km 含等号，全部连续</td></tr>
+      <tr><td>5</td><td>10, 10.001</td><td>第 1 段 10 属 (2,10] 连续计数；第 2 段 &gt;10 直接不连续</td></tr>
+      <tr><td>6</td><td>3, 3, 3, 3, 3, 3, 3</td><td>第 6、7 段均不连续（不因继续超阈值而恢复计数）</td></tr>
+    </table>
+    <table>
+      <tr><th>错误/漂移规则</th><th>边界用例</th><th>期望</th></tr>
+      <tr><td>速度</td><td>v=160 / v=161 / v=−1（km/h）</td><td>160 合法；161 与负值判错误</td></tr>
+      <tr><td>海拔</td><td>−200 / 6000 / 6001（m）</td><td>−200、6000 合法（含边界）；6001 错误</td></tr>
+      <tr><td>方向</td><td>0 / 360 / 360.1（度）</td><td>0、360 合法；超出错误</td></tr>
+      <tr><td>时钟</td><td>定位时间晚于接收恰好 20h / 20h00m01s</td><td>恰好 20 小时合法；超出错误</td></tr>
+      <tr><td>漂移</td><td>两点 5km、间隔 112 秒（≈160.7km/h）</td><td>等效速度 &gt;160 判漂移</td></tr>
+    </table>
+    <h3>10.6.4 计算流程伪代码（异步任务按车分片）</h3>
+    <pre><code>for 每辆车（按 vehicle_id 分片并行，受 worker 并发度限制）:
+  points = 按 gps_time 升序拉取窗口内定位点（只取必要列）
+  totalDist = 0; continuousDist = 0
+  badCount = 0; driftCount = 0
+  mediumStreak = 0          // (2,10] 间隔的连续计数
+  prev = null
+  for p in points:
+    if 命中错误五规则(经纬度/海拔/速度/方向/时钟):
+      badCount++; continue          // 错误点不参与连续里程判定
+    if prev != null:
+      d = haversine(prev, p)
+      totalDist += d
+      if d &lt;= 2:
+        continuousDist += d; mediumStreak = 0       // ≤2km 连续并归零
+      else if d &lt;= 10:
+        mediumStreak += 1
+        if mediumStreak &lt;= 5: continuousDist += d  // 前 5 段仍计连续
+        // 第 6 段起不计入连续里程
+      else:
+        mediumStreak = 0             // &gt;10km 直接不连续
+      if 漂移(prev, p): driftCount++ // 距离÷时间等效速度 &gt;160km/h
+    prev = p
+  合格率   = (总点数 − badCount − driftCount) ÷ 总点数
+  完整率   = continuousDist ÷ totalDist
+  连续里程 = continuousDist</code></pre>
+    <p>说明：判定函数（五规则、漂移、连续里程）与 MOD-015 F08 清洗共用同一实现类，禁止报表侧另写一份；分片结果汇总后写导出文件，单片失败只重试该车，不重跑全任务。</p>
+    <h3>10.7 周/月汇总视图设计</h3>
+    <ul>
+      <li>司机维度：在 mon.driver_score 日快照上建视图 v_driver_score_weekly / monthly：均分（加权口径待产品确认，见待核实）、等级、事件数求和、样本点求和。</li>
+      <li>车辆维度：新增物化视图 mv_vehicle_safety_weekly（F12 里程 + risk_event 聚合），T+1 刷新，支持按周/月范围查询。</li>
+      <li>企业维度：在车辆物化结果上"先裁剪后聚合"，禁止在全量物化结果上聚合后再过滤企业。</li>
+      <li>百公里报警量在物化层预算（报警数 ÷ 里程 ×100），前端与导出不取到原始事件后自行除法。</li>
+    </ul>
+
+    <h2 id="t-export">11. 异步导出与下载中心（规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。当前平台无异步导出任务框架。</blockquote>
+    <table>
+      <tr><th>环节</th><th>设计</th></tr>
+      <tr><td>任务提交</td><td>大跨度报表（如 F59 10 天、F42 年度）提交导出任务：执行人、功能 code、查询参数、<strong>deptScope 快照</strong>（口径⑤）</td></tr>
+      <tr><td>异步执行</td><td>后台 worker（参照评分重算的互斥模式扩展为队列）分页拉取写 xlsx/csv；进度可查</td></tr>
+      <tr><td>文件隔离</td><td>文件与执行人绑定，下载鉴权；他人无权访问（口径⑤）</td></tr>
+      <tr><td>留存清理</td><td>导出文件保留期规划 7 天自动清理；导出动作用 @AuditLog EXPORT 留痕（动作已预留）</td></tr>
+      <tr><td>下载中心 UI</td><td>任务状态（排队/生成中/成功/失败）、文件大小、生成时间、下载/重试</td></tr>
+    </table>
+    <h3>11.1 export_task 表草案</h3>
+    <pre><code>CREATE TABLE mon.export_task (
+  id             BIGINT PRIMARY KEY,
+  task_no        VARCHAR(32) UNIQUE NOT NULL,  -- EX + yyyyMMdd + 序列
+  func_code      VARCHAR(40) NOT NULL,         -- 如 track-integrity（F59）
+  query_params   JSONB NOT NULL,               -- 查询条件快照
+  scope_snapshot JSONB NOT NULL,               -- {"deptScope":[...],"scopeType":"..."}
+  operator_id    BIGINT NOT NULL,
+  status         VARCHAR(16) NOT NULL,         -- QUEUED/RUNNING/SUCCESS/FAILED
+  file_path      VARCHAR(255),
+  file_size      BIGINT,
+  row_count      INT,
+  error_msg      VARCHAR(1000),
+  create_time    TIMESTAMP DEFAULT now(),
+  start_time     TIMESTAMP,
+  finish_time    TIMESTAMP,
+  expire_time    TIMESTAMP                     -- create_time + 7 天
+);</code></pre>
+    <h3>11.2 异步执行时序</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">提交</div><div class="s-desc">写 export_task（QUEUED），固化查询条件与 deptScope 快照</div></div>
+      <div class="step"><div class="s-title">认领</div><div class="s-desc">worker 以 SELECT ... FOR UPDATE SKIP LOCKED 认领，置 RUNNING；多 worker 不抢同一任务</div></div>
+      <div class="step"><div class="s-title">生成</div><div class="s-desc">按快照范围分页拉取，SXSSF 流式写 xlsx（含汇总页），避免内存堆积</div></div>
+      <div class="step"><div class="s-title">交付</div><div class="s-desc">文件落存储并按 operator_id 隔离鉴权，置 SUCCESS，下载中心可见</div></div>
+      <div class="step"><div class="s-title">清理</div><div class="s-desc">超过 expire_time 的文件与记录定时清理；提交/下载写 @AuditLog EXPORT</div></div>
+    </div>
+    <h3>11.3 失败处理与权限</h3>
+    <ul>
+      <li>RUNNING 超时（规划 30 分钟）置 FAILED 并释放认领；FAILED 允许本人在下载中心重试（重新快照当前范围）。</li>
+      <li>下载接口校验文件归属 operator_id 与当前登录用户一致；任何越权下载尝试记审计。</li>
+      <li>并发配额：每用户同时 QUEUED/RUNNING 任务 ≤3，防止大批量导出拖垮库。</li>
+    </ul>
+
+    <h2 id="t-schema">12. 数据模型与来源汇总</h2>
+    <table>
+      <tr><th>数据需求</th><th>来源（现状/规划）</th><th>支撑报表</th></tr>
+      <tr><td>原始定位点</td><td>traj_gps_point（现状）+ ext/油量/补点（18 号迁移）</td><td>F41、F59</td></tr>
+      <tr><td>里程/行驶/停车/日统计</td><td>traj_daily_stat、traj_trip_segment（F12 规划）</td><td>F42/F43/F44/F45/F52/F54/F55/F57</td></tr>
+      <tr><td>怠速/油量曲线</td><td>F05 CAN/OBD + 新增油量列（现不存在）</td><td>F45/F49/F50</td></tr>
+      <tr><td>司机驾驶段</td><td>终端身份识别 + traj_vehicle_driver 绑定（F31）</td><td>F46/F57</td></tr>
+      <tr><td>在线/离线/心跳</td><td>traj_terminal 在线字段 + 日在线矩阵（F02）</td><td>F47/F48/F51</td></tr>
+      <tr><td>风险事件</td><td>mon.risk_event（现状，需 source_id 等扩展）</td><td>F54～F57</td></tr>
+      <tr><td>司机评分</td><td>mon.driver_score（已上线）</td><td>F57；F54/F55 参考</td></tr>
+      <tr><td>道路/行政区</td><td>traj_road_net（F10 规划）</td><td>F54 地区、F58 路段</td></tr>
+      <tr><td>服务费合同/缴费</td><td>新建（F53）</td><td>F53</td></tr>
+      <tr><td>保险/违章/事故</td><td>新建 + 外部导入（F58）</td><td>F58</td></tr>
+      <tr><td>导出任务</td><td>新建 export_task + 文件存储（规划）</td><td>全部导出</td></tr>
+    </table>
+    <h3>12.1 预聚合分层与刷新调度</h3>
+    <table>
+      <tr><th>层</th><th>内容</th><th>刷新</th><th>下游</th></tr>
+      <tr><td>明细层</td><td>traj_gps_point（+ 清洗标记/ext，18 号迁移）</td><td>实时写入</td><td>F41、F59</td></tr>
+      <tr><td>段/日层</td><td>traj_trip_segment、traj_daily_stat</td><td>F12 流式产出 + T+1 校准（01:00 后）</td><td>F42～F45/F52/F54/F55</td></tr>
+      <tr><td>在线矩阵</td><td>终端 × 日在线时长 / 离线段</td><td>F02 每小时滚动 + 日终收口</td><td>F47/F48/F51</td></tr>
+      <tr><td>周/月层</td><td>v_driver_score_*、mv_vehicle_safety_weekly</td><td>周日 02:00、每月 1 日 02:30</td><td>F54/F55/F56/F57</td></tr>
+      <tr><td>实时层</td><td>F51 三率内存聚合</td><td>秒级，不落历史</td><td>F51</td></tr>
+    </table>
+    <p>重算原则：日层只重算受影响分片（补传回补按 gps_time 定位分片）；周/月层由日层重算后级联刷新，禁止全周期重扫明细。</p>
+
+    <h2 id="t-choice">13. 选型与实施顺序</h2>
+    <table>
+      <tr><th>决策</th><th>方案</th><th>理由</th></tr>
+      <tr><td>实施顺序</td><td>按数据底座波次：第一波 F47/F48/F51（F02 上线即激活）→ 第二波 F42/F43/F44/F46/F52/F54/F55/F57（F12 上线）→ F41（随 18 号迁移）→ 第三波 F45/F49/F50（F05）→ F59（F08/F36）→ F53/F58（独立业务建模）</td><td>占位菜单先行、底座建成即替换，避免空报表上线</td></tr>
+      <tr><td>聚合方式</td><td>T+1 日分片预聚合 + 周/月汇总；实时性仅 F51 需要</td><td>19 项中 18 项为周期统计，预聚合成本低、口径稳</td></tr>
+      <tr><td>导出</td><td>服务端生成 xlsx（含汇总页）；F59 等异步</td><td>避免前端全量拉取造成 OOM 与越权</td></tr>
+      <tr><td>权限</td><td>统一在 Service 层用 UserInfo.deptScope 收口，前端只隐藏入口不做安全边界</td><td>与现有 IAM 一致</td></tr>
+    </table>
+    <h3>13.1 报表激活检查表（每个占位菜单替换前必须全部满足）</h3>
+    <ol>
+      <li>数据来源已上线：依赖的底座（F02/F05/F08/F12 等）已有真实数据，不是临时造数。</li>
+      <li>口径已登记：指标取数来源写入 9.15 一致性矩阵，不与其他报表冲突。</li>
+      <li>范围已收口：Service 层 deptScope 裁剪经越权用例验证（改参数/空集合/跨企业三类）。</li>
+      <li>性能已达标：时间窗上限内 P95 ≤2 秒；大结果集走异步导出。</li>
+      <li>导出可控：同步/异步路径明确，文件名与汇总页符合 9.0 约定，EXPORT 审计可查。</li>
+      <li>占位替换：ComingSoon 路由替换为真实页面，菜单 code 与权限点不变。</li>
+    </ol>
+
+    <h2 id="t-risk">14. 风险与对策</h2>
+    <table>
+      <tr><th>风险</th><th>对策</th></tr>
+      <tr><td>越权看到他企业数据</td><td>七条口径在 Service 层强制；dept_id 为空车辆对受限角色不可见；企业聚合先裁剪后聚合；导出固化范围快照并做越权用例专项测试</td></tr>
+      <tr><td>报表口径互相矛盾</td><td>里程/时长/在线统一取 F12/F02，不允许各报表自写算法；F45 近似口径必须页面标注</td></tr>
+      <tr><td>全量 WebSocket 广播泄密</td><td>F51 上线前先关闭或修复为按 deptScope 过滤推送（口径⑥ 已列强制）</td></tr>
+      <tr><td>底座未建成强行上线</td><td>无数据来源的报表保持 ComingSoon；F45 近似口径与 F50 加油检测不抢跑</td></tr>
+      <tr><td>大导出压垮库</td><td>异步队列、分页、只读从库（F39 主从后）、文件保留期清理</td></tr>
+      <tr><td>F54 规则分类口径缺失</td><td>"标准统计/内部统计"属性需在规则模型新增字段并回填，历史规则默认归类经安全业务确认</td></tr>
+    </table>
+
+    <h2 id="t-accept">15. 验收标准</h2>
+    <ol>
+      <li>19 个菜单按 17-analysis-menu.sql 对 4 个角色可见；占位页 code 与名称映射正确。</li>
+      <li>每个激活的报表：受限角色越权（改 URL 参数/直接调 API）均只能拿到自己范围内数据；deptScope 空集合返回空。</li>
+      <li>车辆类报表全部以 traj_vehicle.dept_id 为锚点；司机类经绑定并集；企业类先裁剪后聚合（用 SQL 审计核对执行计划与过滤顺序）。</li>
+      <li>F47/F48/F51 与 F02 在线状态数值一致；三率合计严格 100%。</li>
+      <li>F42/F43/F44/F52 与 F12 派生层直算结果抽样一致（50 车 ×7 天）。</li>
+      <li>F54 评分按 100−Σ（百公里报警×级别权重）计算，"标准统计（含禁用）参与、内部统计不参与"规则有对应用例。</li>
+      <li>F59：连续里程三条规则、错误五规则+漂移、合格率/完整率公式用标准数据集验证全部边界（第 6 段计数、归零、&gt;10km）。</li>
+      <li>异步导出：范围快照固化、文件仅本人可下载、过期清理、EXPORT 审计可查。</li>
+      <li>驾驶评分重算互斥、92 天上限、权限与 @AuditLog 行为保持现状不回归。</li>
+      <li>F45 在 F05 未上线时若试运行，页面必须带"近似口径"显著标识，正式导出禁用。</li>
+      <li>同步导出超 5000 行的请求被拒绝并引导走异步；异步任务并发配额、7 天清理、超时失败均有对应用例。</li>
+      <li>F56 看板指标卡数值与 F51/F54/F55 对应报表数值逐项一致（同一聚合层，不另算）。</li>
+      <li>F53/F58 新模型页面与导入功能均接入 deptScope；外部导入失败行有明确回执，不产生半量数据。</li>
+    </ol>
+
+    <h2 id="t-api">16. 拟新增接口清单（规划）</h2>
+    <blockquote class="warn">以下接口均为规划，随各波次底座落地；除登录态外全部强制 deptScope 裁剪，写操作按现有 @AuditLog 约定留痕。</blockquote>
+    <table>
+      <tr><th>F 码</th><th>规划接口（节选）</th><th>导出方式</th></tr>
+      <tr><td>F41</td><td>GET /api/report/track/page</td><td>异步分片 xlsx</td></tr>
+      <tr><td>F42</td><td>GET /api/report/mileage/summary（year/week）</td><td>同步</td></tr>
+      <tr><td>F43</td><td>GET /api/report/driving/summary、/detail</td><td>双 sheet 导出</td></tr>
+      <tr><td>F44</td><td>GET /api/report/parking/summary、/detail</td><td>双 sheet 导出</td></tr>
+      <tr><td>F45</td><td>GET /api/report/idling/summary</td><td>同步（F05 后）</td></tr>
+      <tr><td>F46</td><td>GET /api/report/driver-driving/page</td><td>同步</td></tr>
+      <tr><td>F47</td><td>GET /api/report/offline/weekly</td><td>同步</td></tr>
+      <tr><td>F48</td><td>GET /api/report/faulty-vehicle/page</td><td>同步</td></tr>
+      <tr><td>F49</td><td>GET /api/report/fuel/daily</td><td>同步</td></tr>
+      <tr><td>F50</td><td>GET /api/report/refuel/page</td><td>同步</td></tr>
+      <tr><td>F51</td><td>GET /api/report/online-rate/realtime + WS 推送</td><td>快照导出</td></tr>
+      <tr><td>F52</td><td>GET /api/report/vehicle-work/daily</td><td>同步</td></tr>
+      <tr><td>F53</td><td>GET /api/report/service-charge/page + 合同 CRUD（F53 管理）</td><td>同步</td></tr>
+      <tr><td>F54</td><td>GET /api/stat/vehicle-safety/period、/{id}/report</td><td>报告 PDF（F56）</td></tr>
+      <tr><td>F55</td><td>GET /api/stat/enterprise-safety/period</td><td>同步</td></tr>
+      <tr><td>F56</td><td>GET /api/stat/security-dashboard、/report-template/*、/report/export</td><td>PDF 异步</td></tr>
+      <tr><td>F57</td><td>GET /api/stat/driver-safety/period（复用 score 快照）</td><td>同步</td></tr>
+      <tr><td>F58</td><td>GET /api/stat/business-opportunity/* + 保险/违章导入</td><td>同步</td></tr>
+      <tr><td>F59</td><td>POST /api/stat/track-integrity/task（异步）、GET /api/export/tasks</td><td>异步 xlsx</td></tr>
+      <tr><td>公共</td><td>GET /api/export/tasks、/api/export/tasks/{id}/download</td><td>下载中心</td></tr>
+    </table>
+
+    <h2 id="t-perf">17. 性能与容量设计（规划）</h2>
+    <blockquote class="warn">本节指标与手段均为设计规划，目标值随各波次底座上线后压测验证，不代表当前系统能力。</blockquote>
+    <table>
+      <tr><th>场景</th><th>目标</th><th>手段</th></tr>
+      <tr><td>F41 轨迹明细分页</td><td>P95 ≤2 秒</td><td>(vehicle_id, gps_time) 索引 + 按月分区/BRIN；强制车辆 + ≤7 天条件</td></tr>
+      <tr><td>日聚合批处理</td><td>500 车 ×1 日 &lt;5 分钟</td><td>F12 流式预聚合；T+1 校准只重算昨日分片</td></tr>
+      <tr><td>并发在线浏览</td><td>50 并发，P95 ≤2 秒</td><td>预聚合层承压；F39 主从上线后报表读走从库</td></tr>
+      <tr><td>F59 完整率</td><td>500 车 ×10 天异步完成</td><td>按车分片并行；判定函数与 F08 同一份实现</td></tr>
+      <tr><td>大导出</td><td>100 万行不 OOM</td><td>SXSSF 流式写 + 分页 fetch + 任务资源隔离</td></tr>
+      <tr><td>F51 实时推送</td><td>状态变化到前端 ≤2 秒</td><td>在线状态内存态 + deptScope 过滤推送；上线前先修全量广播</td></tr>
+      <tr><td>逆地理调用</td><td>不打爆第三方配额</td><td>GeocodeController 统一出口 + 结果缓存（路段/常用地点）</td></tr>
+    </table>
+    <h3>17.1 索引与分区草案（规划 DDL，随 F12/18 号迁移评审）</h3>
+    <pre><code>-- 明细层：强制 (vehicle, gps_time) 访问路径
+CREATE INDEX idx_gps_point_vehicle_time
+  ON traj.traj_gps_point (vehicle_id, gps_time DESC);
+-- 按月分区后配合 BRIN 承载时间范围扫描
+CREATE INDEX idx_gps_point_time_brin
+  ON traj.traj_gps_point USING brin (gps_time);
+
+-- 日分片：覆盖 F42/F43/F52 周期聚合
+CREATE INDEX idx_daily_stat_vehicle_date
+  ON traj.traj_daily_stat (vehicle_id, stat_date);
+
+-- 评分快照：周/月视图按日期范围扫
+CREATE INDEX idx_driver_score_date
+  ON mon.driver_score (score_date);</code></pre>
+    <ul>
+      <li>所有报表上线前用 <code>EXPLAIN (ANALYZE, BUFFERS)</code> 核对执行计划：不允许出现未带 vehicle/时间条件的全表扫描。</li>
+      <li>分区策略（按月 RANGE）与保留期随 MOD-018 F37 留存矩阵统一评审，避免各模块各自建表。</li>
+    </ul>
+
+    <h2 id="t-fe">18. 前端实现约定（规划）</h2>
+    <blockquote class="warn">本节约定为设计规划，随各报表页面分批实施时执行；现状仅 ComingSoon 占位页。</blockquote>
+    <ul>
+      <li>占位页替换期间保持菜单 ID 与路由 code 不变（17-analysis-menu.sql 已全量授权），仅替换组件：<code>/analysis/coming/:code</code> → 各报表页。</li>
+      <li>查询区统一组件：快捷时间（今日/昨日/本周/上周/本月/上月）+ 自定义；维度切换（车牌/司机/企业）；查询条件写入 URL query，支持刷新恢复（报警中心同款做法）。</li>
+      <li>表格统一：el-table + 分页器（20/50/100/200），数值右对齐、单位列名标注；无数据空态区分"范围内无车 / 时间窗无数据 / 底座未上线"。</li>
+      <li>近似口径（F45 试运行）必须在查询区与导出文件双处显著标注，不允许仅靠 tooltip。</li>
+      <li>图表复用监控大盘现有图表组件与配色；导出按钮按 5000 行阈值切换同步/异步入口并提示。</li>
+      <li>所有雪花 ID 按 string 处理（Long 精度教训）；车牌等长 ID 不在前端做数值运算。</li>
+    </ul>
+
+    <h2 id="deps">规划依赖关系</h2>
+    <table>
+      <tr><th>报表</th><th>前置依赖</th></tr>
+      <tr><td>F41 轨迹报表</td><td>F04 补点标记、油量列（MOD-014 18 号迁移）、F09 坐标</td></tr>
+      <tr><td>F42/F43/F44/F52</td><td>F12 派生统计（MOD-DBD-015）；F43/F46 另依赖 F31 绑定</td></tr>
+      <tr><td>F45 怠速</td><td>F05 ACC/转速 + F12（F05 前仅近似口径）</td></tr>
+      <tr><td>F46 司机驾驶</td><td>F31 车-司机绑定、F01 驾驶员身份识别信号</td></tr>
+      <tr><td>F47/F48/F51</td><td>F02 在线状态；F48 另依赖 F29（sim_account）</td></tr>
+      <tr><td>F49 油耗</td><td>F05 油量信号 + traj_gps_point 新增油量列 + F12 里程</td></tr>
+      <tr><td>F50 加油</td><td>F05 连续油量曲线、F12 停车段（第三波）</td></tr>
+      <tr><td>F53 服务费</td><td>新建合同/缴费模型 + F29 终端/SIM 资料</td></tr>
+      <tr><td>F54/F55/F57</td><td>F12 里程时长、mon.risk_event、规则统计属性；F57 评分已具备</td></tr>
+      <tr><td>F56 综合看板</td><td>F51/F54/F55；报告模板/PDF 新建；AI 助手待核实</td></tr>
+      <tr><td>F58 商机分析</td><td>新建保险/违章/事故模型与外部导入、F12、F10</td></tr>
+      <tr><td>F59 完整率</td><td>F08 清洗规则（共用函数）、F36 质量体系、异步导出框架</td></tr>
+    </table>
+
+    <h2 id="todo">待核实项</h2>
+    <table>
+      <tr><th style="width:260px">事项</th><th>说明</th></tr>
+      <tr><td>F56 AI 助手</td><td>对标产品含 AI 助手入口，但具体话术、能力边界与对接模型未在实页确认；本期仅规划入口与指标取数接口，不承诺对话能力。</td></tr>
+      <tr><td>油量字段形态</td><td>traj_gps_point 现无油量列；独立列还是 ext jsonb、单位（L/原始值双列）需与 MOD-014/015 详设共同定版。</td></tr>
+      <tr><td>F54 规则"标准/内部统计"分类</td><td>现规则模型无该属性，历史规则如何回填默认值需安全业务确认。</td></tr>
+      <tr><td>企业评分加权方式</td><td>F55 企业评分按车辆均值还是里程加权，对标材料未完全明确，详设需产品确认。</td></tr>
+      <tr><td>F58 外部数据来源</td><td>保险/违章/违法数据是手工导入还是第三方接口、合规授权如何取得，需业务侧落实。</td></tr>
+      <tr><td>导出文件保留 7 天</td><td>为规划值，需与客户合同/存储容量确认。</td></tr>
+    </table>
+
+    <h2 id="revisions">修订记录</h2>
+    <table>
+      <tr><th>版本</th><th>日期</th><th>修订人</th><th>说明</th></tr>
+      <tr><td>v1.0.0</td><td>2026-10-05</td><td>平台文档组</td><td>首次发布：F41～F59 逐项对标与设计级方案；如实标注"菜单/评分/画像已上线、19 项报表占位"的部分具备状态；固化数据范围七条强制口径与 F59 完整率判定细则。</td></tr>
+    </table>
+    <div class="docfoot">
+      <span>北斗导航数据业务平台 mydbd · 功能模块文档</span>
+      <span>MOD-DBD-017 v1.0.0</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

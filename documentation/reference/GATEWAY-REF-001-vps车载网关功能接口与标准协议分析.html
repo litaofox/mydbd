@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GATEWAY-REF-001 vps车载网关功能、接口与标准协议分析 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --ok:#1a7f37; --warn:#b3541e; --bad:#c0392b;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .home{color:#fff;text-decoration:none;font-size:14px;opacity:.85;margin-right:18px;white-space:nowrap;}
+.topbar .home:hover{opacity:1;}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:24px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:#fdf3e7;border-left-color:var(--warn);color:#6b431a;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+code{font-family:Consolas,"Courier New",monospace;font-size:13.5px;
+  background:#eef1f6;color:#b02a5e;padding:2px 6px;border-radius:4px;}
+pre{background:var(--code-bg);color:#d7e0ee;border-radius:10px;padding:18px 20px;
+  overflow-x:auto;line-height:1.55;font-size:13.5px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+pre code{background:none;color:inherit;padding:0;font-size:inherit;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 12px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:8px 12px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+h1 strong,h2 strong,h3 strong{color:inherit;}
+.meta{color:var(--muted);font-size:13.5px;margin-top:6px;}
+.tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;
+  vertical-align:middle;white-space:nowrap;}
+.tag-up{background:#e7f4ec;color:var(--ok);}
+.tag-down{background:#e8f0fe;color:var(--primary);}
+.tag-ok{background:#e7f4ec;color:var(--ok);}
+.tag-part{background:#fdf3e7;color:var(--warn);}
+.tag-no{background:#fdecea;color:var(--bad);}
+.mono{font-family:Consolas,"Courier New",monospace;font-size:13px;}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  pre,table,blockquote{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">GATEWAY-REF-001 vps 车载网关功能、接口与标准协议分析</div>
+  <div class="right"><a href="../index.html">返回文档中心</a></div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+<ul>
+<li><a href="#ch1">1. 文档说明</a></li>
+<li><a href="#ch2">2. 系统总览</a>
+<ul>
+<li><a href="#ch2-1">2.1 定位与能力边界</a></li>
+<li><a href="#ch2-2">2.2 技术栈</a></li>
+<li><a href="#ch2-3">2.3 模块结构</a></li>
+<li><a href="#ch2-4">2.4 部署拓扑与端口</a></li>
+</ul></li>
+<li><a href="#ch3">3. 核心业务流程</a>
+<ul>
+<li><a href="#ch3-1">3.1 注册 / 鉴权 / 心跳</a></li>
+<li><a href="#ch3-2">3.2 定位上报</a></li>
+<li><a href="#ch3-3">3.3 主动安全报警与苏标附件</a></li>
+<li><a href="#ch3-4">3.4 立即拍照</a></li>
+<li><a href="#ch3-5">3.5 实时音视频传输</a></li>
+<li><a href="#ch3-6">3.6 历史录像回放</a></li>
+<li><a href="#ch3-7">3.7 对讲 / 监听 / 广播</a></li>
+<li><a href="#ch3-8">3.8 终端上下线</a></li>
+</ul></li>
+<li><a href="#ch4">4. 接口清单</a>
+<ul>
+<li><a href="#ch4-1">4.1 终端侧 TCP 信令（JT/T 808）</a></li>
+<li><a href="#ch4-2">4.2 附件侧 TCP（苏标文件服务）</a></li>
+<li><a href="#ch4-3">4.3 视频侧 RTP / WebSocket（JT/T 1078）</a></li>
+<li><a href="#ch4-4">4.4 平台侧 HTTP REST 接口</a></li>
+<li><a href="#ch4-5">4.5 静态文件与接口文档</a></li>
+<li><a href="#ch4-6">4.6 Kafka 数据通道（核心对接契约）</a></li>
+</ul></li>
+<li><a href="#ch5">5. 数据模型</a></li>
+<li><a href="#ch6">6. 标准协议说明（01 协议标准类）</a>
+<ul>
+<li><a href="#ch6-1">6.1 标准文件清单与取证说明</a></li>
+<li><a href="#ch6-2">6.2 JT/T 808-2011 / 2019</a></li>
+<li><a href="#ch6-3">6.3 JT/T 809-2011 / 2019</a></li>
+<li><a href="#ch6-4">6.4 JT/T 1076 / 1077-2016</a></li>
+<li><a href="#ch6-5">6.5 JT/T 1078-2016</a></li>
+<li><a href="#ch6-6">6.6 主动安全智能防控技术规范（苏标 DB32/T 2019）</a></li>
+<li><a href="#ch6-7">6.7 标准与实现对照矩阵</a></li>
+</ul></li>
+<li><a href="#ch7">7. 实现备注与局限</a></li>
+</ul>
+  </div></aside>
+  <main class="content">
+
+<a class="backlink" href="../index.html">← 返回文档中心</a>
+<h1 id="top">vps 车载网关功能、接口与标准协议分析</h1>
+<p class="meta">文档编号：GATEWAY-REF-001 ｜ 分析对象：<span class="mono">D:\ProgramData\mytraeprojects\vps</span> 及同级 <span class="mono">01 协议标准类</span> 文件夹 ｜ 性质：只读分析，未改动被分析源码</p>
+<blockquote>
+<p><strong>迁移说明：</strong>本报告原编制于 2026-10-05，同日自 docs/html 归档迁入正式文档库 reference 分区（编号 GATEWAY-REF-001）。迁移仅更换文档库统一顶栏/样式入口、补充本说明与页脚，正文、表格、协议编码、ASCII 拓扑图及原有内嵌排版均保持原貌；报告中出现的 <code>http://host:18001</code>、<code>http://fileserver:18009</code>、<code>ws://…</code> 等为接口示例地址，非外部资源引用。</p>
+</blockquote>
+
+<h2 id="ch1">1. 文档说明</h2>
+<p><strong>目的。</strong>面向平台侧研发与架构决策，系统梳理 vps 车载网关的功能、全部对外接口（终端 TCP 协议接口、平台 HTTP 接口、Kafka 数据通道、流媒体接口）及其依据的 JT/T 808、JT/T 809、JT/T 1076、JT/T 1077、JT/T 1078 与主动安全智能防控（苏标）系列标准。</p>
+<p><strong>方法。</strong>以网关源码（Java 多模块工程）逐模块静态分析为准，消息 ID、字段、端口、Topic、DTO 均取自代码；标准协议以标准原文 PDF/DOC 为参照，二者交叉印证。</p>
+<blockquote class="warn">
+<p><strong>取证边界（务必知悉）：</strong></p>
+<p>① JT/T 808-2019、JT/T 809-2019、JT/T 1077-2016、JT/T 1078-2016 的 PDF 为扫描影像或字体内码（CID）不可提取文本，未逐字 OCR；其条款摘要依据标准公开目录、可提取的 2011/2016 版本以及网关代码实现交叉验证。</p>
+<p>② 主动安全智能防控三份 .doc 已成功提取原文文本，确认其为<strong>江苏省地方标准 DB32/T 2019 征求/发布稿（《道路运输车辆主动安全智能防控系统技术规范》第 1/2/3 部分）</strong>，本报告引用了其条款原文。</p>
+<p>③ “代码实现了编解码”不等于“业务侧已使用”；下文对仅编解码、无业务入口的消息均明确标注。</p>
+</blockquote>
+
+<h2 id="ch2">2. 系统总览</h2>
+
+<h3 id="ch2-1">2.1 定位与能力边界</h3>
+<p>vps 是一个<strong>车载终端接入与协议转换网关</strong>，南向对接车载终端（行车记录仪/车载视频终端/主动安全智能防控终端），北向通过 Kafka 消息总线和少量同步 HTTP 接口对接业务平台。能力覆盖：</p>
+<ul>
+<li><strong>JT/T 808 终端通信</strong>：注册、鉴权、心跳、定位（含批量/补报）、报警、多媒体、拍照、文本下发、终端参数/控制等；</li>
+<li><strong>JT/T 1078 车载视频</strong>：实时音视频、历史回放、对讲/监听/广播、资源列表查询、云台控制（信令编解码齐备），并内置 RTP 收流与 WebSocket-FLV 转发；</li>
+<li><strong>苏标主动安全</strong>：ADAS/DSM/胎压/盲区/激烈驾驶报警附加项解析、报警附件（图片/音频/视频/文本）独立文件上传服务；</li>
+<li><strong>平台对接</strong>：定位、报警、附件、心跳、上下线、原始报文等事件以 JSON 投递 Kafka；音视频与拍照等主动指令以同步 HTTP 下发并等待终端应答。</li>
+</ul>
+<p><strong>不包含：</strong>JT/T 809 上级平台联网（代码中无 809 服务端/客户端实现）、平台业务 UI、持久化的轨迹/报警分析业务库（仅提供 StarRocks 建表参考 DDL）。</p>
+
+<h3 id="ch2-2">2.2 技术栈</h3>
+<table>
+<thead><tr><th>层次</th><th>选型</th></tr></thead>
+<tbody>
+<tr><td>语言/运行时</td><td>Java 8</td></tr>
+<tr><td>应用框架</td><td>Spring Boot 2.7.18（WebFlux，HTTP 接口返回 Mono，同步等待终端应答）</td></tr>
+<tr><td>TCP/网络</td><td>Netty（808 信令、1078 RTP over TCP 自定义收流）</td></tr>
+<tr><td>消息总线</td><td>Apache Kafka，载荷为 fastjson2 序列化的 JSON 字符串</td></tr>
+<tr><td>数据库</td><td>MySQL + MyBatis-Plus（车辆白名单、拍照记录）</td></tr>
+<tr><td>缓存</td><td>Caffeine（附件传输元数据，内存 30 分钟过期）</td></tr>
+<tr><td>流媒体处理</td><td>JavaCV / FFmpeg 1.5.1（RTP 解封装、音频转码 AAC、FLV 封装）</td></tr>
+<tr><td>接口文档</td><td>springdoc-openapi（/swagger-ui.html、/v3/api-docs）</td></tr>
+</tbody>
+</table>
+
+<h3 id="ch2-3">2.3 模块结构</h3>
+<pre><code>vps-parent（Maven 聚合父工程）
+├─ vps-common
+│  ├─ vps-common-core      # 常量、枚举、DTO（PositionInfo/WarnInfo/MediaInfoDto 等）、工具
+│  └─ vps-common-kafka     # Kafka 生产者封装、Topic 定义
+└─ vps-gateway
+   ├─ vps-jt808
+   │  ├─ vps-jt808-api     # 协议枚举、消息体 DTO、编解码接口（JT808MessageIdEnum 等）
+   │  ├─ vps-jt808-codec   # 全部 808/1078/苏标消息的编码器与解码器
+   │  ├─ vps-jt808-service # 主网关：TCP 10808 + HTTP 18001（Jt808Application）
+   │  └─ vps-jt808-file    # 苏标附件文件服务：TCP 10818 + HTTP 18009（Jt808FileApplication）
+   └─ vps-video            # 1078 媒体网关：RTP 收流 + WS-FLV 转发（VideoApplication）</code></pre>
+
+<h3 id="ch2-4">2.4 部署拓扑与端口</h3>
+<p>系统由 <strong>3 个可独立部署的 Java 进程</strong> + MySQL + Kafka + 本地文件卷组成：</p>
+<pre><code>                 ┌──────────────────────────── 业务平台（mydbd 等） ───────────────────────────┐
+                 │  Kafka 消费(gps/warn/媒体/心跳/上下线/原始报文)   HTTP 调用(18001 指令接口)   │
+                 └───────▲───────────────────────────────────────────────▲─────────────────────┘
+                         │ JSON 事件                                      │ REST 同步下发
+                         │                                               │ ws-flv 播放地址回传
+   ╔═════════════════════╩════════════════╗             ┌────────────────┴───────────────────┐
+   ║  vps-jt808-service（主网关）           ║             │  vps-video（1078 媒体网关）          │
+   ║  TCP 10808  JT/T808 信令（Netty）      ║──0x9101/9201▶│  终端侧 TCP 10780 实时 /10781 回放   │
+   ║  HTTP 18001 REST + Swagger             ║             │            10782 对讲   收 RTP     │
+   ║  MySQL: 白名单/拍照记录                ║             │  浏览器侧 TCP 20780/20781/20782     │
+   ║  报警有附件时自动下发 0x9208            ║──0x9208────▶│            WebSocket-FLV 推浏览器   │
+   ╚═══════════▲═══════════════════════════╝             │  Spring 端口 10789（无业务接口）     │
+               │ 0x9208 指向文件服务 IP:10818              └──────────────▲───────────────────────┘
+               ▼                                                          │ 浏览器 flv.js / 对讲 PCM
+   ╔═══════════════════════════════════╗                                   │
+   ║ vps-jt808-file（苏标附件服务）       ║                                   │
+   ║ TCP 10818  1210/1211/码流分片/1212  ║◀──── 终端为附件另建 TCP 连接 ───────┘
+   ║ HTTP 18009 /static/** 附件下载/预览  ║
+   ║ 本地磁盘卷: savePath/日期/手机号/报警ID/
+   ╚═══════════════════════════════════╝
+          ▲ ▲ ▲
+          │ │ │  JT/T 808 信令 10808 ｜ 附件 10818 ｜ 1078 码流 10780-82
+   ═══════╧═╧═╧══════ 车载终端（北斗记录仪 / 视频终端 / ADAS·DSM 主动安全终端）</code></pre>
+
+<table>
+<thead><tr><th>端口</th><th>进程</th><th>协议</th><th>用途</th><th>关键参数</th></tr></thead>
+<tbody>
+<tr><td class="mono">10808</td><td>jt808-service</td><td>TCP</td><td>JT/T 808 终端信令主连接</td><td>读空闲 60 秒</td></tr>
+<tr><td class="mono">18001</td><td>jt808-service</td><td>HTTP（WebFlux）</td><td>平台 REST 指令接口、Swagger、版本</td><td>同步等待终端应答默认 5 秒</td></tr>
+<tr><td class="mono">10818</td><td>jt808-file</td><td>TCP</td><td>苏标报警附件文件上传</td><td>空闲 3 分钟断开</td></tr>
+<tr><td class="mono">18009</td><td>jt808-file</td><td>HTTP</td><td>附件静态资源 /static/**、版本</td><td>—</td></tr>
+<tr><td class="mono">10780 / 10781 / 10782</td><td>vps-video</td><td>TCP（RTP over TCP）</td><td>终端推流：实时 / 回放 / 对讲</td><td>H264(pt98)、H265(pt99)</td></tr>
+<tr><td class="mono">20780 / 20781 / 20782</td><td>vps-video</td><td>WebSocket</td><td>浏览器拉流（FLV over WS）：实时 / 回放 / 对讲</td><td>URL 由 18001 指令接口回传</td></tr>
+<tr><td class="mono">10789</td><td>vps-video</td><td>HTTP</td><td>Spring 管理端口，无业务 Controller</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h2 id="ch3">3. 核心业务流程</h2>
+
+<h3 id="ch3-1">3.1 注册 / 鉴权 / 心跳</h3>
+<ol>
+<li>终端 TCP 连接 10808，发送 <strong>0x0100 终端注册</strong>；网关查 MySQL <code>vps_base_truck</code> 白名单（手机号），回 <strong>0x8100 注册应答</strong>，鉴权码（authCode）取<strong>手机号</strong>；</li>
+<li>终端发 <strong>0x0102 终端鉴权</strong>，网关比较鉴权码与手机号，一致即视为接入成功；</li>
+<li>终端周期性发 <strong>0x0002 心跳</strong>（无消息体），网关回 0x8001 通用应答，并向 <code>jt808_heartbeat_topic</code> 投递事件；</li>
+<li>连接断开时网关产生<strong>离线</strong>事件（<code>jt808_offline_topic</code>，type=1）。注意：代码中<strong>没有“上线”事件</strong>发出（见第 7 章）。</li>
+</ol>
+
+<h3 id="ch3-2">3.2 定位上报</h3>
+<ol>
+<li>终端周期上报 <strong>0x0200 位置信息汇报</strong>（报警标志、状态、经纬度、高程、速度、方向、时间 + 附加项）；</li>
+<li>网关解码（经纬度已 ÷10⁶ 转为“度”），组装 <code>PositionInfo</code>（头 GpsHead + 体 GpsInfo），以 <strong>truckId 为 key</strong> 发 <code>jt808_gps_topic</code>；</li>
+<li>0x0704 定位批量上传、补报位置（delay 标志）、图片关联点（0x0801 触发，gpsType=11）、主动安全点（gpsType=12）同样汇入该 Topic。</li>
+</ol>
+<blockquote><p><strong>单位注意：</strong>对外 JSON 中 speed 单位为 <strong>m/h（米每小时，即 1/100 km/h）</strong>，数值=协议原始值×100；mileage 单位为<strong>米</strong>，=附加项 0x01 原始值×100。下游落库前必须换算。</p></blockquote>
+
+<h3 id="ch3-3">3.3 主动安全报警与苏标附件（关键闭环）</h3>
+<p>报警走 JT/T 808 位置上报中的<strong>苏标扩展附加项</strong>（0x64 ADAS、0x65 DSM、0x66 胎压、0x67 盲区、0x70 激烈驾驶），附件走独立的文件服务器通道：</p>
+<pre><code>终端                    vps-jt808-service(10808)                 vps-jt808-file(10818)           Kafka
+ │  0x0200 + 附加项0x64/65/67/70                                       │
+ │  (含报警ID、标志状态=开始、报警标识号16B、附件数量)                   │
+ │───────────────────────────▶│                                        │
+ │                            │ 解析报警 → jt808_warn_topic (WarnInfo) ─────────▶
+ │                            │ 若为“开始”且附件数量&gt;0：                  │
+ │                            │   组装 0x9208（附件服务器IP:10818、       │
+ │                            │           报警标识号16B、报警编号32B）    │
+ │◀──── 0x9208 ───────────────│                                        │
+ │  终端新建 TCP 连接 10818 ──────────────────────────────────────────▶│
+ │  0x1210 报警附件信息（终端ID/报警标识号/报警编号/附件清单：文件名+大小）  │
+ │───────────────────────────────────────────────────────────────────▶│ 通用应答
+ │  0x1211 文件信息（文件名/类型/大小，预分配 .tmp）                       │
+ │───────────────────────────────────────────────────────────────────▶│ 通用应答
+ │  文件码流分片（帧头0x30316364 + 文件名50B + offset + length + data）    │
+ │───────────────────────────────────────────────────────────────────▶│ 按 offset 乱序落盘
+ │  0x1212 文件上传完成                                                    │
+ │───────────────────────────────────────────────────────────────────▶│
+ │                            │                            0x9212 校验分片 │
+ │                            │                            ◀── 缺片则要求补传
+ │                            │                                       全部完成
+ │                            │                  jt808_warn_media_topic (MediaInfoDto) ─▶
+ │                            │                                       目录: savePath/yyyy-MM-dd/手机号/warnId/文件名</code></pre>
+<ul>
+<li><strong>断点续传：</strong>传输中断重连后重发 0x1210（仅未完成文件）；网关以 0x9212 返回缺失偏移区间列表，终端补传；</li>
+<li><strong>文件命名：</strong><code>&lt;文件类型&gt;_&lt;通道号&gt;_&lt;报警类型&gt;_&lt;序号&gt;_&lt;报警编号&gt;.&lt;后缀&gt;</code>，如前向碰撞为 <code>6401</code>；类型 00 图/01 音/02 音视频/03 文本；</li>
+<li>元数据仅保存在 Caffeine 内存（30 分钟），<strong>文件服务重启会丢失传输进度</strong>。</li>
+</ul>
+
+<h3 id="ch3-4">3.4 立即拍照</h3>
+<ol>
+<li>平台调 <code>POST /api/command/{phone}/cameraShot</code> → 网关下发 <strong>0x8801 摄像头立即拍摄命令</strong>（通道、张数/0xFFFF 录像、间隔、分辨率、质量、亮度/对比度/饱和度/色度、存储标志）；</li>
+<li>终端回 <strong>0x0805 拍摄应答</strong>，随后以 <strong>0x0801 多媒体数据上传</strong>回传照片；</li>
+<li>网关落 MySQL <code>vps_gps_photo</code>，文件写本地盘，并向 <code>jt808_gps_topic</code> 发一条 gpsType=11 的图片关联定位点。该接口支持 timeout=0 的<strong>异步</strong>模式（不等待 0x0805）。</li>
+</ol>
+
+<h3 id="ch3-5">3.5 实时音视频传输</h3>
+<ol>
+<li>平台调 <code>POST /api/command/{phone}/realtimeVideoReq</code>（逻辑通道号、数据类型 0 音视频/1 视频/2 对讲/3 监听/4 广播/5 透传、码流类型默认 1 子码流）→ 网关下发 <strong>0x9101 实时音视频传输请求</strong>；</li>
+<li>终端按 1078 以 RTP over TCP 连接 <strong>10780</strong> 推流；</li>
+<li>HTTP 应答的 extend 中返回浏览器播放地址：<code>ws://&lt;视频主机&gt;:20780/live?tag={手机号}-{通道}&amp;uuid={会话ID}&amp;audio=1</code>；</li>
+<li>浏览器用 flv.js 等播放 FLV over WebSocket；停止：<code>GET /api/command/{phone}/stopRealTimeVideo</code> → <strong>0x9102</strong>（controlCode=0）。</li>
+</ol>
+<p>视频支持 H264（负载类型 98）与 H265（负载类型 99，以私有扩展写入 FLV，前端需支持增强 FLV 的播放器）；音频支持 G.711a/G.711u/G.726/ADPCMA/AAC，浏览器侧统一转 AAC。</p>
+
+<h3 id="ch3-6">3.6 历史录像回放</h3>
+<ol>
+<li>平台调 <code>POST /api/command/{phone}/historyVideoReq</code>（通道、音视频资源类型、码流类型、存储类型、回放方式、快进快退倍数、起止时间 <code>yyyy-MM-dd HH:mm:ss</code>）→ 下发 <strong>0x9201 远程录像回放请求</strong>；</li>
+<li>终端向 <strong>10781</strong> 推回放流，浏览器从 <strong>20781</strong> 拉 FLV；</li>
+<li>停止/暂停/拖动由 <strong>0x9202 回放控制</strong>完成（停止 playControl=2）。</li>
+</ol>
+<p>资源检索：<code>POST /api/command/{phone}/queryMediaItems</code> → <strong>0x9205 查询资源列表</strong>，同步等待终端 <strong>0x1205 资源列表</strong>（默认 10 秒）。</p>
+
+<h3 id="ch3-7">3.7 对讲 / 监听 / 广播</h3>
+<p>对讲/监听复用 0x9101（dataType=2/3），终端音频连 <strong>10782</strong>，浏览器侧 <strong>20782</strong>。浏览器上行对讲为 PCM、640 字节/帧，由 vps-video 转码后送终端。停止对讲 <code>GET /api/command/{phone}/stopTalk</code>（0x9102 controlCode=4）。</p>
+
+<h3 id="ch3-8">3.8 终端上下线</h3>
+<p>在线态由连接生命周期维护：连接断开 → <code>jt808_offline_topic</code>（OfflineInfo：truckId、时间、type=1 离线）。<strong>上线不发消息</strong>，下游若需上线时刻需以鉴权成功（jt808_command_topic 中的 0102）或首条心跳/定位近似。</p>
+
+<h2 id="ch4">4. 接口清单</h2>
+<p>网关共有 5 类接口面：<strong>① 终端 TCP 信令（10808）；② 附件 TCP（10818）；③ 视频 RTP/WS；④ 平台 HTTP REST（18001/18009）；⑤ Kafka 数据通道。</strong>平台系统对接的核心契约是第 ④、⑤ 两类。</p>
+
+<h3 id="ch4-1">4. 1 终端侧 TCP 信令（JT/T 808，端口 10808）</h3>
+
+<h4>4.1.1 帧格式与链路规则</h4>
+<table>
+<thead><tr><th>项</th><th>实现规则</th></tr></thead>
+<tbody>
+<tr><td>帧界</td><td>0x7E 标识位分隔</td></tr>
+<tr><td>转义</td><td>0x7E↔0x7D 0x02，0x7D↔0x7D 0x01（先转义后校验/反转义后校验）</td></tr>
+<tr><td>校验</td><td>消息头+消息体逐字节异或（XOR）；配置 <code>jt808.checkCode=true</code>，<strong>校验失败仅记录日志、不丢包</strong>（见第 7 章）</td></tr>
+<tr><td>分包</td><td>消息头分包位 + 消息总包数/包序号；网关内存重组，支持 2013（终端手机号 BCD[6]）与 2019（BCD[10]）自适应</td></tr>
+<tr><td>应答</td><td>所有需应答消息回 0x8001 通用应答；平台下行指令的终端应答用于 HTTP 同步返回</td></tr>
+</tbody>
+</table>
+
+<h4>4.1.2 JT/T 808 基础消息全量目录（编解码覆盖）</h4>
+<p>下表为代码枚举 <span class="mono">JT808MessageIdEnum</span> 的完整口径。方向：<span class="tag tag-up">上行</span> 终端→网关，<span class="tag tag-down">下行</span> 平台→终端。</p>
+<table>
+<thead><tr><th>消息ID</th><th>名称</th><th>方向</th><th>业务处理 / 入口说明</th></tr></thead>
+<tbody>
+<tr><td class="mono">0x0001</td><td>终端通用应答</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 关联同步下行指令的应答</td></tr>
+<tr><td class="mono">0x8001</td><td>平台通用应答</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">已处理</span> 对上行消息通用回执</td></tr>
+<tr><td class="mono">0x0002</td><td>终端心跳</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> → jt808_heartbeat_topic</td></tr>
+<tr><td class="mono">0x0003</td><td>终端注销</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0100</td><td>终端注册</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 白名单校验，回 0x8100（authCode=手机号）</td></tr>
+<tr><td class="mono">0x8100</td><td>终端注册应答</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">已处理</span></td></tr>
+<tr><td class="mono">0x0102</td><td>终端鉴权</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 鉴权码=手机号 → command_topic</td></tr>
+<tr><td class="mono">0x0104</td><td>查询终端参数应答</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> → command_topic</td></tr>
+<tr><td class="mono">0x8103</td><td>设置终端参数</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span> 无 REST 入口</td></tr>
+<tr><td class="mono">0x8104 / 0x8106</td><td>查询终端参数 / 查询指定参数</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8105</td><td>终端控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8107 / 0x0107</td><td>查询终端属性 / 应答</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8108 / 0x0108</td><td>下发终端升级包 / 升级结果通知</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0004 / 0x8004</td><td>查询服务器时间请求 / 应答（2019 新增）</td><td>上行 / 下行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8003 / 0x0005</td><td>服务器 / 终端补传分包请求</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0200</td><td>位置信息汇报</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 核心消息 → gps/warn Topic</td></tr>
+<tr><td class="mono">0x8201 / 0x0201</td><td>位置信息查询 / 应答</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8202</td><td>临时位置跟踪控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8203</td><td>人工确认报警消息</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8204</td><td>链路检测（2019 新增）</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8300</td><td>文本信息下发</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">REST 入口</span> POST /tts（TTS 文本）</td></tr>
+<tr><td class="mono">0x8301 / 0x0301</td><td>事件设置 / 事件报告</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span>（2019 已删除）</td></tr>
+<tr><td class="mono">0x8302 / 0x0302</td><td>提问下发 / 提问应答</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span>（2019 已删除）</td></tr>
+<tr><td class="mono">0x8303 / 0x0303</td><td>信息点播菜单设置 / 信息点播取消</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span>（2019 已删除）</td></tr>
+<tr><td class="mono">0x8304</td><td>信息服务</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span>（2019 已删除）</td></tr>
+<tr><td class="mono">0x8400 / 0x8401</td><td>电话回拨 / 设置电话本</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8500 / 0x0500</td><td>车辆控制 / 车辆控制应答</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8600~0x8607</td><td>圆形/矩形/多边形区域、路线的设置与删除</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8608 / 0x0608</td><td>查询区域或路线数据 / 应答（0x8608 为 2019 新增）</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8700 / 0x0700</td><td>行驶记录数据采集命令 / 数据上传</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8701</td><td>行驶记录参数下传命令</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0701</td><td>电子运单上报</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8702 / 0x0702</td><td>上报驾驶员身份请求 / 身份信息采集上报</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0704</td><td>定位数据批量上传</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">可解码</span> 批量定位</td></tr>
+<tr><td class="mono">0x0705</td><td>CAN 总线数据上传</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0800</td><td>多媒体事件信息上传</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x0801</td><td>多媒体数据上传</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 拍照回传，落 vps_gps_photo + gps_topic(gpsType=11)</td></tr>
+<tr><td class="mono">0x8800</td><td>多媒体数据上传应答</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">已处理</span></td></tr>
+<tr><td class="mono">0x8801 / 0x0805</td><td>摄像头立即拍摄命令 / 应答</td><td>下行 / 上行</td><td><span class="tag tag-ok">REST 入口</span> POST /cameraShot</td></tr>
+<tr><td class="mono">0x8802 / 0x0802</td><td>存储多媒体数据检索 / 应答</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8803</td><td>存储多媒体数据上传命令</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8804</td><td>录音开始命令</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8805</td><td>单条存储多媒体数据检索上传命令</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8900 / 0x0900</td><td>数据下行透传 / 数据上行透传</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span> 苏标外设状态/信息查询走 0x8900/0x0900（F7/F8）；当前业务侧未消费上行透传</td></tr>
+<tr><td class="mono">0x0901</td><td>数据压缩上报</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x8A00 / 0x0A00</td><td>平台 RSA 公钥 / 终端 RSA 公钥</td><td>下行 / 上行</td><td><span class="tag tag-part">编解码</span></td></tr>
+</tbody>
+</table>
+
+<h4>4.1.3 JT/T 1078 视频消息目录</h4>
+<table>
+<thead><tr><th>消息ID</th><th>名称</th><th>方向</th><th>业务处理 / 入口说明</th></tr></thead>
+<tbody>
+<tr><td class="mono">0x9003 / 0x1003</td><td>查询终端音视频属性 / 终端上传音视频属性</td><td>下行/上行</td><td><span class="tag tag-ok">已处理</span> 终端 1003 上报由视频服务接收</td></tr>
+<tr><td class="mono">0x1005</td><td>终端上传乘客流量</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已解码</span></td></tr>
+<tr><td class="mono">0x9101</td><td>实时音视频传输请求</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">REST</span> /realtimeVideoReq</td></tr>
+<tr><td class="mono">0x9102</td><td>音视频实时传输控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">REST</span> /stopRealTimeVideo、/stopTalk</td></tr>
+<tr><td class="mono">0x9105</td><td>实时音视频传输状态通知</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-part">编解码</span></td></tr>
+<tr><td class="mono">0x9201 / 0x9202</td><td>远程录像回放请求 / 回放控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">REST</span> /historyVideoReq、/stopHistoryVideo</td></tr>
+<tr><td class="mono">0x9205 / 0x1205</td><td>查询资源列表 / 终端上传音视频资源列表</td><td>下行/上行</td><td><span class="tag tag-ok">REST</span> /queryMediaItems 同步等 0x1205</td></tr>
+<tr><td class="mono">0x9206 / 0x1206</td><td>文件上传指令 / 文件上传完成通知</td><td>下行/上行</td><td><span class="tag tag-part">部分</span> 编解码具备，无主动业务入口</td></tr>
+<tr><td class="mono">0x9207</td><td>文件上传控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-no">未启用</span></td></tr>
+<tr><td class="mono">0x9301~0x9306</td><td>云台旋转/焦距/光圈/雨刷/红外补光/变倍控制</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-part">编解码</span> 无 REST 入口</td></tr>
+</tbody>
+</table>
+
+<h4>4.1.4 苏标主动安全消息目录</h4>
+<table>
+<thead><tr><th>消息ID</th><th>名称</th><th>方向</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td class="mono">0x9208</td><td>报警附件上传指令</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">自动</span> 检测到“开始”且有附件的报警时自动下发，指向 10818</td></tr>
+<tr><td class="mono">0x1210</td><td>报警附件信息消息</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 文件服务，附件清单</td></tr>
+<tr><td class="mono">0x1211</td><td>文件信息上传</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 预分配文件</td></tr>
+<tr><td class="mono">0x1212</td><td>文件上传完成消息</td><td><span class="tag tag-up">上行</span></td><td><span class="tag tag-ok">已处理</span> 校验完整性</td></tr>
+<tr><td class="mono">0x9212</td><td>文件上传完成消息应答</td><td><span class="tag tag-down">下行</span></td><td><span class="tag tag-ok">已处理</span> 返回补传偏移区间</td></tr>
+</tbody>
+</table>
+<p>另在代码中定义了 4 个仅供内部业务层使用的自定义消息标识（非线上协议）：<code>0x10001 终端上线</code>、<code>0x10002 终端下线</code>、<code>0x10003 终端超时未应答</code>、<code>0x10004 主动安全附件上传完成通知</code>。</p>
+
+<h3 id="ch4-2">4.2 附件侧 TCP（苏标文件服务，端口 10818）</h3>
+<p>专用文件通道，不承载 808 常规信令：</p>
+<table>
+<thead><tr><th>交互</th><th>方向</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="mono">0x1210</td><td>终端→服务</td><td>终端ID(7B)、报警标识号(16B)、报警编号(32B)、信息类型(正常/补传)、附件数量、附件列表（文件名+大小）</td></tr>
+<tr><td>通用应答</td><td>服务→终端</td><td>收到 1210/1211 后回执</td></tr>
+<tr><td class="mono">0x1211</td><td>终端→服务</td><td>文件名、文件类型（0图/1音/2视/3文本/4其它）、文件大小；RandomAccessFile 预分配 .tmp</td></tr>
+<tr><td>文件码流</td><td>终端→服务</td><td><strong>私有负载帧</strong>：帧头 0x30316364（“01cd”）4B + 文件名 50B + 数据偏移 4B + 数据长度 4B + 数据体；按偏移乱序写入，.log 索引</td></tr>
+<tr><td class="mono">0x1212</td><td>终端→服务</td><td>单文件传输完成</td></tr>
+<tr><td class="mono">0x9212</td><td>服务→终端</td><td>上传结果（完成/需补传）+ 补传偏移区间列表</td></tr>
+</tbody>
+</table>
+<p>落盘目录：<code>savePath/yyyy-MM-dd/{手机号}/{warnId}/{文件名}</code>；完成后发 <code>jt808_warn_media_topic</code>，URL 指向 18009 的 <code>/static/**</code>。</p>
+
+<h3 id="ch4-3">4.3 视频侧 RTP / WebSocket（JT/T 1078）</h3>
+<table>
+<thead><tr><th>接口</th><th>端口</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>终端实时推流</td><td class="mono">TCP 10780</td><td>RTP over TCP，H264(pt98)/H265(pt99)，音频 G.711a/u、G.726、ADPCMA、AAC</td></tr>
+<tr><td>终端回放推流</td><td class="mono">TCP 10781</td><td>远程录像回放流</td></tr>
+<tr><td>终端对讲音频</td><td class="mono">TCP 10782</td><td>对讲/监听/广播音频</td></tr>
+<tr><td>浏览器实时拉流</td><td class="mono">WS 20780</td><td><code>ws://host:20780/live?tag={手机号}-{通道}&amp;uuid={会话}&amp;audio=1</code>，FLV over WebSocket</td></tr>
+<tr><td>浏览器回放拉流</td><td class="mono">WS 20781</td><td>回放 FLV</td></tr>
+<tr><td>浏览器对讲</td><td class="mono">WS 20782</td><td>上行 PCM 640 字节/帧，服务端转码送终端</td></tr>
+</tbody>
+</table>
+<blockquote class="warn"><p>vps-video 的 WS 地址本身<strong>无业务鉴权</strong>，拿到 URL（含 uuid）即可拉流，跨域开放需在网络层/反向代理层补访问控制与时效签名。</p></blockquote>
+
+<h3 id="ch4-4">4.4 平台侧 HTTP REST 接口（主服务 18001）</h3>
+<p>统一基路径 <code>/api/command</code>，路径参数 <code>{phone}</code> 为终端手机号（白名单键）。WebFlux 实现：<strong>下行指令后同步挂起等待终端应答</strong>，超时或终端离线返回错误；默认超时 5 秒（部分接口可覆盖）。</p>
+<table>
+<thead><tr><th>#</th><th>方法与路径</th><th>下行消息</th><th>请求体 / 关键参数</th><th>同步/超时</th></tr></thead>
+<tbody>
+<tr><td>1</td><td class="mono">POST /api/command/{phone}/realtimeVideoReq</td><td>0x9101</td><td>RealtimeVideoReq：taskId、channel、dataType(0音视频/1视频/2对讲/3监听/4广播/5透传)、streamType(默认1子码流)</td><td>同步，应答 extend 返回 20780 播放 ws</td></tr>
+<tr><td>2</td><td class="mono">GET /api/command/{phone}/stopRealTimeVideo?channel=</td><td>0x9102(controlCode=0)</td><td>通道号</td><td>同步 5s</td></tr>
+<tr><td>3</td><td class="mono">GET /api/command/{phone}/stopTalk?channel=</td><td>0x9102(controlCode=4)</td><td>通道号</td><td>同步 5s</td></tr>
+<tr><td>4</td><td class="mono">POST /api/command/{phone}/historyVideoReq</td><td>0x9201</td><td>HistoryVideoReq：taskId、channel、avType、codeStreamType、memoryType、playFunction、fastForwardFastBack、beginTime、endTime（<code>yyyy-MM-dd HH:mm:ss</code>）</td><td>同步，返回 20781 回放 ws</td></tr>
+<tr><td>5</td><td class="mono">GET /api/command/{phone}/stopHistoryVideo?channel=</td><td>0x9202(playControl=2)</td><td>通道号</td><td>同步 5s</td></tr>
+<tr><td>6</td><td class="mono">POST /api/command/{phone}/queryMediaItems?timeout=10</td><td>0x9205</td><td>QueryMedia：taskId、channelId、beginTime、endTime、alarmTag、sourceType、codeStreamType、memoryType</td><td>同步等待 0x1205（默认10s）</td></tr>
+<tr><td>7</td><td class="mono">POST /api/command/{phone}/tts?timeout=5</td><td><strong>0x8300 文本信息下发</strong></td><td>TTSReq：taskId、sign(默认15)、type(1通知/2服务)、content（文本内容）</td><td>同步 5s</td></tr>
+<tr><td>8</td><td class="mono">POST /api/command/{phone}/cameraShot?timeout=0</td><td>0x8801</td><td>CameraShotReq：taskId、channelId、photoCommand(张数/0xFFFF录像)、photoTimeInterval、storeFlag(1保存/0实时上传)、resolution、quality、brightness、contrast、saturation、chroma</td><td>timeout=0 异步，不等 0x0805</td></tr>
+</tbody>
+</table>
+<p>另有两个版本接口：主服务与文件服务均提供 <code>GET /api/version</code>（分别在 18001、18009）。<strong>文本信息只有平台→终端这一条 HTTP 通道（TTS），终端→平台不存在文本消息业务入口。</strong></p>
+
+<h3 id="ch4-5">4.5 静态文件与接口文档</h3>
+<ul>
+<li><code>http://fileserver:18009/static/**</code>：苏标附件（图片/音频/视频/文本）HTTP 访问；</li>
+<li>Swagger UI：<code>http://host:18001/swagger-ui.html</code>；OpenAPI：<code>/v3/api-docs</code>。</li>
+</ul>
+
+<h3 id="ch4-6">4.6 Kafka 数据通道（核心对接契约）</h3>
+<p>Topic 定义集中在 <span class="mono">KafkaTopic.java</span>，载荷均为 fastjson2 序列化的 JSON 字符串：</p>
+<table>
+<thead><tr><th>Topic 字面值</th><th>载荷类型</th><th>Key</th><th>触发时机</th></tr></thead>
+<tbody>
+<tr><td class="mono">jt808_gps_topic</td><td>PositionInfo（GpsHead + GpsInfo）</td><td>truckId</td><td>0x0200 定位；0x0801 图片点(gpsType=11)；主动安全点(gpsType=12)</td></tr>
+<tr><td class="mono">jt808_warn_topic</td><td>WarnInfo</td><td>truckId</td><td>ADAS/DSM/盲区/激烈驾驶报警解析；开始且有附件时联动下发 0x9208</td></tr>
+<tr><td class="mono">jt808_warn_media_topic</td><td>MediaInfoDto</td><td>—</td><td>苏标附件 1212 全部完成、文件落盘后</td></tr>
+<tr><td class="mono">jt808_heartbeat_topic</td><td>JT808Message</td><td>—</td><td>0x0002 心跳</td></tr>
+<tr><td class="mono">jt808_command_topic</td><td>JT808Message</td><td>—</td><td>0x0100 注册 / 0x0102 鉴权 / 0x0104 参数应答 / 0x0805 拍照应答</td></tr>
+<tr><td class="mono">jt808_offline_topic</td><td>OfflineInfo</td><td>—</td><td>连接断开（仅离线 type=1，<strong>无上线消息</strong>）</td></tr>
+<tr><td class="mono">jt808_raw_hex_topic</td><td>JT808RawRecord（原始 hex）</td><td>identityCode</td><td>原始报文留痕（心跳除外，且仅 monitor 配置车辆）</td></tr>
+<tr><td class="mono">jt808_media_topic</td><td>GpsMedia</td><td>—</td><td><span class="tag tag-no">死代码</span> 定义存在但无任何生产方调用</td></tr>
+</tbody>
+</table>
+
+<h4>4.6.1 PositionInfo 字段（jt808_gps_topic）</h4>
+<table>
+<thead><tr><th>分层</th><th>字段</th><th>含义 / 备注</th></tr></thead>
+<tbody>
+<tr><td rowspan="14">GpsHead<br>消息头</td><td class="mono">trackId</td><td>网关轨迹流水号</td></tr>
+<tr><td class="mono">receiveTime / sendTime / createTime</td><td>接收/上送/创建时间</td></tr>
+<tr><td class="mono">protocolType</td><td>固定 “jt808”</td></tr>
+<tr><td class="mono">protocolVersion</td><td>协议版本（2013/2019 自适应识别）</td></tr>
+<tr><td class="mono">messageId / messageIdHex</td><td>来源消息 ID 及十六进制</td></tr>
+<tr><td class="mono">phoneNumber</td><td>终端手机号（=鉴权码=终端标识）</td></tr>
+<tr><td class="mono">accessCode</td><td>接入码</td></tr>
+<tr><td class="mono">truckId</td><td><strong>Integer</strong>，来自 vps_base_truck 白名单主键</td></tr>
+<tr><td class="mono">plateNo / plateColor</td><td>车牌号 / 车牌颜色</td></tr>
+<tr><td class="mono">delay</td><td>是否补报点</td></tr>
+<tr><td class="mono">gpsType</td><td>10 基本定位 / 11 图片关联点 / 12 主动安全点</td></tr>
+<tr><td class="mono">protocolExtend</td><td>协议扩展字段</td></tr>
+<tr><td class="mono">additions[]</td><td>0x0200 附加项原始集合</td></tr>
+<tr><td colspan="2" class="meta">（GpsHead 与 GpsInfo 在 DTO 中分层组织，下列为定位体字段）</td></tr>
+<tr><td rowspan="12">GpsInfo<br>定位体</td><td class="mono">alarmFlag</td><td>报警标志，<strong>Long（32 位位图）</strong>，JT/T 808 标准报警位</td></tr>
+<tr><td class="mono">status</td><td>车辆状态位图（ACC、转向、制动、定位等）</td></tr>
+<tr><td class="mono">latitude / longitude</td><td><strong>已 ÷10⁶，单位：度</strong></td></tr>
+<tr><td class="mono">altitude</td><td>海拔，单位米</td></tr>
+<tr><td class="mono">speed</td><td><strong>单位 m/h（=原始 1/100km/h 值×100）</strong>，落库需换算</td></tr>
+<tr><td class="mono">recordSpeed</td><td>行驶记录仪速度</td></tr>
+<tr><td class="mono">direction</td><td>方向 0–359°</td></tr>
+<tr><td class="mono">gpsTime</td><td>定位时间（GMT+8）</td></tr>
+<tr><td class="mono">mileage</td><td><strong>单位米</strong>（附加项 0x01 值×100），落库需换算</td></tr>
+<tr><td class="mono">additions[]</td><td>附加项数组（含苏标 0x64/65/66/67/70 等）</td></tr>
+</tbody>
+</table>
+
+<h4>4.6.2 WarnInfo 字段（jt808_warn_topic）</h4>
+<table>
+<thead><tr><th>字段</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td class="mono">warnId</td><td><strong>32 位 UUID</strong>，平台分配的报警唯一编号（对应苏标 0x9208 中 BYTE[32] 报警编号，用于关联附件）</td></tr>
+<tr><td class="mono">startWarnTime</td><td>报警开始时间</td></tr>
+<tr><td class="mono">truckId / identityCode / plateNo</td><td>车辆内部 ID / 终端手机号（标识）/ 车牌号</td></tr>
+<tr><td class="mono">typeId</td><td>网关事件编码（见 4.6.4，如 101001）</td></tr>
+<tr><td class="mono">rawType</td><td>原始类型，如 <code>0x64_0x01</code>（外设ID_报警类型）</td></tr>
+<tr><td class="mono">alarmLevel</td><td>报警级别（一级/二级）</td></tr>
+<tr><td class="mono">latitude/longitude、speed、altitude、status</td><td>报警开始、结束各一组位置/状态</td></tr>
+<tr><td class="mono">warnIdentity</td><td>苏标<strong>报警标识号 16 字节 hex</strong>（终端ID7B+时间6B+序号+附件数+预留）</td></tr>
+<tr><td class="mono">fileNum / receiveNum / transferNum</td><td>附件总数 / 已收数 / 已传数</td></tr>
+<tr><td class="mono">fromSource</td><td>来源：10 JT808 / 11 JT809 / 12 MQ</td></tr>
+<tr><td class="mono">startTrackId / endTrackId 等</td><td>起止关联轨迹点 ID</td></tr>
+</tbody>
+</table>
+
+<h4>4.6.3 MediaInfoDto / OfflineInfo / 其它</h4>
+<table>
+<thead><tr><th>载荷</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td>MediaInfoDto<br>（warn_media）</td><td>warnId、truckId、fileName、imei、fileSize、fileType(0图/1音/2视)、fileStatus(2完成/4超时)、lazy、url（18009/static 访问地址）、storeType(“local”)、fileSource、各时间字段、remark</td></tr>
+<tr><td>OfflineInfo</td><td>truckId、doTime、type（0 上线 / 1 离线；<strong>实际仅发送 1</strong>）</td></tr>
+<tr><td>JT808Message</td><td>原始消息头/消息体的 JSON 化表示（心跳、注册、鉴权、参数应答、拍照应答）</td></tr>
+<tr><td>JT808RawRecord</td><td>identityCode、方向、原始报文 hex、时间等（仅 monitor 名单车辆，心跳除外）</td></tr>
+</tbody>
+</table>
+
+<h4>4.6.4 主动安全报警事件编码（typeId）</h4>
+<table>
+<thead><tr><th>类别</th><th>编码区间</th><th>事件（举例）</th></tr></thead>
+<tbody>
+<tr><td>ADAS 驾驶辅助（0x64）</td><td class="mono">101001–101011</td><td>前向碰撞预警、车道偏离、车距过近、行人碰撞、频繁变道、道路标识超限、障碍物、驾驶辅助失效、道路标志识别事件、主动抓拍事件等</td></tr>
+<tr><td>DSM 驾驶员监测（0x65）</td><td class="mono">102001–102011</td><td>疲劳驾驶、接打手持电话、抽烟、长时间不目视前方、未检测到驾驶员、双手脱离方向盘、监测功能失效、自动抓拍、驾驶员变更等</td></tr>
+<tr><td>盲区（0x67）</td><td class="mono">104001–104003</td><td>变道决策辅助（盲区）相关报警</td></tr>
+<tr><td>激烈驾驶（0x70）</td><td class="mono">105001–105007</td><td>急加速、急减速、急转弯、怠速、异常熄火、空挡滑行、发动机超转</td></tr>
+</tbody>
+</table>
+<p>rawType 与苏标附加项字节一一对应（如 ADAS 前向碰撞=<code>0x64_0x01</code>，DSM 疲劳=<code>0x65_0x01</code>）。胎压（0x66）在标准与编解码中具备。</p>
+
+<h2 id="ch5">5. 数据模型</h2>
+<h3>5.1 MySQL（网关自有库）</h3>
+<table>
+<thead><tr><th>表</th><th>用途</th><th>关键字段</th></tr></thead>
+<tbody>
+<tr><td class="mono">vps_base_truck</td><td>接入车辆白名单/车辆档案</td><td>truckId(主键)、手机号、车牌号、车牌颜色等；注册/鉴权以此为准</td></tr>
+<tr><td class="mono">vps_gps_photo</td><td>0x8801/0x0801 立即拍照记录</td><td>photoId、truckId、identityCode、channelId、fileName、url、photoSize、trackId、taskId、reqSource、cmdTime、gpsTime、receiveTime、createTime</td></tr>
+</tbody>
+</table>
+<h3>5.2 StarRocks（参考 DDL，非网关运行依赖）</h3>
+<p><code>database/starrocks.ddl.sql</code> 提供下游 OLAP 落库参考，列名即<strong>下游数据契约</strong>：</p>
+<ul>
+<li><code>vps_gps_info</code>：定位明细（含 lon/lat、lon_g/lat_g 高德坐标、lon_b/lat_b 百度坐标、速度、里程、报警/状态位、附加项等）；</li>
+<li><code>vps_gps_realtime</code>：每车最新一条定位（实时大屏用）；</li>
+<li><code>vps_warn_info</code>：报警明细（warnId、typeId、rawType、级别、起止位置/时间、附件计数等）；</li>
+<li><code>vps_warn_media</code>：报警附件（warnId、文件类型、大小、URL、状态等）。</li>
+</ul>
+<blockquote class="warn"><p>部署配置文件中数据库连接口令为明文，生产部署应通过环境变量/配置中心/密钥管理外置，不应随包分发。</p></blockquote>
+
+<h2 id="ch6">6. 标准协议说明（01 协议标准类）</h2>
+
+<h3 id="ch6-1">6.1 标准文件清单与取证说明</h3>
+<table>
+<thead><tr><th>文件</th><th>标准号/名称</th><th>形态与取证</th></tr></thead>
+<tbody>
+<tr><td>JTT 808-2011（60 页）</td><td>JT/T 808-2011《道路运输车辆卫星定位系统 终端通讯协议及数据格式》</td><td>文本可提取 ✓</td></tr>
+<tr><td>JTT 808-2019.PDF（56 页）</td><td>JT/T 808-2019（2019 版终端通讯协议）</td><td>字体内码(CID)不可提取 △，以公开目录+代码印证</td></tr>
+<tr><td>JTT 809-2011（47 页）</td><td>JT/T 809-2011《平台数据交换》</td><td>文本可提取 ✓</td></tr>
+<tr><td>JTT 809-2019.PDF（62 页）</td><td>JT/T 809-2019</td><td>CID 不可提取 △</td></tr>
+<tr><td>JTT 1076-2016（25 页编辑版）</td><td>JT/T 1076-2016《车载视频终端技术要求》</td><td>文本可提取 ✓（另有扫描版不可提取）</td></tr>
+<tr><td>JTT 1077-2016（14 页）</td><td>JT/T 1077-2016《车载视频平台技术要求》</td><td>扫描影像 △</td></tr>
+<tr><td>JTT 1078-2016（44 页）</td><td>JT/T 1078-2016《车载视频通信协议》</td><td>扫描影像 △，以公开目录+代码印证</td></tr>
+<tr><td>12/13/14 三个 .doc</td><td><strong>DB32/T 2019《道路运输车辆主动安全智能防控系统技术规范》第1部分平台 / 第2部分终端及测试方法 / 第3部分通讯协议</strong>（江苏省地方标准）</td><td>已提取全文 ✓</td></tr>
+</tbody>
+</table>
+
+<h3 id="ch6-2">6.2 JT/T 808-2011 / 2019</h3>
+<p><strong>标准范围：</strong>规定卫星定位系统车载终端与监管/监控平台之间的通信协议与数据格式，包括通信连接、消息处理、报文格式、编码（含 BCD 时间、经纬度 1/10⁶、位图等）、加密机制及数十类终端/平台消息（注册鉴权、心跳、定位、报警、多媒体、电话、区域路线、行驶记录仪等）。</p>
+<p><strong>2019 版相对 2011/2013 的主要演进（结合代码）：</strong>终端手机号由 BCD[6] 扩展到 BCD[10]；新增查询服务器时间（0x0004/0x8004）、链路检测（0x8204）、查询区域或路线数据（0x8608/0x0608）；删除事件报告/提问/信息点播（0x0301/0302/0303、0x8301~8304）等老旧消息；参数体系调整。网关对 2013/2019 帧头长度做<strong>自适应</strong>处理。</p>
+<p><strong>与实现对应：</strong>10808 端口、0x7E 分帧/转义/XOR 校验、注册鉴权心跳、0x0200 定位与附加项、多媒体 0x08xx/0x88xx、文本 0x8300 等均为该标准落地（消息清单见 4.1.2）。</p>
+
+<h3 id="ch6-3">6.3 JT/T 809-2011 / 2019</h3>
+<p><strong>标准范围：</strong>规定<strong>平台与平台之间</strong>（企业平台↔政府/上级平台）的数据交换协议：基于 TCP 的主从连接、登录/连接保持/校时、车辆动态信息交换（定位、北斗/GNSS 数据）、报警、电子运单、车辆单向/双向值守、查岗、下发指令等业务类型与子业务类型编码。</p>
+<blockquote class="warn"><p><strong>关键结论：vps 代码中没有 JT/T 809 的服务端或客户端实现</strong>（无 809 链路、登录握手、业务类型编解码）。WarnInfo 的 fromSource=11（JT809）只是为多来源预留的枚举。苏标第 3 部分第 5 章在 809 框架上扩展了“主动安全报警附件目录请求/应答”（子业务 0x9404/0x1404，上级平台可凭文件 URL 以 FTP 下载附件），vps 亦未实现该平台间交换。若 mydbd 需向政府监管平台联网，属<strong>另行建设</strong>范围。</p></blockquote>
+
+<h3 id="ch6-4">6.4 JT/T 1076 / 1077-2016</h3>
+<ul>
+<li><strong>JT/T 1076-2016 车载视频终端技术要求：</strong>规定终端的组成、功能（视音频采集/编码/存储/传输、通道划分 0–37 与特殊通道、报警联动、参数配置）、性能与安装。1078 的“逻辑通道号”即引用 1076 的通道表；苏标将 64/65 分配给驾驶辅助与驾驶员监测摄像头。</li>
+<li><strong>JT/T 1077-2016 车载视频平台技术要求：</strong>规定平台的功能（实时监控、历史回放、录像存储、报警、设备管理、用户与权限等）与性能指标，是平台侧建设依据。vps 只承担<strong>接入与媒体转发</strong>，不含 1077 描述的平台业务功能（由上层业务平台实现）。</li>
+</ul>
+
+<h3 id="ch6-5">6.5 JT/T 1078-2016</h3>
+<p><strong>标准范围：</strong>在 JT/T 808 信令通道之上扩展车载视频通信：实时音视频传输请求/控制（9101/9102）、状态通知（9105）、远程录像回放（9201/9202）、资源列表查询（9205/1205）、文件上传（9206/1206/9207）、云台控制（9301–9306）、终端音视频属性（1003）、乘客流量（1005）；规定 RTP 负载封装、音视频参数（H.264/H.265、音频编码）与逻辑通道号规则。</p>
+<p><strong>与实现对应：</strong>vps-video 实现终端 RTP over TCP 收流（10780/10781/10782）并向浏览器转 FLV over WebSocket（20780/20781/20782）；信令经 18001 REST 触发（9101/9102/9201/9202/9205）。两点超出标准的工程化扩展：①浏览器侧 FLV/H265 封装为<strong>私有增强</strong>（标准面向终端 RTP，不管浏览器）；②对讲浏览器上行 PCM 640B/帧为自定义约定。</p>
+
+<h3 id="ch6-6">6.6 主动安全智能防控技术规范（苏标 DB32/T 2019）</h3>
+<p>三份 .doc 经原文提取确认为<strong>江苏省地方标准 DB32/T 2019</strong>《道路运输车辆主动安全智能防控系统技术规范》，由江苏省交通运输厅提出归口，规定平台、终端与通讯协议，引用并扩展 JT/T 808/809/1076/1077/1078。</p>
+<ul>
+<li><strong>第 1 部分 平台：</strong>系统含卫星定位、视频、主动安全三个子系统；平台须接收报警信息与附件，报警类型含前向碰撞、车道偏离、车距过近、驾驶辅助失效、疲劳、长时间不目视前方、接打电话、抽烟、未检测到驾驶员、DSM 失效等；并规定用户管理、性能指标。</li>
+<li><strong>第 2 部分 终端及测试方法：</strong>ADAS/DSM/胎压/盲区终端的一般要求、功能与配置、性能（准确率等）、安装标定与测试方法（车距过近、光照、实车运行等附录）。</li>
+<li><strong>第 3 部分 通讯协议：</strong>终端↔平台沿用 808 报文机制，平台间沿用 809；核心扩展如下：</li>
+</ul>
+<h4>终端↔平台扩展要点（与网关逐条对应）</h4>
+<table>
+<thead><tr><th>条款</th><th>内容</th><th>网关实现</th></tr></thead>
+<tbody>
+<tr><td>0x8900/0x0900 透传</td><td>外设状态查询/上报（F7：工作状态+报警状态位图）、基本信息查询（F8：公司/型号/版本/外设ID）</td><td>编解码具备，业务未消费上行</td></tr>
+<tr><td>外设 ID</td><td>0x64 驾驶辅助(ADAS)、0x65 驾驶员行为监测(DSM)、0x66 胎压、0x67 变道决策辅助(盲区)；0x70 激烈驾驶参数</td><td>附加项 0x64/65/66/67/70 解析，参数 F364/F365/F366/F367/F370</td></tr>
+<tr><td>0x0200 附加报警</td><td>每类附加项含：报警ID(DWORD，循环)、标志状态(0不可用/1开始/2结束)、报警/事件类型、报警级别(1/2级)、车速/高程/经纬度(1/10⁶)/BCD时间/车辆状态/报警标识号16B。ADAS 类型 0x01 前向碰撞、0x02 车道偏离、0x03 车距过近、0x04 行人碰撞、0x05 频繁变道、0x06 道路标识超限、0x07 障碍物、0x08 失效、0x10 标志识别、0x11 主动抓拍；DSM 0x01 疲劳、0x02 接打电话、0x03 抽烟、0x04 长时间不目视前方、0x05 未检测到驾驶员、0x06 双手脱离方向盘、0x07 失效、0x10 自动抓拍、0x11 驾驶员变更</td><td>解码映射为 WarnInfo（typeId 101xxx/102xxx…，rawType=外设_类型）</td></tr>
+<tr><td>报警标识号(16B)</td><td>终端ID(7B)+BCD时间(6B)+同刻序号(1B)+附件数量(1B)+预留(1B)</td><td>warnIdentity(hex)</td></tr>
+<tr><td>0x9208 附件上传指令</td><td>附件服务器 IP 长度+IP、TCP 端口、UDP 端口、报警标识号16B、<strong>报警编号32B（平台唯一）</strong>、预留16B</td><td>报警开始且有附件时自动下发，指向 10818；warnId 即该 32B 编号</td></tr>
+<tr><td>0x1210 附件信息</td><td>终端ID7B、报警标识号16B、报警编号32B、信息类型(0正常/1补传)、附件数量、附件清单（文件名长度+文件名+文件大小）</td><td>文件服务处理，断点重连重发</td></tr>
+<tr><td>0x1211 文件信息</td><td>文件名、类型（0图/1音/2视/3文本/4其它）、大小</td><td>预分配 .tmp</td></tr>
+<tr><td>文件码流</td><td>帧头 0x30 0x31 0x63 0x64 + 文件名 BYTE[50] + 数据偏移 DWORD + 数据长度 DWORD + 数据体（默认 64K）</td><td>按偏移乱序写盘+.log 索引</td></tr>
+<tr><td>0x1212 / 0x9212</td><td>文件完成通知 / 应答（完成 0 或需补传 1 + 补传偏移量+长度列表）</td><td>完整性校验、缺片补传闭环；完成发 warn_media Topic</td></tr>
+<tr><td>文件命名</td><td><code>类型_通道_报警类型_序号_报警编号.后缀</code>；类型 00/01/02/03，通道 0–37 与 64/65，如“6401”前向碰撞；jpg/png、wav、h264/mp4、bin</td><td>透传保存</td></tr>
+</tbody>
+</table>
+<p>此外第 3 部分第 5 章定义<strong>平台间（809 框架）主动安全数据交换</strong>，含主动安全报警上报及“附件目录请求/应答”（DOWN_WARN_MSG_FILELIST_REQ=0x9404、UP_WARN_MSG_FILELIST_ACK=0x1404，应答带文件 URL，上级以 FTP 自取）——vps 未实现。</p>
+
+<h3 id="ch6-7">6.7 标准与实现对照矩阵</h3>
+<table>
+<thead><tr><th>标准域</th><th>网关支持程度</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>JT/T 808-2011/2019 终端通信</td><td><span class="tag tag-ok">高</span></td><td>核心链路完整；大量消息仅编解码无业务入口；2013/2019 自适应</td></tr>
+<tr><td>JT/T 1078-2016 视频</td><td><span class="tag tag-part">中高</span></td><td>实时/回放/对讲/资源检索可用；9206/9207、9301–9306 未提供触发入口；浏览器侧为私有 FLV 扩展</td></tr>
+<tr><td>苏标 DB32/T 主动安全（终端侧）</td><td><span class="tag tag-ok">高</span></td><td>0x64/65/66/67/70 报警 + 9208/1210/1211/码流/1212/9212 附件闭环完整</td></tr>
+<tr><td>苏标平台间 809 扩展</td><td><span class="tag tag-no">无</span></td><td>0x9404/0x1404 等未实现</td></tr>
+<tr><td>JT/T 809 平台联网</td><td><span class="tag tag-no">无</span></td><td>需上级平台联网时另行建设</td></tr>
+<tr><td>JT/T 1076/1077 终端与平台规范</td><td><span class="tag tag-part">部分相关</span></td><td>1076 通道/编码被 1078 与苏标引用并落地；1077 的平台业务功能不在网关内</td></tr>
+</tbody>
+</table>
+
+<h2 id="ch7">7. 实现备注与局限（对接前必须知悉）</h2>
+<ol>
+<li><strong>无上线事件：</strong>只有离线 Topic；上线需用鉴权成功/首条心跳近似，或改造新增。</li>
+<li><strong>校验失败不丢包：</strong>XOR 校验失败仅记日志后继续处理，弱网/异常终端可能送入脏数据。</li>
+<li><strong>白名单强耦合：</strong>车辆必须先在 vps_base_truck 登记（手机号），否则注册即拒；truckId 为网关内 Integer 主键，下游需建立 truckId↔本平台车辆/终端标识的映射。</li>
+<li><strong>附件存储仅本地盘：</strong>无 MinIO/OSS 抽象（storeType 固定 “local”），文件服务 URL 指向其自身 18009；多实例/容器化需解决卷共享与 URL 可达性。</li>
+<li><strong>附件进度仅内存：</strong>Caffeine 30 分钟，文件服务重启丢失传输上下文。</li>
+<li><strong>未启用项：</strong>jt808_media_topic（GpsMedia）为死代码；clearSession 无调用方；9206/9207 无入口；0x0900 上行透传无业务消费；大量 8103/8500/86xx/87xx/93xx 仅编解码。</li>
+<li><strong>视频流无鉴权：</strong>WS URL 持有者可拉流，需外层补令牌/时效与网络隔离。</li>
+<li><strong>同步指令的时延假设：</strong>REST 指令默认 5 秒同步等终端应答，终端离线/弱网会直接失败，调用方需有超时与重试策略。</li>
+<li><strong>单位与坐标系：</strong>speed 为 m/h、mileage 为米，下游须换算；坐标为终端原始卫星坐标（通常 WGS-84/北斗），参考 StarRocks 表另列高德(gc)/百度(bd)坐标，说明坐标纠偏由下游负责。</li>
+<li><strong>安全配置：</strong>数据库口令明文存放于配置文件，部署需外置并收敛分发范围。</li>
+</ol>
+
+<hr>
+<p class="meta">本报告基于只读静态分析生成，消息/接口/字段均以当前代码版本为准；后续网关升级（尤其新增 REST 入口、启用 809、替换媒体存储）后应同步修订。</p>
+
+<div class="docfoot">
+  <span>GATEWAY-REF-001 vps 车载网关功能、接口与标准协议分析 · 只读分析报告 · 2026-10-05</span>
+  <span>2026-10-05 迁入正式文档库 reference 分区，正文保持原貌</span>
+</div>
+
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

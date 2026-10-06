@@ -47,10 +47,8 @@ docker compose up -d          # postgis / platform-app / processing-app / portal
 
 ## 文档
 
-- [docs/00-文档总览与迁移清单.md](docs/00-文档总览与迁移清单.md) — 文档索引及 mydatama → mydbd 迁移对照
-- [docs/design/sys/SYS-DBD-001-系统总体架构.md](docs/design/sys/SYS-DBD-001-系统总体架构.md) — 本项目架构与模块边界
-- docs/design/ — 迁移的 TRAJ 模块设计、DDL、接口规格、用例
-- docs/research/03-导航系统数据采集与应用平台设计.md — 业务蓝图（JT/T 808/1078、ADAS/DSM、风险减量）
+- **[documentation/index.html](documentation/index.html) — 项目文档中心（正式文档库 v1.0.0，2026-10-05 起生效）**：总体设计、架构、数据库、部署运维、18 个功能模块产品与技术文档、接口手册与参考资料，支持搜索与跨文档跳转。
+- docs/ — 历史文档目录，自 v1.0.0 起作为归档快照保留，不再更新；内容与代码冲突时以 documentation/ 为准。
 
 ## 版本控制
 

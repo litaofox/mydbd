@@ -99,3 +99,25 @@ export function simulatorStop(): Promise<any> {
 export function simulatorStatus(): Promise<SimulatorStatus> {
   return http.get('/api/simulator/status')
 }
+
+/** mock 仿真投递状态（gateway_runner.status 的子集，仅测试模式） */
+export interface MockDeliveryStatus {
+  mockRunning: boolean
+  mockStartedAt?: string | null
+  mockStoppedAt?: string | null
+  mockDeliveryEnabled?: string
+  mockStats?: { ticks: number; warns: number }
+}
+
+export function mockDeliveryStart(): Promise<MockDeliveryStatus> {
+  return http.post('/api/simulator/mock/start')
+}
+
+export function mockDeliveryStop(): Promise<MockDeliveryStatus> {
+  return http.post('/api/simulator/mock/stop')
+}
+
+/** 清除模拟运行数据（保留基础数据），仅演示/测试模式 */
+export function clearRuntimeData(): Promise<{ cleared: boolean }> {
+  return http.post('/api/ingest/dataset/clear-runtime')
+}

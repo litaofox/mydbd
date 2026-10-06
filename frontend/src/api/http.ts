@@ -39,7 +39,8 @@ http.interceptors.response.use(
       localStorage.removeItem('mydbd-token')
       window.location.href = '/login'
     } else if (!silent) {
-      ElMessage.error(error.response?.data?.message || error.message || '网络错误')
+      // message：Java 平台统一响应体；detail：FastAPI（processing）错误结构
+      ElMessage.error(error.response?.data?.message || error.response?.data?.detail || error.message || '网络错误')
     }
     return Promise.reject(error)
   }

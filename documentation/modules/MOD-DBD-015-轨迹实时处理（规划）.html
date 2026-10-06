@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-015 轨迹实时处理（规划） · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-015 轨迹实时处理（规划）｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#part-product">产品篇</a>
+        <ul>
+          <li><a href="#p-scope">1. 模块定位与功能范围</a></li>
+          <li><a href="#p-term">2. 术语与坐标系</a></li>
+          <li><a href="#p-scenes">3. 业务场景</a></li>
+          <li><a href="#p-flow">4. 目标处理流程</a></li>
+          <li><a href="#p-gap">5. 现状与差距</a></li>
+          <li><a href="#p-value">6. 业务价值</a></li>
+          <li><a href="#p-shot">7. 规划页面占位</a></li>
+        </ul>
+      </li>
+      <li><a href="#part-tech">技术篇</a>
+        <ul>
+          <li><a href="#t-current">8. 现状架构（代码实证）</a></li>
+          <li><a href="#t-target">9. 目标分层架构</a></li>
+          <li><a href="#f08">10. F08 数据清洗与校验</a></li>
+          <li><a href="#f09">11. F09 坐标体系转换</a></li>
+          <li><a href="#f10">12. F10 地图匹配</a></li>
+          <li><a href="#f11">13. F11 轨迹压缩</a></li>
+          <li><a href="#f12">14. F12 行驶统计实时派生</a></li>
+          <li><a href="#t-schema">15. 数据模型与存储变更</a></li>
+          <li><a href="#t-join">16. 与现有系统衔接点</a></li>
+          <li><a href="#t-choice">17. 选型与备选</a></li>
+          <li><a href="#t-risk">18. 风险与对策</a></li>
+          <li><a href="#t-cap">19. 容量与性能估算</a></li>
+          <li><a href="#t-rollout">20. 灰度与上线策略</a></li>
+          <li><a href="#t-edge">21. 边界行为</a></li>
+          <li><a href="#t-accept">22. 验收标准</a></li>
+        </ul>
+      </li>
+      <li><a href="#deps">规划依赖关系</a></li>
+      <li><a href="#todo">待核实项</a></li>
+      <li><a href="#revisions">修订记录</a></li>
+    </ul>
+  </div></aside>
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-015 轨迹实时处理（规划）</h1>
+    <div class="cover-meta">
+      编号：MOD-DBD-015<span class="sep">｜</span>版本：v1.0.0<span class="sep">｜</span>日期：2026-10-05<span class="sep">｜</span>
+      状态：<span class="badge red">规划中</span><span class="sep">｜</span>覆盖功能项：F08～F12<span class="sep">｜</span>
+      代码锚点：processing-service/app（routes/ingest.py、cep_engine、services/geocode）、02-traj-tables.sql
+    </div>
+
+    <span class="part-tag product" id="part-product">产品篇</span>
+
+    <h2 id="p-scope">1. 模块定位与功能范围</h2>
+    <p>轨迹实时处理模块位于<strong>终端接入与业务消费之间</strong>：对网关送入的原始定位点依次完成清洗校验、坐标转换、地图匹配、轨迹压缩与行驶统计派生，向下游监控、风控、报表提供"干净、统一、轻量、可统计"的轨迹数据。</p>
+    <table>
+      <tr><th style="width:80px">功能项</th><th>名称</th><th>核心职责</th></tr>
+      <tr><td>F08</td><td>数据清洗与校验</td><td>必填/范围/物理合理性校验，异常点、漂移点识别，脏数据隔离而非删除，质量指标产出</td></tr>
+      <tr><td>F09</td><td>坐标体系转换</td><td>WGS-84（终端原始）→ GCJ-02（平台展示）统一在接入层完成；分析侧保留 CGCS2000/WGS-84 口径</td></tr>
+      <tr><td>F10</td><td>地图匹配</td><td>吸附道路、赋道路 ID/限速/行政区，支持超速判定与区划统计</td></tr>
+      <tr><td>F11</td><td>轨迹压缩</td><td>在线道格拉斯-普克（DP）+ 死区过滤，降低存储与前端渲染压力 50%～80%</td></tr>
+      <tr><td>F12</td><td>行驶统计实时派生</td><td>实时里程、行驶时长、夜间行驶、区划停留、围栏进出，为 F42～F52 系列报表提供统一派生层</td></tr>
+    </table>
+    <blockquote class="warn">F08～F12 均为设计规划，2026-10-05 时点平台<strong>没有任何</strong>清洗、转换、压缩、统计环节，定位数据由 /api/ingest/traj 与 CSV 导入<strong>直插</strong> traj_gps_point。</blockquote>
+
+    <h2 id="p-term">2. 术语与坐标系</h2>
+    <table>
+      <tr><th style="width:180px">术语</th><th>含义</th></tr>
+      <tr><td>WGS-84</td><td>GPS/北斗原始定位采用的地心坐标系；JT/T 808 终端上报坐标即 WGS-84（CGCS2000 与 WGS-84 在民用精度下基本一致，分析侧可互换口径使用）。</td></tr>
+      <tr><td>GCJ-02（火星坐标）</td><td>国测局加偏坐标系；高德/腾讯底图使用。平台 Leaflet 底图为高德瓦片，点位必须为 GCJ-02 才能与道路对齐。</td></tr>
+      <tr><td>异常点</td><td>违反必填、取值范围或物理可能性（如瞬时速度 &gt;300km/h、瞬移）的定位点。</td></tr>
+      <tr><td>漂移点</td><td>定位抖动产生的噪声点：前后点方向/速度矛盾、点偏离真实行驶轨迹，需滤波或丢弃。</td></tr>
+      <tr><td>脏数据隔离区</td><td>不直接删除可疑点，而打质量标记/移入隔离表，供人工复核与回流（对齐 F36 数据质量）。</td></tr>
+      <tr><td>DP 压缩</td><td>Douglas-Peucker 算法：用点到首尾连线的垂直距离递归抽稀，保留轨迹形状关键点。</td></tr>
+      <tr><td>死区过滤</td><td>车辆静止/微动时，位移小于阈值（死区半径）的连续点只保留代表点，消除静止漂移簇。</td></tr>
+      <tr><td>派生统计</td><td>以定位点流实时计算的里程、时长、停留、夜间、区划等二次数据，与原始点分层存储。</td></tr>
+    </table>
+
+    <h2 id="p-scenes">3. 业务场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">监控值班员</div>
+        <div class="sc-name">轨迹不飘不跳</div>
+        <div class="sc-desc">城市峡谷、隧道口、地下车库出口的漂移点被识别隔离，大屏车辆位置平滑可信，不再出现"瞬移到几公里外"。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">超速判定有依据</div>
+        <div class="sc-desc">点匹配到具体道路后取得该路段限速，超速报警不再只按固定阈值；误报率下降。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">一线调度</div>
+        <div class="sc-name">车辆在哪个区、停了多久</div>
+        <div class="sc-desc">行政区/电子围栏的进出与停留实时产出，调度无需事后在地图上人工量算。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">数据质量管理员</div>
+        <div class="sc-name">坏设备看得见</div>
+        <div class="sc-desc">异常点率、漂移率、丢点率按终端画像输出，定位质量差的设备可批量排查退换（移交 F36）。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">前端用户</div>
+        <div class="sc-name">历史轨迹加载快</div>
+        <div class="sc-desc">长轨迹播放压缩后点数下降 50%～80%，首屏渲染与拖动流畅，里程与形状不失真。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">报表/财务</div>
+        <div class="sc-name">里程类报表直接出数</div>
+        <div class="sc-desc">F42 里程、F43 行驶、F44 停车、F52 车辆工作等报表全部消费 F12 统一派生结果，口径一致、不用各自重算。</div>
+      </div>
+    </div>
+
+    <h2 id="p-flow">4. 目标处理流程</h2>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">① 原始点到达</div>
+        <div class="s-desc">来自 MOD-014 网关（Kafka 消费）或现有 HTTP/CSV 通道，携带 gpsTime、WGS-84 经纬度、速度、方向、海拔、报警标志。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② F08 清洗校验</div>
+        <div class="s-desc">必填 → 范围 → 物理合理性（瞬时速度/瞬移/时钟偏差）→ 滤波判漂移；通过点放行，可疑点打标/隔离。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ F09 坐标转换</div>
+        <div class="s-desc">WGS-84 → GCJ-02 后写展示列/location；原始坐标留 ext，供分析使用。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ F10 地图匹配</div>
+        <div class="s-desc">道路吸附（PostGIS 路网最近边 + 方向约束），赋道路 ID、限速、行政区。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑤ F11 在线压缩</div>
+        <div class="s-desc">死区过滤 + 流式 DP 判定关键点；原始点与压缩标记分层，回放默认用关键点序列。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑥ F12 统计派生</div>
+        <div class="s-desc">按车辆维护有状态计算：增量里程、行驶/停车段切分、夜间标记、区划与围栏进出，写派生表/更新当日分片。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑦ 下游分发</div>
+        <div class="s-desc">监控 WebSocket（范围过滤）、CEP 引擎、报表派生层、F36 质量统计各取所需。</div>
+      </div>
+    </div>
+
+    <h2 id="p-gap">5. 现状与差距（2026-10-05 代码实证）</h2>
+    <table>
+      <tr><th>环节</th><th>现状</th><th>差距</th></tr>
+      <tr><td>入库链路</td><td>/api/ingest/traj 批量 JSON 直插 traj_gps_point，旁路 cep_engine.evaluate_points；CSV 幂等导入</td><td>无任何校验/转换/压缩/统计</td></tr>
+      <tr><td>坐标</td><td>GeocodeController 注释：点位与高德底图同为 GCJ-02 直接透传；AmapProperties（mydbd.amap.key，为空时逆地理 503）；前端全部用高德 GCJ-02 瓦片</td><td>真实 WGS-84 终端点入库前<strong>必须</strong>转换，否则系统性偏移；目前无转换代码</td></tr>
+      <tr><td>质量</td><td>无异常/漂移判定、无质量标记、无隔离表</td><td>F08/F36 全待建</td></tr>
+      <tr><td>路网</td><td>PostGIS 已装（postgis/postgis:16-3.4），traj_gps_point.location 有 GIST 索引</td><td>无路网表、无匹配、无限速数据，F10 待建</td></tr>
+      <tr><td>统计</td><td>仅驾驶评分（mon.driver_score）从点计算事件与急加减速；无通用里程/行驶/停留派生</td><td>F12 待建；F42～F52 报表无数据底座</td></tr>
+    </table>
+
+    <h2 id="p-value">6. 业务价值</h2>
+    <ul>
+      <li><strong>数据可信</strong>：异常与漂移不直接进入业务，监控不"见鬼"、超速有道路限速依据。</li>
+      <li><strong>坐标统一</strong>：一次转换、全平台一致，根除"WGS-84 点叠高德图偏移几百米"的系统性事故。</li>
+      <li><strong>降本提效</strong>：压缩降低存储与前端渲染成本；派生统计让 10+ 报表共享同一口径，避免每个报表各写一套里程算法。</li>
+      <li><strong>质量可运营</strong>：质量指标反推终端设备质量，形成"平台发现坏设备 → 运维更换 → 指标改善"闭环（F36）。</li>
+      <li><strong>可回溯</strong>：原始点、清洗标记、压缩标记分层保留，统计可按补传点（F04）回补重算。</li>
+    </ul>
+
+    <h2 id="p-shot">7. 规划页面占位</h2>
+    <div class="shot">
+      <div class="sh-icon">🚧</div>
+      <div class="sh-t">规划页 1：轨迹质量抽检（选车选时段 → 原始点/清洗点/压缩点三层叠加）</div>
+      <div class="sh-p">供算法调参与质量管理员复核隔离点；隔离点可一键回流重算。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🚧</div>
+      <div class="sh-t">规划页 2：处理链路监控（接入 TPS、清洗通过率、隔离量、匹配率、压缩率、消费 Lag）</div>
+      <div class="sh-p">纳入 F39 可观测；指标定义与 F36 质量大盘对齐。</div>
+    </div>
+
+    <span class="part-tag" id="part-tech">技术篇</span>
+
+    <h2 id="t-current">8. 现状架构（代码实证）</h2>
+    <h3>8.1 traj_gps_point 表现状（02-traj-tables.sql）</h3>
+    <table>
+      <tr><th>列</th><th>类型</th><th>说明</th></tr>
+      <tr><td>id</td><td>bigserial</td><td>主键（数据库序列，非雪花）</td></tr>
+      <tr><td>identity_code</td><td>varchar</td><td>终端/设备标识</td></tr>
+      <tr><td>plate_no</td><td>varchar</td><td>车牌号</td></tr>
+      <tr><td>gps_time</td><td>timestamp</td><td>定位时间（终端时刻）</td></tr>
+      <tr><td>lng / lat</td><td>numeric(10,6)</td><td>经纬度，现状被当作 GCJ-02</td></tr>
+      <tr><td>speed</td><td>integer</td><td>速度 km/h</td></tr>
+      <tr><td>direction</td><td>integer</td><td>方向角（度）</td></tr>
+      <tr><td>altitude</td><td>numeric</td><td>海拔（米）</td></tr>
+      <tr><td>location</td><td>geometry(Point,4326)</td><td>PostGIS 点（GIST 索引；GpsPoint 实体不映射此列，由 SQL 侧维护）</td></tr>
+      <tr><td>alarm_flag</td><td><strong>smallint</strong></td><td>报警标志位（容量不足以容纳苏标全集，MOD-014 18 号迁移改 bigint）</td></tr>
+      <tr><td>mileage</td><td>numeric(12,2)</td><td>里程读数 km（终端上报，现状非平台计算）</td></tr>
+      <tr><td>receive_time / create_date</td><td>timestamp</td><td>平台接收时间 / 入库时间</td></tr>
+    </table>
+    <p>现有索引：(identity_code, gps_time)、(plate_no, gps_time)、(gps_time)、GIST(location)。<strong>无油量列、无质量标记列、无 ext jsonb。</strong></p>
+
+    <h3>8.2 现有处理代码</h3>
+    <ul>
+      <li><code>routes/ingest.py</code>：鉴权（X-Service-Token）→ 批量插点 → 旁路 cep_engine.evaluate_points；无校验、无转换。</li>
+      <li><code>services/simulator.py</code>：造点同样按 GCJ-02 坐标直插。</li>
+      <li><code>routes/analysis.py + services/risk_engine.py</code>：视频分析占位任务（见 MOD-DBD-016），与轨迹处理无交集。</li>
+      <li>Java 侧 GpsPoint 实体不映射 location；评分链路 ScoreConstants 的急加减速阈值 2.5m/s²、最大邻点时间差 30s 是<strong>现有唯一</strong>接近"点质量处理"的参数（用于评分，不是清洗）。</li>
+    </ul>
+    <h3>8.3 现有入库点载荷示例（/api/ingest/traj 实际字段口径）</h3>
+    <pre><code>// POST /api/ingest/traj，Header: X-Service-Token: &lt;服务令牌&gt;
+{
+  "points": [
+    {
+      "identityCode": "88880001",
+      "plateNo": "苏A·测试001",
+      "gpsTime": "2026-10-05 10:23:41",
+      "lng": 118.796877,
+      "lat": 32.060255,
+      "speed": 47,
+      "direction": 88,
+      "altitude": 12.6,
+      "alarmFlag": 0,
+      "mileage": 12045.32
+    }
+  ]
+}
+// 现状行为：字段不做范围/合理性校验，lng/lat 原样写 GCJ-02 列，
+// location 由数据库侧填充，随后 evaluate_points 旁路评估，无统计产物。</code></pre>
+    <p>CSV 导入（load-sample）字段集与上例对齐，按业务主键做幂等；driver_events.json 提供演示用驾驶事件。两条通道都不产生 F08～F12 任何中间数据。</p>
+    <h3>8.4 可复用的现有参数（ScoreConstants，驾驶评分子系统）</h3>
+    <p>以下已上线参数经过数据验证，F08/F12 设计直接对齐或复用，避免双口径：</p>
+    <table>
+      <tr><th>现有参数</th><th>现值</th><th>在本模块的复用点</th></tr>
+      <tr><td>急加减速加速度阈值</td><td>2.5 m/s²</td><td>F08 行为异常辅助判定、F12 强制关键点</td></tr>
+      <tr><td>最大邻点时间差</td><td>30 秒</td><td>F08 稀疏段/F10 匹配降级/F12 段切分统一阈值</td></tr>
+      <tr><td>样本门槛</td><td>200 点 / 30 分钟</td><td>F36 终端画像"样本不足"判定参考</td></tr>
+      <tr><td>每日重算上限</td><td>92 天</td><td>F04/F12 历史回补的保留窗口对齐</td></tr>
+      <tr><td>T+1 调度</td><td>每日 01:00（cron 0 0 1 * * ?）</td><td>日分片冻结与重算窗口</td></tr>
+    </table>
+
+    <h2 id="t-target">9. 目标分层架构</h2>
+    <pre><code>                ┌──────────── 原始层（raw，只增不改）────────────┐
+网关/HTTP/CSV →  │ traj_gps_point 原始点（ext.raw_*、qc 标记）       │
+                └───────────────┬───────────────────────────────┘
+                                │ 流式处理（processing-service 有状态消费者）
+        ┌───────────────────────┼───────────────────────────┐
+        ▼                       ▼                           ▼
+ F08 清洗/质量标记        F09 坐标转换                 F10 地图匹配
+ qc_status/qc_reason     lng/lat=GCJ-02              road_id/speed_limit
+ 隔离区（不删）           ext.raw_lng/raw_lat=WGS84   adcode/道路名
+        └───────────────────────┼───────────────────────────┘
+                                ▼
+                         F11 压缩（keypoint 标 + 死区）
+                                ▼
+                    F12 派生层（按车/按日分片）
+        traj_trip_segment（行驶/停车段）· traj_daily_stat（里程/时长/夜间）
+        区划停留 · 围栏进出事件
+                                ▼
+        监控 WebSocket / CEP / F42～F52 报表 / F36 质量大盘 / F59 完整率</code></pre>
+    <ul>
+      <li><strong>原始点不物理删除</strong>：清洗结果以 qc_status（OK/SUSPECT/REJECT）与 qc_reason 标记；REJECT 点不进业务统计但可查、可回流（对齐 F36 隔离区原则）。</li>
+      <li><strong>有状态计算按车分片</strong>：每辆车维护"上一点 + 当前行驶段 + 当日统计"状态；Kafka 按 truckId/identity_code 分区保证同车状态有序。</li>
+      <li><strong>补传点特殊路径</strong>：F04 补传点不走实时状态机，走"按 gpsTime 的历史分片回补"（见 14.4）。</li>
+    </ul>
+    <h3>9.1 五条设计原则</h3>
+    <ol>
+      <li><strong>原始不可变</strong>：任何环节只追加标记、不改原始坐标与字段。</li>
+      <li><strong>判定函数单一来源</strong>：F08 与 F59 共用错误/漂移规则代码，口径只维护一处。</li>
+      <li><strong>坐标系显式化</strong>：每条数据必须带来源坐标系声明，无声明数据按异常隔离处理。</li>
+      <li><strong>统计一处派生多处消费</strong>：里程/时长只在 F12 算一次，报表只读派生层。</li>
+      <li><strong>可降级</strong>：匹配/逆地理等外部依赖故障时降级为无匹配直采，主链路不断。</li>
+    </ol>
+
+    <h2 id="f08">10. F08 数据清洗与校验（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>10.1 校验规则链（蓝图 §3.3 口径）</h3>
+    <table>
+      <tr><th>#</th><th>规则</th><th>判定口径</th><th>处理</th></tr>
+      <tr><td>1</td><td>必填校验</td><td>时间、经纬度、速度缺失</td><td>REJECT，reason=MISSING_FIELD</td></tr>
+      <tr><td>2</td><td>陆域范围</td><td>经纬度不在中国陆域合理范围（粗略包围盒 + PostGIS 国境校验备选）</td><td>REJECT，reason=OUT_OF_RANGE</td></tr>
+      <tr><td>3</td><td>瞬时速度</td><td>速度 &gt; 300 km/h</td><td>SUSPECT/REJECT，reason=SPEED_IMPOSSIBLE</td></tr>
+      <tr><td>4</td><td>瞬移检测</td><td>与邻点距离 ÷ 时间差得到的等效速度物理不可能（超交通工具上限）</td><td>SUSPECT，reason=TELEPORT</td></tr>
+      <tr><td>5</td><td>定位无效标志</td><td>0x0200 定位状态位为"未定位"</td><td>SUSPECT，reason=GNSS_INVALID</td></tr>
+      <tr><td>6</td><td>漂移检测</td><td>Kalman 预测残差超限 / 速度方向约束矛盾（前后点方向与速度不自洽）</td><td>SUSPECT，reason=DRIFT</td></tr>
+      <tr><td>7</td><td>时钟偏差</td><td>gpsTime 与平台时钟偏差 &gt; 30 秒（实时点）</td><td>保留点 + 告警 reason=CLOCK_SKEW</td></tr>
+    </table>
+    <h3>10.2 清洗策略</h3>
+    <ul>
+      <li>硬错误（缺字段、越界、未定位）直接 REJECT 打标，不进派生统计；软错误（瞬移、漂移）先 SUSPECT，结合邻点窗口（前后各 1～3 点）二次确认。</li>
+      <li>Kalman 滤波用于<strong>平滑展示位置</strong>，不回改原始坐标；平滑结果只写展示/匹配辅助列。</li>
+      <li>静止漂移簇（死区内抖动）不在 F08 删点，交由 F11 死区过滤统一处理。</li>
+      <li>质量计数（接收/有效/异常/漂移/越界）按终端、按小时聚合，供 F36 五维指标与终端画像。</li>
+    </ul>
+    <h3>10.2.1 判定算例</h3>
+    <table>
+      <tr><th>样本</th><th>邻点事实</th><th>判定</th></tr>
+      <tr><td>A 点速度 350km/h</td><td>前后点速度 40～50km/h</td><td>SPEED_IMPOSSIBLE；单点先 SUSPECT，若终端连续多点超阈则 REJECT</td></tr>
+      <tr><td>B 点与前点相距 3.2km、时间差 10 秒（等效 1152km/h）</td><td>后点回到前点附近 50 米</td><td>TELEPORT，典型隧道口单跳漂移，SUSPECT 后由后点确认丢弃</td></tr>
+      <tr><td>停车点簇 200 点散布半径 25 米</td><td>速度均≈0</td><td>F08 不判异常；交 F11 死区压缩</td></tr>
+      <tr><td>C 点 gpsTime 比 receive_time 快 48 秒</td><td>终端时钟快</td><td>CLOCK_SKEW 告警，点保留参与统计（时间未倒挂）</td></tr>
+      <tr><td>D 点 gpsTime 晚于 receive_time 20 小时以上</td><td>终端时钟错或报文重放</td><td>对齐 F59 错误规则，REJECT 并计入错误定位数</td></tr>
+      <tr><td>连续三点方向 10°→170°→12°、速度连续</td><td>中间点速度方向矛盾</td><td>DRIFT SUSPECT，Kalman 平滑用于展示</td></tr>
+    </table>
+    <h3>10.3 衔接、依赖与验收</h3>
+    <div class="kvlist">
+      <div class="kv"><div class="k">依赖</div><div class="vv">F01 数据通道（网关提供定位状态位与原始标志）；F36 消费质量统计</div></div>
+      <div class="kv"><div class="k">衔接现有</div><div class="vv">F59 轨迹完整率的"错误五规则 + 漂移规则"与本规则链共用一套判定函数，避免两处口径分叉</div></div>
+    </div>
+    <ol>
+      <li>构造缺经纬度、越界点、350km/h 点、瞬移点、未定位点各 100 条，qc_reason 分类准确率 100%。</li>
+      <li>真实/仿真轨迹中人工标注的漂移点召回率 ≥95%，正常点误杀率 ≤0.1%（对齐蓝图异常点 &lt;0.1% 目标）。</li>
+      <li>REJECT 点不产生里程、不触发超速报警，但在隔离查询页可查且可人工回流。</li>
+      <li>时钟偏差 &gt;30 秒的终端出现在质量告警列表。</li>
+      <li>清洗通过率、异常率按终端/小时聚合数值与样本 SQL 直算一致。</li>
+    </ol>
+
+    <h2 id="f09">11. F09 坐标体系转换（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。当前无任何坐标转换代码，全部点位被直接当作 GCJ-02。</blockquote>
+    <h3>11.1 现状约束（代码确证）</h3>
+    <ul>
+      <li>GeocodeController 注释原文口径：平台点位与高德底图同为 GCJ-02，直接透传；未来接入 WGS-84 原始数据"应在数据接入层统一转换"。</li>
+      <li>前端 Leaflet 全部使用高德 <code>webrd0{s}.is.autonavi.com/appmaptile?style=8</code> 瓦片（GCJ-02）。</li>
+      <li>现有 CSV / 模拟器数据均按 GCJ-02 制造与使用；真实 808 终端为 WGS-84，<strong>不转换会出现数百米系统性偏移</strong>。</li>
+    </ul>
+    <h3>11.2 设计方案</h3>
+    <ul>
+      <li>转换点放在<strong>数据接入层</strong>（app/gateway mappers.py 与 ingest 入口共用同一转换函数），任何来源（网关/HTTP/CSV）都显式声明坐标源（source_crs=WGS84|GCJ02），历史 CSV/simulator 标 GCJ02 不转。</li>
+      <li>GCJ-02 经纬度写 lng/lat 与 location(4326 承载 GCJ-02 数值，现状如此沿用)；WGS-84 原始值留 ext.raw_lng/raw_lat，分析类需要真实距离时以原始 CGCS2000/WGS-84 坐标在 PostGIS 地理坐标下计算。</li>
+      <li>算法：国测局加偏算法（纯数学实现，无外部请求），结果与公开基准点比对误差控制在 1 米内；禁止用高德 HTTP 接口逐点转（QPS 与成本不可接受），逆地理仍走现有 AmapProperties。</li>
+    </ul>
+    <h3>11.2.1 坐标双套使用规则</h3>
+    <table>
+      <tr><th>用途</th><th>使用坐标</th><th>落点</th></tr>
+      <tr><td>前端地图展示、轨迹回放、围栏绘制</td><td>GCJ-02</td><td>lng/lat、location（现状沿用）</td></tr>
+      <tr><td>两点距离/里程、速度复核、地理计算</td><td>WGS-84/CGCS2000</td><td>ext.raw_lng/raw_lat → PostGIS geography 计算</td></tr>
+      <tr><td>地图匹配候选检索</td><td>GCJ-02（路网同坐标系导入）</td><td>路网表与点必须同一坐标系，严禁混用</td></tr>
+      <tr><td>未来监管上报（F38/JT/T 809）</td><td>GCJ-02（按属地平台要求）</td><td>809 转发模块统一从 GCJ-02 列取</td></tr>
+    </table>
+    <h3>11.2.2 边界情形</h3>
+    <ul>
+      <li>境外点：不做加偏（算法在国境内有效），source_crs 保留 WGS84 并标记，展示降级。</li>
+      <li>历史数据：不批量回灌转换（模拟器/CSV 已按 GCJ-02 制造）；仅对 gateway 模式启用后新入的真实终端点执行转换。</li>
+      <li>重复导入：幂等键命中时跳过，避免重复转换造成漂移。</li>
+      <li>高德 key 缺失：只影响逆地理（503），不影响坐标转换本身（纯本地算法）。</li>
+    </ul>
+    <h3>11.3 验收标准</h3>
+    <ol>
+      <li>选定 20 个覆盖全国的已知 WGS-84↔GCJ-02 基准点，转换结果与基准偏差 ≤2 米。</li>
+      <li>同一点标记 source_crs=GCJ02 时不发生二次转换（幂等，不叠加偏移）。</li>
+      <li>WGS-84 真实终端点转换后与高德底图道路目视对齐；原始坐标在 ext 可查。</li>
+      <li>simulator/CSV 历史数据导入路径行为不变（回归测试）。</li>
+    </ol>
+
+    <h2 id="f10">12. F10 地图匹配（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。当前库内无路网数据。</blockquote>
+    <h3>12.1 设计方案</h3>
+    <ul>
+      <li>路网准备：导入开源路网（OSM 中国区域抽取或采购商用路网）入 PostGIS，边表含几何、方向、等级、限速、行政区 adcode；建 GIST 索引。</li>
+      <li>匹配算法：在线增量匹配——以"上一点所在边 + 行驶方向 + 与候选边距离"做隐马尔可夫/权重打分，输出吸附点、road_id、限速、行政区；弱网/稀疏点（间隔 &gt;30s）降级为最近边或不匹配（标 matched=false），不强行吸附。</li>
+      <li>输出：road_id、road_name、speed_limit、adcode、matched 置信度写扩展列/旁路匹配表；原始点几何不改。</li>
+    </ul>
+    <h3>12.1.1 候选边打分（简化 HMM 权重）</h3>
+    <table>
+      <tr><th>因子</th><th>权重方向</th><th>说明</th></tr>
+      <tr><td>点到候选边距离</td><td>距离越小分越高（高斯发射概率）</td><td>&gt;50 米候选直接剔除</td></tr>
+      <tr><td>行驶方向与边方向夹角</td><td>夹角越小分越高</td><td>单行线反向候选降权/剔除</td></tr>
+      <tr><td>与上一匹配边的可达性</td><td>沿路网最短路径越短分越高</td><td>防止吸到平行辅路/高架</td></tr>
+      <tr><td>道路等级先验</td><td>高速/主干道按速度先验加权</td><td>120km/h 点不可能在支路</td></tr>
+    </table>
+    <pre><code># 在线匹配伪代码（每点一次）
+candidates = road_net.nearby_edges(p.gcj02, radius=50m)
+for e in candidates:
+    emit   = gauss(distance(p, e), sigma=15m)
+    head   = cos_similarity(p.bearing, e.bearing_at(proj))
+    trans  = route_reachability(prev_edge, e, dt)
+    score  = emit * w1 + head * w2 + trans * w3 + e.prior * w4
+best = argmax(score)
+if best.score &lt; TAU or p.gap_from_prev &gt; 30s:
+    p.matched = False          # 不硬吸附
+else:
+    p.road_id, p.speed_limit, p.adcode = best.attrs</code></pre>
+    <h3>12.2 下游用法</h3>
+    <ul>
+      <li>超速报警：点速度 &gt; 道路限速（容差按规则配置）替代/补充固定阈值，误报可解释。</li>
+      <li>区划统计：F12 的行政区停留、F55/F56 企业地区维度直接取 adcode。</li>
+      <li>轨迹回放：可展示"行驶道路"名称与路段里程。</li>
+    </ul>
+    <h3>12.3 验收标准</h3>
+    <ol>
+      <li>城市道路 1Hz 仿真轨迹匹配率 ≥95%，高速路段 ≥98%；匹配错误（吸到平行路）率 ≤2%。</li>
+      <li>无路网区域/低密度点不产生错误吸附，matched=false 明示。</li>
+      <li>单点匹配处理延迟 P95 ≤50ms（在线链路不阻塞）。</li>
+      <li>限速取值与路网数据版本可追溯（路网版本号落匹配记录）。</li>
+    </ol>
+
+    <h2 id="f11">13. F11 轨迹压缩（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>13.1 双层压缩策略</h3>
+    <table>
+      <tr><th>策略</th><th>规则</th><th>目标</th></tr>
+      <tr><td>死区过滤</td><td>位移 &lt; 死区半径（规划 15～30 米可调）且速度≈0 的连续点只保留首尾/代表点</td><td>消除停车点簇，停车场景压缩明显</td></tr>
+      <tr><td>在线 DP</td><td>流式维护候选段，点到首尾连线垂距 &lt; ε（规划 10～25 米）判为可抽稀；转弯/变速/报警点强制保留</td><td>保留轨迹形状，压缩率 50%～80%</td></tr>
+    </table>
+    <h3>13.2 设计约束</h3>
+    <ul>
+      <li><strong>原始点全保留</strong>：压缩只产生 keypoint 布尔标记或关键点视图，不物理删除点；取证、重算、参数调整都可回到原始层。</li>
+      <li>报警点、急加减速点、补传段边界点、围栏进出点强制为关键点。</li>
+      <li>回放与里程：前端回放默认关键点序列；里程统计始终基于原始有效点计算，<strong>不用压缩点算里程</strong>。</li>
+    </ul>
+    <h3>13.2.1 在线 DP + 死区伪代码</h3>
+    <pre><code># state：anchor=段首关键点，last=上一保留点，pending=待定点
+for p in valid_points(car):
+    if is_forced_keypoint(p):          # 报警/急加减速/围栏/补传边界
+        flush(pending); keep(p); anchor = p; continue
+    if in_deadzone(p, anchor, R=20m) and p.speed ~ 0:
+        pending.append(p); continue   # 静止点簇：只留代表点
+    # DP：若 pending 中存在偏离 anchor→p 连线超过 ε 的点，则该点必须保留
+    q = max_deviation_point(pending, line(anchor, p))
+    if q.dev &gt;= EPSILON(15m):
+        keep(q); anchor = q
+    pending.append(p)
+flush(pending)</code></pre>
+    <p>参数 R（死区半径）、ε（垂距阈值）均配置化并按道路等级自适应：高速 ε 可放大到 25 米，城区支路收紧到 10 米。</p>
+    <h3>13.3 验收标准</h3>
+    <ol>
+      <li>城市 + 高速混合轨迹（≥1 万点）压缩率 ≥50%，压缩轨迹与原轨迹 Hausdorff 距离 P95 ≤25 米。</li>
+      <li>压缩序列中报警点零丢失。</li>
+      <li>停车 30 分钟（约 1800 个静止点）压缩后不超过 5 个代表点。</li>
+      <li>前端回放压缩轨迹首屏时间较原始点下降 ≥50%，视觉路线一致。</li>
+    </ol>
+
+    <h2 id="f12">14. F12 行驶统计实时派生（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。当前除驾驶评分外无派生统计。</blockquote>
+    <h3>14.1 派生指标</h3>
+    <table>
+      <tr><th>指标</th><th>算法口径（设计）</th><th>下游报表</th></tr>
+      <tr><td>实时里程</td><td>相邻有效点 PostGIS 球面距离累加（用 WGS-84 原始坐标）；补传点按 gpsTime 回补当日分片</td><td>F42/F43/F52/F54 等</td></tr>
+      <tr><td>行驶时长</td><td>速度 &gt; 行驶阈值（规划 5km/h）的邻点时间差累加；行驶段切分写 traj_trip_segment</td><td>F43/F52</td></tr>
+      <tr><td>停车时长/次数</td><td>连续静止（死区内、速度≈0）超过最小停车时长（规划 3 分钟）计一次停车</td><td>F44</td></tr>
+      <tr><td>怠速</td><td>静止但 ACC ON / 转速 &gt; 怠速阈值（依赖 F05 信号；F05 前用速度=0 的保守近似并显式标注口径）</td><td>F45</td></tr>
+      <tr><td>夜间行驶</td><td>gpsTime 落在夜间时段（规划 22:00～06:00，可配置）的行驶里程/时长</td><td>F58 运营时段</td></tr>
+      <tr><td>区划停留</td><td>由 F10 adcode 变化切分停留段，累计各区停留时长</td><td>区域运营分析</td></tr>
+      <tr><td>围栏进出</td><td>点对围栏多边形（现有 GeoFence）的进入/离开事件，增量判定</td><td>围栏业务/风控</td></tr>
+    </table>
+    <h3>14.2 状态与分片</h3>
+    <ul>
+      <li>按车维护键状态（上一点、当前段、当日累计），存内存 + 当日分片表持久化；消费者重平衡后从分片表恢复状态。</li>
+      <li>按自然日分片（traj_daily_stat：车 × 日期一行），里程/时长/次数增量更新；T+1 后冻结（与评分 ScoreScheduler 的 T+1 节奏对齐）。</li>
+    </ul>
+    <h3>14.2.1 单车运行态字段（内存 + 分片持久化）</h3>
+    <table>
+      <tr><th>字段</th><th>含义</th></tr>
+      <tr><td>prev_point</td><td>上一有效点（坐标、时间、速度、方向、road_id）</td></tr>
+      <tr><td>current_segment</td><td>当前行驶/停车段：类型、起点时间/位置、累计里程与时长</td></tr>
+      <tr><td>daily_acc</td><td>当日累计：里程、行驶秒、停车次数/秒、夜间里程、急加减速计数（供评分复用口径核对）</td></tr>
+      <tr><td>fence_states</td><td>车辆当前在栏的围栏集合（增量进出判定，避免每点全量点面判断）</td></tr>
+      <tr><td>gap_flags</td><td>与上点时间差 &gt;30s 的稀疏段标记（匹配降级、段切分保护）</td></tr>
+    </table>
+    <h3>14.2.2 行驶段状态机</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">IGNITE/首个运动点</div><div class="s-desc">速度持续 &gt;5km/h 超过最小行驶时长（规划 60 秒）→ 开启行驶段</div></div>
+      <div class="step"><div class="s-title">行驶中累加</div><div class="s-desc">邻点球面距离入里程、时间差入行驶秒；跨夜间时段给该段打夜间标</div></div>
+      <div class="step"><div class="s-title">静止判定</div><div class="s-desc">连续 ≥3 分钟位于死区且速度≈0 → 关闭行驶段、开启停车段</div></div>
+      <div class="step"><div class="s-title">怠速子状态</div><div class="s-desc">停车段内若 ACC ON/转速&gt;阈值 → 同时累计怠速秒（F05 到位前该口径置空，不以速度近似值冒充）</div></div>
+      <div class="step"><div class="s-title">跨日切割</div><div class="s-desc">00:00 切分两段/两分片，保证日统计不跨天</div></div>
+    </div>
+    <h3>14.3 与驾驶评分的关系</h3>
+    <p>现有 mon.driver_score（ScoreConstants：8 个事件白名单、扣分 8/4/2、急加减速 0.5 封顶 5、样本门槛 200 点/30 分钟、重算上限 92 天、每日 01:00 T+1）<strong>保留独立</strong>；F12 只提供清洗后点流与行驶段，评分的事件口径不变，避免一次改造影响已上线功能。</p>
+    <h3>14.4 补传回补</h3>
+    <p>F04 补传点按 gpsTime 定位历史日期分片，重算该日"里程/时长/停车"，并以覆盖更新方式写回；回补动作记录批次与时间，供 F59 完整率联动。</p>
+    <h3>14.5 与 MOD-017 报表的数据对接映射</h3>
+    <table>
+      <tr><th>报表（功能项）</th><th>消费的 F12 产物</th></tr>
+      <tr><td>F42 里程报表</td><td>traj_daily_stat.mileage_km（按周/年汇总）</td></tr>
+      <tr><td>F43 行驶报表</td><td>driving_s、trip_count、mileage_km（汇总+明细双导出取 traj_trip_segment）</td></tr>
+      <tr><td>F44 停车报表</td><td>parking_count、parking_s + PARKING 段明细（位置/时长）</td></tr>
+      <tr><td>F45 怠速报表</td><td>IDLING 段/idling_s；F05 未上线前该列置空并在报表标注"近似口径未启用"</td></tr>
+      <tr><td>F52 车辆工作情况</td><td>mileage_km、driving_s（日均速度）、max_speed/max_speed_time/位置</td></tr>
+      <tr><td>F54/F55/F57 周期安全</td><td>里程与行驶时长统一取日分片，保证各安全分析口径一致</td></tr>
+      <tr><td>F58 车辆商机（运营时段/路段）</td><td>night_mileage_km、adcodes、F10 road_id 等级聚合（高速/省道）</td></tr>
+    </table>
+    <p>所有报表的<strong>车辆范围裁剪（deptScope）在查询派生层时施加</strong>，派生表本身全量生产；即"先生成、后裁剪"，避免重跑全量（数据范围 7 条口径见 MOD-DBD-017）。</p>
+    <h3>14.6 验收标准</h3>
+    <ol>
+      <li>已知里程的闭合路线（含停车、掉头）派生里程与参考里程误差 ≤2%。</li>
+      <li>行驶/停车段切分与人工标注一致率 ≥98%；停车次数无跨日重复计数。</li>
+      <li>消费端重启后当日累计不重复、不丢失（从分片恢复）。</li>
+      <li>注入 2 小时前的补传点后，对应日期分片里程正确回补，今日数据不变。</li>
+      <li>F42/F43/F44 报表直接读派生层与用原始点 SQL 重算结果一致（抽样 50 车 ×7 天）。</li>
+    </ol>
+
+    <h2 id="t-schema">15. 数据模型与存储变更（设计规划）</h2>
+    <table>
+      <tr><th>对象</th><th>变更</th><th>功能项</th></tr>
+      <tr><td>traj_gps_point 扩列</td><td>ext jsonb（raw_lng/raw_lat、source_crs、is_backfill、油量、ACC）、qc_status、qc_reason、keypoint、road_id、adcode、matched；alarm_flag→bigint（与 18 号迁移合并）</td><td>F08～F11、F04/F05</td></tr>
+      <tr><td>traj_road_net（新表）</td><td>路网边：几何、等级、方向、限速、adcode、数据版本</td><td>F10</td></tr>
+      <tr><td>traj_trip_segment（新表）</td><td>行驶/停车/怠速段：车辆、起止 gpsTime、起终点、里程、时长、段类型</td><td>F12</td></tr>
+      <tr><td>traj_daily_stat（新表）</td><td>车×日：里程、行驶时长、停车次数/时长、夜间里程、行政区划聚合</td><td>F12 / 报表底座</td></tr>
+      <tr><td>traj_qc_stat（或并入 gateway_ingest_stat）</td><td>终端×小时：接收/有效/异常/漂移/时钟偏差计数</td><td>F08/F36</td></tr>
+    </table>
+    <p>分区策略：traj_gps_point 按月分区（规划，配合 F37 留存销毁）；派生日统计表数据量小，按年分区即可。</p>
+    <h3>15.1 关键新表字段草案</h3>
+    <p>以下为设计草案（表尚未建库，正式建表后以 <a href="../guide/DDL-DBD-001-数据库设计.html">DDL-DBD-001</a> 为准）：</p>
+    <pre><code>-- 行驶/停车/怠速段
+traj_trip_segment(
+  id bigserial PK,
+  identity_code varchar, plate_no varchar, vehicle_id bigint,
+  seg_type varchar(16),        -- DRIVING / PARKING / IDLING
+  start_time timestamp, end_time timestamp,
+  start_lng numeric(10,6), start_lat numeric(10,6),
+  end_lng numeric(10,6),   end_lat numeric(10,6),
+  distance_m numeric(12,2),    -- 段里程（米，WGS-84 球面累加）
+  duration_s integer,          -- 段时长（秒）
+  night_flag boolean,          -- 跨夜间时段
+  road_id bigint, adcode varchar(12),
+  backfill_flag boolean,       -- 由补传回补产生/修正
+  create_date timestamp
+)
+-- 索引：(vehicle_id, start_time)、(plate_no, start_time)、(seg_type, start_time)
+
+-- 车×日派生分片
+traj_daily_stat(
+  stat_date date, vehicle_id bigint, identity_code varchar, plate_no varchar,
+  mileage_km numeric(12,2),
+  driving_s integer, parking_count integer, parking_s integer, idling_s integer,
+  night_mileage_km numeric(12,2),
+  max_speed integer, max_speed_time timestamp, max_speed_lng/lat,
+  trip_count integer,
+  adcodes jsonb,               -- 行政区停留聚合
+  frozen boolean,              -- T+1 冻结
+  update_date timestamp,
+  PK(stat_date, vehicle_id)
+)</code></pre>
+    <h3>15.2 traj_gps_point 扩展列草案</h3>
+    <table>
+      <tr><th>列</th><th>类型</th><th>写入环节</th></tr>
+      <tr><td>qc_status</td><td>varchar(8)</td><td>F08：OK/SUSPECT/REJECT</td></tr>
+      <tr><td>qc_reason</td><td>varchar(32)</td><td>F08：规则码（可多个，逗号分隔或 jsonb）</td></tr>
+      <tr><td>source_crs</td><td>varchar(8)</td><td>F09：WGS84/GCJ02</td></tr>
+      <tr><td>keypoint</td><td>boolean</td><td>F11：默认 true，被压缩点置 false</td></tr>
+      <tr><td>road_id / speed_limit / adcode / matched</td><td>bigint / integer / varchar / boolean</td><td>F10</td></tr>
+      <tr><td>ext</td><td>jsonb</td><td>raw_lng/raw_lat、is_backfill、油量、ACC、CAN 降采样信号（与 MOD-014 18 号迁移合并）</td></tr>
+    </table>
+
+    <h2 id="t-join">16. 与现有系统衔接点（具体到类/表/接口）</h2>
+    <table>
+      <tr><th>现有对象</th><th>衔接方式</th></tr>
+      <tr><td>processing-service <code>routes/ingest.py</code></td><td>直插前插入处理管道（source_crs 标记 + F08/F09）；保留 X-Service-Token 鉴权</td></tr>
+      <tr><td><code>cep_engine.evaluate_points</code></td><td>输入改为"清洗有效点 + 匹配限速"流；调用位置不变，函数签名扩展 road 信息</td></tr>
+      <tr><td>GeocodeController / AmapProperties（mydbd.amap.key）</td><td>F09 不逐点调高德；逆地理与行政区划名称继续走该配置，key 为空 503 行为不变</td></tr>
+      <tr><td>前端高德 GCJ-02 瓦片</td><td>F09 转换后点位即与现有底图对齐，前端无需改造</td></tr>
+      <tr><td>GeoFence 围栏数据（RISK 模块）</td><td>F12 围栏进出复用现有围栏几何与缓存，不另建围栏体系</td></tr>
+      <tr><td>mon.driver_score / ScoreConstants / ScoreScheduler</td><td>保持现有评分口径；仅输入点流升级为清洗后点</td></tr>
+      <tr><td>MOD-014 app/gateway（mappers/consumer）</td><td>F09 转换、F08 校验作为 mappers 纯函数与消费管道的一环落地，随 P0 一起交付</td></tr>
+      <tr><td>MOD-017 报表（F42～F52/F59）</td><td>统一读 traj_daily_stat / traj_trip_segment；F59 复用 F08 判定函数</td></tr>
+    </table>
+
+    <h2 id="t-choice">17. 选型与备选</h2>
+    <table>
+      <tr><th>决策</th><th>选择</th><th>备选与理由</th></tr>
+      <tr><td>处理运行时</td><td>processing-service 内有状态 Python 消费者（kafka 分区内状态）</td><td>Flink 是远期备选（百万车规模、复杂窗口）；500 车～十万车阶段引入 Flink 运维成本不划算，Python 管道 + PostGIS 足够</td></tr>
+      <tr><td>滤波</td><td>Kalman（匀速模型起步）+ 规则双保险</td><td>纯规则简单但处理不了连续抖动；粒子滤波过重</td></tr>
+      <tr><td>地图匹配</td><td>PostGIS 路网 + 在线权重打分（简化 HMM）</td><td>离线地图匹配（全轨迹后处理）精度高但无实时性；Valhalla/OSRM 匹配服务可作为 P2 增强备选</td></tr>
+      <tr><td>压缩</td><td>流式 DP + 死区，仅打标不删点</td><td>激进抽稀（直接丢点）省存储但不可回溯；存储成本已因 PostgreSQL 可控，保留原始点优先</td></tr>
+      <tr><td>坐标转换实现</td><td>本地纯数学加偏算法</td><td>高德转换 API 有 QPS/成本/合规风险，不可用于逐点实时转换</td></tr>
+    </table>
+
+    <h2 id="t-risk">18. 风险与对策</h2>
+    <table>
+      <tr><th>风险</th><th>影响</th><th>对策</th></tr>
+      <tr><td>清洗误杀正常点</td><td>里程偏少、报警漏报</td><td>软硬错误分级、邻点窗口二次确认、阈值可配置、灰度对比运行（先只标记不拦截）</td></tr>
+      <tr><td>双重坐标偏移</td><td>GCJ-02 点被再转一次</td><td>source_crs 强制声明 + 转换幂等测试；simulator/CSV 通道默认标 GCJ02</td></tr>
+      <tr><td>路网数据陈旧</td><td>限速错误、新路不匹配</td><td>路网版本管理与定期更新；匹配不上时降级不硬吸</td></tr>
+      <tr><td>有状态消费者重平衡</td><td>统计重复/丢失</td><td>状态持久化到日分片、手动位点、同车分区；重平衡后从分片恢复</td></tr>
+      <tr><td>处理延迟堆积</td><td>实时监控变"延时直播"</td><td>管道各阶段耗时指标化（P95），匹配可降级旁路；按 Kafka Lag 告警（联动 F39）</td></tr>
+      <tr><td>阈值地区差异大</td><td>死区/夜间/停车时长一刀切</td><td>全部参数配置化，支持按车队/区域覆盖</td></tr>
+    </table>
+
+    <h2 id="t-cap">19. 容量与性能估算（规划口径）</h2>
+    <table>
+      <tr><th>指标</th><th>一期（500 车，对齐 GATEWAY-PLAN）</th><th>十万车蓝图参考</th></tr>
+      <tr><td>点频率</td><td>0.2Hz（5 秒/点）</td><td>0.2～1Hz 混合</td></tr>
+      <tr><td>点写入量</td><td>100 点/秒，约 864 万点/日</td><td>2 万～10 万点/秒</td></tr>
+      <tr><td>原始点日增存储</td><td>约 1～2 GB/日（含索引与 ext）</td><td>200～1000 GB/日，需分区+冷存</td></tr>
+      <tr><td>匹配检索</td><td>PostGIS GIST 单点 P95 ≤50ms</td><td>需匹配服务化/缓存热边</td></tr>
+      <tr><td>处理并发</td><td>单消费者多分区即可</td><td>消费者水平扩 + 按车分区重均衡</td></tr>
+    </table>
+    <ul>
+      <li>压缩后关键点约为原始量的 20%～50%，回放查询默认只扫关键点视图。</li>
+      <li>派生日分片表每天每车 1 行：500 车年增约 18 万行，可忽略量级。</li>
+      <li>PostgreSQL 现配 1G/1CPU 容器仅够演示；真实容量前必须扩容并评估磁盘 IOPS（联动 F39）。</li>
+    </ul>
+    <h3>19.1 处理链路指标（纳入 F39 可观测）</h3>
+    <table>
+      <tr><th>指标</th><th>口径</th></tr>
+      <tr><td>ingest_tps / sink_tps</td><td>管道入口与有效点出口速率</td></tr>
+      <tr><td>qc_pass_rate / reject_rate</td><td>OK/REJECT 占比，按终端下钻</td></tr>
+      <tr><td>drift_rate</td><td>DRIFT 点占比（F36 准确性指标输入）</td></tr>
+      <tr><td>match_rate</td><td>matched=true 点占比，分道路等级统计</td></tr>
+      <tr><td>compress_ratio</td><td>1 − keypoint 数/有效点数</td></tr>
+      <tr><td>stage_latency_p95</td><td>清洗/转换/匹配/派生各阶段 P95 延迟</td></tr>
+      <tr><td>kafka_lag</td><td>消费组 Lag，超阈值告警与自动扩缩（F39）</td></tr>
+      <tr><td>backfill_pending</td><td>待回补的补传点积压量</td></tr>
+    </table>
+
+    <h2 id="t-rollout">20. 灰度与上线策略（设计规划）</h2>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">阶段 A：影子运行</div>
+        <div class="s-desc">F08 只标记不拦截、F09 双写（GCJ-02 与 raw 并列）、F12 只写旁路表；与现网直插结果并行对比 2 周。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">阶段 B：小流量切换</div>
+        <div class="s-desc">选取 10～20 台真实终端切到处理管道，核对里程、报警、在线、坐标对齐四类指标。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">阶段 C：全量切换</div>
+        <div class="s-desc">gateway 模式全量终端走管道；ingest/CSV 保持 source_crs=GCJ02 老路径；保留一键回退开关。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">阶段 D：增强项</div>
+        <div class="s-desc">F10 商用路网、F11 参数调优、F12 报表底座对接（MOD-017 各报表逐项迁移）。</div>
+      </div>
+    </div>
+
+    <h2 id="t-edge">21. 边界行为（设计约定）</h2>
+    <table>
+      <tr><th style="width:240px">情形</th><th>处理约定</th></tr>
+      <tr><td>相邻点时间差为 0（重报）</td><td>幂等键命中直接丢弃，不参与距离计算，避免除零</td></tr>
+      <tr><td>邻点时间差 &gt;30 秒</td><td>不计入急加减速（对齐 ScoreConstants），匹配降级，段切分按稀疏段处理</td></tr>
+      <tr><td>点完全相同的重复流</td><td>原始点保留（幂等去重后仅一条），死区压缩只留代表点</td></tr>
+      <tr><td>速度为负或非数字</td><td>F08 必填/范围规则 REJECT（对齐 F59 速度规则：&lt;0 或 &gt;160 为错误点）</td></tr>
+      <tr><td>方向角越界（非 0～360）</td><td>F08 REJECT 并计数（与 F59 错误规则一致）</td></tr>
+      <tr><td>海拔 −200～6000 之外</td><td>F08 REJECT（与 F59 海拔规则一致）</td></tr>
+      <tr><td>跨零点行驶段</td><td>00:00 切分，里程按点间时间比例或就近切点分配到两日（详设固定一种，验收用例覆盖）</td></tr>
+      <tr><td>补传点与实时点时间重叠</td><td>按 (车, gpsTime) 幂等；先到先得，后到覆盖 qc 标记但不重复计里程</td></tr>
+      <tr><td>围栏与点不同坐标系</td><td>围栏绘制坐标必须与 GCJ-02 展示列一致；入库时校验围栏坐标系元数据</td></tr>
+      <tr><td>高德逆地理 503（key 空）</td><td>不阻塞主管道：道路匹配走自有路网，行政区可用 adcode；文字地址缺省为空</td></tr>
+      <tr><td>消费者追上最新后空闲</td><td>内存态保留；超过保活时长（规划 30 分钟）无点则持久化态并释放，再来点时从分片冷启</td></tr>
+    </table>
+
+    <h2 id="t-accept">22. 验收标准</h2>
+    <ol>
+      <li>端到端：模拟点流经 F08～F12 后，原始点、qc 标记、GCJ-02 展示点、道路匹配、keypoint、日统计六层数据齐全且可互相追溯。</li>
+      <li>清洗规则链 7 类规则各有可复现样本，分类正确，隔离点可回流。</li>
+      <li>坐标转换基准点误差 ≤2 米，且无二次偏移。</li>
+      <li>在线匹配城市道路匹配率 ≥95%，单点 P95 ≤50ms。</li>
+      <li>压缩率 ≥50% 且形状误差 P95 ≤25 米，报警点零丢失。</li>
+      <li>派生里程闭合路线误差 ≤2%，重启/重平衡后统计无重复无丢失。</li>
+      <li>补传点正确回补历史日分片。</li>
+      <li>全链路 P95 处理延迟满足实时监控目标（目标值在 P0 压测后固化，参考 ≤3 秒事件及时性蓝图指标）。</li>
+      <li>影子运行期间，旁路日统计与现网原始点 SQL 重算逐日对账，差异为 0（或全部可解释）后方可切换。</li>
+      <li>关闭路网匹配依赖（模拟故障）后，主链路不中断，matched=false 且监控延迟无明显抬升。</li>
+      <li>19.1 全部链路指标可按终端、企业维度查询，数据与样本直算偏差为 0。</li>
+      <li>同一辆车的实时点与补传点乱序到达时，按 gps_time 归位后统计结果与顺序到达完全一致。</li>
+      <li>F09 转换幂等：对已入库点重复执行转换不产生二次偏移，raw 原始坐标保留不变。</li>
+      <li>下游报表（F42/F52）抽样 50 车 ×7 天与 traj_daily_stat 直算结果一致，误差为 0。</li>
+    </ol>
+
+    <h2 id="deps">规划依赖关系</h2>
+    <table>
+      <tr><th>功能项</th><th>依赖与被依赖</th></tr>
+      <tr><td>F08 清洗</td><td>前置：F01（状态位/原始标志）；下游：F36 质量大盘、F59 完整率（共用判定函数）</td></tr>
+      <tr><td>F09 坐标转换</td><td>前置：F01 网关接入（真实 WGS-84 来源）；F01 入库前必须调用本转换；被所有展示/分析依赖</td></tr>
+      <tr><td>F10 地图匹配</td><td>前置：F09；下游：道路限速超速判定、F12 区划、F54/F55 地区维度、F58 路段分析</td></tr>
+      <tr><td>F11 压缩</td><td>前置：F08（只压缩有效点）；下游：轨迹回放性能</td></tr>
+      <tr><td>F12 派生统计</td><td>前置：F08/F09/F10、F04 补传；<strong>下游：F42 里程、F43 行驶、F44 停车、F45 怠速（另依赖 F05）、F52 车辆工作、F54/F55/F57 周期安全的里程时长口径</strong></td></tr>
+      <tr><td>F10 与 F38</td><td>F38 监管上报（JT/T 809）若需要道路级信息，统一消费 F10 匹配结果，不在上报侧重复匹配。</td></tr>
+    </table>
+
+    <h2 id="todo">待核实项</h2>
+    <table>
+      <tr><th style="width:250px">事项</th><th>说明</th></tr>
+      <tr><td>location 列坐标语义</td><td>现状 location geometry(4326) 实际存 GCJ-02 数值（非标准 4326 应有 WGS-84）。F09 方案沿用此事实但需在 DDL 注释中明确"列内为 GCJ-02"，避免后续误用 PostGIS 距离函数产生米级偏差——距离计算应使用 ext 中 WGS-84 坐标。</td></tr>
+      <tr><td>油量字段位置</td><td>traj_gps_point 现无油量列；F49 油耗依赖该列，18 号迁移是放 ext 还是独立列需与 MOD-017 详设共同确认。</td></tr>
+      <tr><td>路网数据来源</td><td>OSM 抽取（免费但限速/限行不全）vs 商用路网（成本）未定，影响 F10 精度与采购。</td></tr>
+      <tr><td>Flink 引入时点</td><td>本文按 Python 有状态消费者设计；十万车以上或复杂事件窗口需求出现时需重新评估。</td></tr>
+      <tr><td>夜间时段/停车/死区阈值</td><td>蓝图给出方向值（22:00～06:00、3 分钟、15～30 米），需业务确认并配置化。</td></tr>
+      <tr><td>跨零点里程切分口径</td><td>按时间比例还是就近切点分配里程，两种实现会造成日里程微小差异，详设需固定并补对账用例。</td></tr>
+      <tr><td>Kalman 平滑结果是否回放可见</td><td>当前设计平滑值仅辅助匹配，不回写展示；若监控大屏需要"平滑轨迹"模式，需另增展示列与前端开关。</td></tr>
+    </table>
+
+    <h2 id="revisions">修订记录</h2>
+    <table>
+      <tr><th>版本</th><th>日期</th><th>修订人</th><th>说明</th></tr>
+      <tr><td>v1.0.0</td><td>2026-10-05</td><td>平台文档组</td><td>首次发布：F08～F12 设计级方案；如实记录"当前零处理、点直插、坐标被直接当作 GCJ-02"的现状，给出原始层/处理层/派生层的分层目标架构与可测试验收标准。</td></tr>
+    </table>
+    <div class="docfoot">
+      <span>北斗导航数据业务平台 mydbd · 功能模块文档</span>
+      <span>MOD-DBD-015 v1.0.0</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

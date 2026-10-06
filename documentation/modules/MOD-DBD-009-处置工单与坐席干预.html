@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-009 处置工单与坐席干预 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-009 处置工单与坐席干预 · 三态工单状态机、SLA 超时升级、干预留痕</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位</a></li>
+            <li><a href="#s1-2">1.2 功能清单与状态</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 工单列表与筛选</a></li>
+            <li><a href="#s3-2">3.2 认领 / 分派 / 转派</a></li>
+            <li><a href="#s3-3">3.3 闭环与重开</a></li>
+            <li><a href="#s3-4">3.4 干预记录登记</a></li>
+            <li><a href="#s3-5">3.5 SLA 配置</a></li>
+            <li><a href="#s3-6">3.6 从风险事件跳工单</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 工单三态状态机</a></li>
+            <li><a href="#s7-2">7.2 自动建单与 ensure</a></li>
+            <li><a href="#s7-3">7.3 SLA 时限口径</a></li>
+            <li><a href="#s7-4">7.4 超时扫描与升级通知</a></li>
+            <li><a href="#s7-5">7.5 新单通知与 id 游标</a></li>
+            <li><a href="#s7-6">7.6 闭环校验与事件回写</a></li>
+            <li><a href="#s7-7">7.7 干预动作与自动补录</a></li>
+            <li><a href="#s7-8">7.8 可分派名单与权限</a></li>
+            <li><a href="#s7-9">7.9 统计卡与漏斗口径</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 定时任务</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-009 处置工单与坐席干预</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-009<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F20（工单流转）/ F21（坐席干预）
+    </p>
+    <p class="cover-meta">事实基准：2026-10-05 源代码（module-risk）与 <code>08-work-order.sql</code>、<code>10-risk-intervention.sql</code></p>
+    <p class="cover-meta">主要代码锚点：<code>RiskOrderController</code> / <code>RiskOrderService</code> / <code>InterventionService</code> / <code>RiskOrderScheduler</code>；实体 <code>RiskWorkOrder</code> / <code>RiskIntervention</code>；前端 <code>risk/RiskOrders.vue</code> / <code>OrderDetailDrawer.vue</code></p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位</h3>
+    <p>处置工单模块把 MOD-008 产生的每一条风险事件纳入<strong>可分派、有时限、可追溯</strong>的人工处置流程：风险事件自动建单 → 坐席认领或主管分派 → 电话提醒/安全教育等干预动作留痕 → 按规定闭环结果归档 → 超时自动标记并升级督办。工单与风险事件为 <strong>1:1</strong> 关系（唯一约束 <code>uk_risk_order_event</code>）。</p>
+    <p>模块同时提供 F21 坐席干预记录：手动登记电话提醒、安全教育、停运通知、处罚等动作及结果；闭环时系统可按闭环结果自动补一条 SYSTEM 来源干预记录，保证"闭环必有干预"。</p>
+
+    <h3 id="s1-2">1.2 功能清单与状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>要点</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>事件自动建单</td><td>CEP 落事件同事务建 PENDING 单；存量未处置事件幂等补单</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>三态流转</td><td>PENDING / PROCESSING / CLOSED，认领/分派/转派/闭环/重开全部带流转日志</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>SLA 时限</td><td>按等级 高15/中60/低240 分钟，宽限 10/30/60；仅对新单生效</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>超时/升级扫描</td><td>每 60 秒扫描：超时标红、超宽限升级并通知负责人+主管</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>新单通知</td><td>id 游标增量，向在线持单坐席推送 ORDER_CREATE</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>干预登记</td><td>5 类动作 × 4 类结果，手动来源强制当前操作人</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>闭环联动</td><td>回写事件已处置、自动补 SYSTEM 干预（误报除外）、通知负责人</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>统计与漏斗</td><td>6 张实时统计卡；F21 处置漏斗（事件→单→干预→闭环）</td><td><span class="badge green">已上线</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>三态状态机</td><td>工单仅 PENDING（待处理）/ PROCESSING（处理中）/ CLOSED（已闭环）三态；认领与分派 PENDING→PROCESSING，闭环 →CLOSED，重开 CLOSED→PROCESSING。</td></tr>
+        <tr><td>负责人 assigneeId</td><td>当前持单人。认领取当前登录用户；分派/转派由主管指定；负责人为空的 PENDING 单可被有权坐席抢单。</td></tr>
+        <tr><td>SLA 时限 / 宽限期</td><td>deadline = 事件时间 + 处置时限（高 15 / 中 60 / 低 240 分钟）；宽限期在时限之上再加（10/30/60 分钟）。过 deadline 标超时，过宽限才升级督办。</td></tr>
+        <tr><td>超时 / 升级</td><td>调度器每 60 秒扫描：now&gt;deadline 置 overdue=1；now&gt;deadline+grace 且未升级过则 escalate=1 并发 ORDER_ESCALATE（level=3）通知负责人与主管。</td></tr>
+        <tr><td>闭环结果 closeResult</td><td>代码白名单 VALID_RESULTS 五种：PHONE_REMIND（电话提醒）/ EDUCATION（安全教育）/ REPORT_PENALTY（上报处罚）/ TRAFFIC_VIOLATION（交通违法处置）/ FALSE_ALARM（误报排除）；误报闭环不补干预、且被评分排除。注意 SQL 注释中的 SUSPEND/OTHER 不在白名单。</td></tr>
+        <tr><td>重开 reopen</td><td>主管对 CLOSED 单执行 reopen 回到 PROCESSING，写 REOPEN 日志；重开不重建事件关联。</td></tr>
+        <tr><td>干预记录 intervention</td><td>5 类动作（电话提醒/安全教育/到场处置/停运通知/行政处罚等）× 4 类结果的留痕；来源 MANUAL（强制当前操作人）或 SYSTEM（闭环自动补录）。</td></tr>
+        <tr><td>ensureOrder</td><td>风险事件页"去处理"调用的幂等补单：有单返回既有单、无单补建 PENDING；uk_risk_order_event 与 DuplicateKeyException 兜底。</td></tr>
+        <tr><td>新单 id 游标</td><td>调度器记录上次扫描到的最大工单 id，只向通知模块投递增量新单，重启后从库内 MAX(id) 续游标，不重复通知。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">抢单式认领处置</div>
+        <div class="sc-desc">高风险事件自动建单后，持"工单处置"权限的在线坐席收到新单通知，列表点"快捷认领"即成为负责人，在剩余时限内电话提醒司机后闭环。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员（主管）</div>
+        <div class="sc-name">分派与超时督办</div>
+        <div class="sc-desc">主管在可分派名单中把单分派给指定坐席；工单超处置时限后自动标超时、超宽限期自动升级，主管与负责人收到 ORDER_ESCALATE 高优先级通知。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">车队长</div>
+        <div class="sc-name">车队内事件闭环</div>
+        <div class="sc-desc">车队长角色可查看与处置本车队工单，执行"安全教育"闭环并登记干预记录；只能看到数据范围内车辆产生的工单。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">误报排除</div>
+        <div class="sc-desc">确认事件为设备误报时以"误报排除"闭环并写明依据；该事件会被驾驶评分自动剔除，不影响司机当日分数（MOD-010）。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">坐席/主管</div>
+        <div class="sc-name">闭环不合规被退回</div>
+        <div class="sc-desc">闭环说明不足 10 字或未选闭环结果时前端拦截；闭环后发现处置不实，主管可"重新打开"，工单回到处理中继续走流程。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>菜单路径：<strong>实时监控 → 处置工单</strong>（菜单 id=14，父菜单 10"实时监控"，路由 <code>/risk/orders</code>，权限 <code>risk:order:view</code>；按钮 915 <code>risk:order:handle</code>、916 <code>risk:order:assign</code>）。</p>
+
+    <h3 id="s3-1">3.1 工单列表与筛选</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">查看统计卡</div>
+        <div class="s-desc">6 卡：待处理、处理中、超时未闭环、已升级、今日闭环、平均闭环分钟（实时按 deadline 计算）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">组合筛选</div>
+        <div class="s-desc">关键字（工单号/车牌/事件名/事件码 OR 匹配）、状态、风险等级、闭环结果、时限档位（due 临期/overdue 超时/escalated 已升级）、负责人、event_time 起止时间。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">看剩余时限</div>
+        <div class="s-desc">列表每秒本地按 deadline 与 graceMin 重算临期/超时/升级三色，无需刷新；后端排序：已升级→状态→超时→等级→事件时间。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">打开详情</div>
+        <div class="s-desc">点"详情/处理"打开 OrderDetailDrawer（780px）；支持路由 ?openOrder=id 自动开抽屉（消息点击跳转用）。</div>
+      </div>
+    </div>
+    <h4>列表主要列与数据来源</h4>
+    <table>
+      <thead><tr><th>列/控件</th><th>来源字段</th><th>展示规则</th></tr></thead>
+      <tbody>
+        <tr><td>工单号</td><td>order_no</td><td>WO+日期+6 位序列，点击开抽屉</td></tr>
+        <tr><td>风险信息</td><td>事件快照 title/eventCode/eventSource</td><td>事件建单时快照，事件后改不影响工单</td></tr>
+        <tr><td>车辆/司机</td><td>plateNo、identityCode</td><td>数据范围过滤的关键字段</td></tr>
+        <tr><td>等级</td><td>riskLevel</td><td>1/2/3 tag 着色</td></tr>
+        <tr><td>状态</td><td>status</td><td>order_status 字典中文名（待处理/处理中/已闭环）</td></tr>
+        <tr><td>时限标签</td><td>deadline + graceMin 前端实时重算</td><td>正常 / 临期 due（剩余≤20%）/ 超时 overdue / 已升级 escalated</td></tr>
+        <tr><td>负责人</td><td>assigneeName</td><td>空表示待抢单</td></tr>
+        <tr><td>操作列</td><td>—</td><td>认领/详情/分派/转派/闭环按状态与 v-perm 动态出现</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s3-2">3.2 认领 / 分派 / 转派</h3>
+    <table>
+      <thead><tr><th>动作</th><th>入口</th><th>前置条件</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>认领 claim</td><td>列表"快捷认领"/详情按钮</td><td>非 CLOSED；未分派给他人（他人已领须先转派）</td><td>→ PROCESSING，负责人=当前人，写 CLAIM 日志</td></tr>
+        <tr><td>分派 assign</td><td>详情"分派"，负责人下拉（assignable-users）</td><td>非 CLOSED；目标人在可分派名单内；需 risk:order:assign</td><td>→ PROCESSING，写 ASSIGN（from/to），向目标人发 ORDER_ASSIGN 通知</td></tr>
+        <tr><td>转派 transfer</td><td>详情"转派"</td><td>非 CLOSED；工单已有负责人</td><td>→ PROCESSING，写 TRANSFER + ORDER_ASSIGN 通知新负责人</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s3-3">3.3 闭环与重开</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">选择闭环结果</div>
+        <div class="s-desc">5 选 1：电话提醒 PHONE_REMIND / 安全教育 EDUCATION / 通报处罚 REPORT_PENALTY / 交通违法 TRAFFIC_VIOLATION / 误报排除 FALSE_ALARM。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">填写处置说明</div>
+        <div class="s-desc">CloseRequest.remark 必填，长度 10~255 字。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">权限校验</div>
+        <div class="s-desc">仅负责人本人或持有 risk:order:assign（主管）可闭环。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">重开 reopen</div>
+        <div class="s-desc">仅 CLOSED 可重开（需 assign 权限）：有负责人→PROCESSING，无负责人→PENDING；清空 close* 字段、reopen_count+1、事件回置未处置。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 干预记录登记</h3>
+    <p>详情抽屉"干预记录"区可手动新增（<code>POST /api/risk/orders/interventions</code>，权限 risk:order:handle，挂 <code>@AuditLog HANDLE INTERVENTION</code>）：</p>
+    <ul>
+      <li><strong>动作 5 项</strong>：PHONE_REMIND 电话提醒 / EDUCATION 安全教育 / STOP 停运通知 / PENALTY 处罚 / OTHER 其他；</li>
+      <li><strong>结果 4 项</strong>：SUCCESS 成功 / FAILED 失败 / NO_ANSWER 未接通 / PENDING 待跟进（默认 SUCCESS）；</li>
+      <li>手动登记的 operator 强制取当前登录人、source=MANUAL。</li>
+    </ul>
+
+    <h3 id="s3-5">3.5 SLA 配置</h3>
+    <p>列表页"SLA 配置"弹窗（v-perm risk:order:assign）同时编辑三个等级的<strong>处置时限</strong>与<strong>升级宽限</strong>：高 15/10、中 60/30、低 240/60（分钟）。后端 <code>PUT /api/risk/orders/sla</code> 要求三个等级一起提交，limitMin 1~10080、graceMin 0~1440；<strong>调整只对之后新建的工单生效</strong>，存量单 deadline 不变。</p>
+
+    <h3 id="s3-6">3.6 从风险事件跳工单</h3>
+    <p>风险预警分析页点"去处理"：先 <code>POST /api/risk/orders/ensure/{eventId}</code>（无单则按事件等级查 SLA 当场补建 PENDING 单），再打开详情抽屉。消息中心点击工单消息则跳 <code>/risk/orders?openOrder=&lt;bizId&gt;</code>。</p>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <div class="shot">
+      <div class="sh-icon">📋</div>
+      <div class="sh-t">截图 4-1：处置工单列表（实时监控 → 处置工单，/risk/orders）</div>
+      <div class="sh-p">应截：6 张统计卡；筛选区（关键字、状态、等级、闭环结果、时限档位、负责人下拉、时间范围）；列表中红/黄/灰三色剩余时限、已升级标记；行操作（详情/处理/快捷认领）；SLA 配置按钮。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🗂️</div>
+      <div class="sh-t">截图 4-2：工单详情抽屉 OrderDetailDrawer（780px）</div>
+      <div class="sh-p">应截：顶部状态条（状态、处置时限/宽限/剩余倒计时）；事件快照 descriptions（车牌、事件名/码、来源、等级、事件时间、位置速度）；处置信息（负责人、认领/分派/闭环时间）；操作按钮组。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🕘</div>
+      <div class="sh-t">截图 4-3：流转时间线</div>
+      <div class="sh-p">应截：el-timeline 展示 CREATE（CEP/系统）→ ASSIGN/CLAIM/TRANSFER → ESCALATE（SYSTEM）→ CLOSE → 可能的 REOPEN，每节点含操作人与备注。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📞</div>
+      <div class="sh-t">截图 4-4：新增干预记录弹窗</div>
+      <div class="sh-p">应截：动作类型 5 项单选（含停运通知）、处置结果 4 项、备注输入；以及干预记录表中 source=MANUAL/SYSTEM 的标签差异。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">✅</div>
+      <div class="sh-t">截图 4-5：闭环操作区与 SLA 配置弹窗</div>
+      <div class="sh-p">应截：5 种闭环结果单选（中文标签）+ 10~255 字处置说明 textarea；SLA 弹窗中三等级 limit/grace 六个数字框与保存按钮。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">3 态</div><div class="l">PENDING/PROCESSING/CLOSED 严格状态机</div></div>
+      <div class="stat"><div class="v">1:1</div><div class="l">一事件一工单，杜绝重复建单</div></div>
+      <div class="stat"><div class="v">60s</div><div class="l">超时/升级扫描节拍（启动后 20 秒首跑）</div></div>
+      <div class="stat"><div class="v">5 类</div><div class="l">闭环结果白名单，处置口径统一</div></div>
+    </div>
+    <ul>
+      <li><strong>件件有归属</strong>：风险事件不依赖人工手工开单，CEP 自动建单 + ensure 兜底，坐席打开即有单可处理。</li>
+      <li><strong>时效可考核</strong>：每单带 deadline 与宽限期，超时、升级由调度器机械执行，不依赖班组长盯群；平均闭环时长可按日统计。</li>
+      <li><strong>过程可回放</strong>：risk_order_log 记录每一次状态迁移的操作人、前后状态、from/to 用户，争议可追溯。</li>
+      <li><strong>处置有实据</strong>：干预动作与结果结构化留痕；闭环即自动补干预，统计"干预率"时不漏单。</li>
+      <li><strong>误报可纠正</strong>：FALSE_ALARM 闭环把事件从驾驶评分扣分中排除，避免设备误报冤枉司机（MOD-010）。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端</div>
+        <div class="al-body">
+          <span class="node"><b>risk/RiskOrders.vue</b> 列表/筛选/统计卡/SLA 弹窗</span>
+          <span class="node"><b>OrderDetailDrawer.vue</b> 状态条/时间线/干预表/操作区</span>
+          <span class="node"><b>api/risk.ts</b> OrderStatus/CloseResult/InterventionAction 类型与全部端点</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">module-risk<br>工单域</div>
+        <div class="al-body">
+          <span class="node"><b>RiskOrderController</b> /api/risk/orders（类级 risk:order:view）</span>
+          <span class="node"><b>RiskOrderService</b> 状态机/SLA/统计/漏斗/可分派名单</span>
+          <span class="node"><b>InterventionService</b> 干预登记与闭环自动补录</span>
+          <span class="node"><b>RiskOrderScheduler</b> @Scheduled 60s 超时扫描+新单通知</span>
+          <span class="node"><b>各 Mapper/VO</b> RiskOrderMapper、OrderStatsVO、OrderFunnelVO</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">协作模块</div>
+        <div class="al-body">
+          <span class="node"><b>module-notify NotifyService</b> ORDER_CREATE/ASSIGN/ESCALATE/CLOSE 派发</span>
+          <span class="node"><b>module-monitor</b> 事件查询页 ensure 入口与 handle 回写</span>
+          <span class="node"><b>processing-service db.insert_risk_events</b> 事件同事务自动建单</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层</div>
+        <div class="al-body">
+          <span class="node"><b>mon.risk_work_order</b> 工单（与 risk_event 1:1）</span>
+          <span class="node"><b>mon.risk_order_log</b> 流转日志</span>
+          <span class="node"><b>mon.risk_order_sla</b> 三等级时限</span>
+          <span class="node"><b>mon.risk_intervention</b> 干预记录</span>
+          <span class="node"><b>mon.seq_risk_order_no + mon.fmt_order_no()</b> 工单号</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>职责</th><th>关键约束</th></tr></thead>
+      <tbody>
+        <tr><td><code>RiskOrderController</code></td><td>工单 REST 端点（分页/详情/统计/漏斗/干预/认领/分派/转派/闭环/重开/SLA）</td><td>类级 risk:order:view；写操作分别要求 handle 或 assign；干预写操作挂 @AuditLog</td></tr>
+        <tr><td><code>RiskOrderService</code></td><td>三态状态机、SLA 校验、时限 SQL、统计与漏斗聚合</td><td>状态常量 PENDING/PROCESSING/CLOSED；闭环结果白名单 VALID_RESULTS；重开/分派权限分流</td></tr>
+        <tr><td><code>InterventionService</code></td><td>干预记录增查、闭环自动补录、干预工单数去重统计</td><td>手动 add 强制当前操作人 MANUAL；FALSE_ALARM 不自动补干预</td></tr>
+        <tr><td><code>RiskOrderScheduler</code></td><td>超时/升级批量扫描、新单通知游标</td><td>@EnableScheduling 在 PlatformApplication；@Scheduled(fixedDelay=60_000, initialDelay=20_000)，非 cron</td></tr>
+        <tr><td><code>RiskWorkOrder</code></td><td>工单实体</td><td>assigneeId 等 Long 字段 @JsonSerialize(ToStringSerializer) 序列化为字符串防 JS 精度丢失</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><strong>RiskOrders.vue 列表</strong>：keyword（工单号/车牌/司机）、状态、等级、闭环结果、时间标志（全部/临期/超时/已升级）、负责人筛选；列表行按 overdue/escalated 着色；顶部 6 张统计卡与漏斗由 stats/funnel 接口实时渲染。</li>
+      <li><strong>openOrder 深链</strong>：通知中心与风险页跳转携带 <code>?openOrder=&lt;id&gt;</code>，页面挂载后自动打开对应详情抽屉。</li>
+      <li><strong>OrderDetailDrawer.vue</strong>：状态时间线（CREATE/CLAIM/ASSIGN/TRANSFER/ESCALATE/CLOSE/REOPEN 全量日志）、事件信息卡、干预记录表与登记弹窗、底部按当前状态/权限动态出现的操作按钮。</li>
+      <li><strong>闭环表单</strong>：5 个闭环结果单选项 + textarea，前端先做 10 字长度拦截；SLA 配置为三等级同弹窗编辑并提示"仅对新单生效"。</li>
+      <li><strong>权限渲染</strong>：v-perm risk:order:handle 控制认领/转派/闭环/登记干预，risk:order:assign 控制分派与重开；可分派名单来自 assignable-users。</li>
+      <li><strong>精度处理</strong>：工单/事件 id 为字符串类型，避免 Long 超过 JS Number 安全整数。</li>
+    </ul>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 工单三态状态机</h3>
+    <p><code>RiskOrderService</code> 常量 <code>PENDING / PROCESSING / CLOSED</code>，<strong>严格三态、无第四态</strong>。允许的迁移与守卫：</p>
+    <table>
+      <thead><tr><th>迁移</th><th>触发动作</th><th>守卫条件</th><th>副作用</th></tr></thead>
+      <tbody>
+        <tr><td>— → PENDING</td><td>自动建单 / ensure / 存量补单</td><td>event_id 唯一（uk_risk_order_event 兜底）</td><td>写 CREATE 日志（operator=CEP/SYSTEM）</td></tr>
+        <tr><td>PENDING → PROCESSING</td><td>claim 认领</td><td>未分派给他人；CLOSED 拒绝</td><td>claim_time、assignee=当前人；CLAIM 日志</td></tr>
+        <tr><td>PENDING/PROCESSING → PROCESSING</td><td>assign 分派</td><td>非 CLOSED；目标人 ∈ assignable-users；需 assign 权限</td><td>assign_time；ASSIGN 日志（from/to）；发 ORDER_ASSIGN</td></tr>
+        <tr><td>PROCESSING → PROCESSING</td><td>transfer 转派</td><td>非 CLOSED 且已有负责人</td><td>TRANSFER 日志；向新负责人发 ORDER_ASSIGN</td></tr>
+        <tr><td>PENDING/PROCESSING → CLOSED</td><td>close 闭环</td><td>结果 ∈ 5 种白名单；remark 10~255 字；本人负责人或持 assign</td><td>close_time/result/remark；回写事件已处置；自动补干预；非本人闭环通知负责人</td></tr>
+        <tr><td>CLOSED → PROCESSING/PENDING</td><td>reopen 重开</td><td>仅 CLOSED；需 assign 权限</td><td>清 close*；reopen_count+1；事件回置未处置</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>旧注释与实际代码不一致（以 RiskOrderService.VALID_RESULTS 为准）：</strong><code>risk_work_order.close_result</code> 的 SQL 列注释与实体注释写的是 "PHONE_REMIND/EDUCATION/<mark>SUSPEND</mark>/FALSE_ALARM/<mark>OTHER</mark>"，但实际闭环白名单为 <strong>PHONE_REMIND / EDUCATION / REPORT_PENALTY / TRAFFIC_VIOLATION / FALSE_ALARM</strong>，没有 SUSPEND/OTHER；前端闭环单选项与代码一致。SUSPEND（停运）语义存在于<strong>干预动作</strong> action_type 的 STOP，而不是闭环结果。</p>
+    </blockquote>
+
+    <h3 id="s7-2">7.2 自动建单与 ensure</h3>
+    <ul>
+      <li><strong>在线自动建单</strong>：Python <code>db.insert_risk_events</code> 插入事件后，读 <code>mon.risk_order_sla</code>（60 秒进程缓存），同事务 INSERT 工单：order_no=<code>mon.fmt_order_no()</code>、status=PENDING、deadline=event_time+limit_min、creator='cep-engine'，并写 CREATE 日志（operator='CEP'，remark='风险事件自动建单'）。</li>
+      <li><strong>工单号</strong>：序列 <code>mon.seq_risk_order_no</code> + 函数 <code>mon.fmt_order_no()</code> = 'WO' + yyyyMMdd + lpad(seq%1000000, 6, '0')。</li>
+      <li><strong>ensure 补建</strong>：<code>POST /api/risk/orders/ensure/{eventId}</code> 无单时按事件等级查 SLA 补建；并发下唯一约束抛 DuplicateKeyException 时返回已存在工单，不报错。</li>
+      <li><strong>存量补单</strong>：08 脚本 §8.5 对全部 handle_status=0 的历史事件幂等补单（<code>ON CONFLICT(event_id) DO NOTHING</code>），并补 CREATE 日志（operator_name='SYSTEM'）；已处置历史事件不补。</li>
+    </ul>
+
+    <h3 id="s7-3">7.3 SLA 时限口径</h3>
+    <p><code>mon.risk_order_sla</code> 以 risk_level 为主键，种子值：</p>
+    <table>
+      <thead><tr><th>风险等级</th><th>处置时限 limit_min</th><th>升级宽限 grace_min</th></tr></thead>
+      <tbody>
+        <tr><td>3 高</td><td>15 分钟</td><td>10 分钟</td></tr>
+        <tr><td>2 中</td><td>60 分钟</td><td>30 分钟</td></tr>
+        <tr><td>1 低</td><td>240 分钟</td><td>60 分钟</td></tr>
+      </tbody>
+    </table>
+    <p>列表 SQL 中三档时限标签的实时口径（以当前时间 now 计算，仅针对未闭环单）：</p>
+    <ul>
+      <li><strong>due（临期）</strong>：deadline 落在 [now, now + sla_limit_min×0.2] 区间，即剩余时限不足总时限的 20%；</li>
+      <li><strong>overdue（超时）</strong>：deadline &lt; now；</li>
+      <li><strong>escalated（已升级）</strong>：deadline + grace_min &lt; now（同时被调度器置 escalated=1、写 escalate_time）。</li>
+    </ul>
+
+    <h3 id="s7-4">7.4 超时扫描与升级通知</h3>
+    <p><code>RiskOrderScheduler.scan()</code> 每 60 秒（启动后 20 秒首跑）先执行 <code>runTimeoutScan()</code>：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">批量置超时/升级</div>
+        <div class="s-desc">markOverdue / markEscalated 两条批量 UPDATE，按 deadline 与 grace_min 刷新 overdue、escalated、escalate_time。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">找新升级单</div>
+        <div class="s-desc">selectNewlyEscalated：近 2 分钟内升级、且尚无 ESCALATE 日志的工单，limit 200。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">补升级日志</div>
+        <div class="s-desc">insertEscalateLogs：action='ESCALATE'，operator_name='SYSTEM'（日志去重保证重启不重复通知）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">派发升级通知</div>
+        <div class="s-desc">通知对象 = 工单负责人 + receiversByMenu(916) 主管名单；NotifyEvent 等级 3（ORDER_ESCALATE，见 MOD-011）。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-5">7.5 新单通知与 id 游标</h3>
+    <p>超时扫描后执行 <code>scanNewOrders()</code>：内存维护 <code>lastNotifiedOrderId</code> 游标，<strong>@PostConstruct/启动时初始化为当前 MAX(id)，不回放历史</strong>；之后每批 50 个新单，向全部持菜单 915 权限的<strong>在线</strong>坐席派发 ORDER_CREATE 通知。增量推送用 id 游标而非时间窗口，调度抖动既不丢也不重。</p>
+
+    <h3 id="s7-6">7.6 闭环校验与事件回写</h3>
+    <ol>
+      <li>校验：状态非 CLOSED；closeResult ∈ {PHONE_REMIND, EDUCATION, REPORT_PENALTY, TRAFFIC_VIOLATION, FALSE_ALARM}；remark 10~255 字；操作人是负责人本人或持 risk:order:assign；</li>
+      <li>更新工单：status=CLOSED、close_time=now、close_result、close_remark（事件快照字段不动）；</li>
+      <li>回写 <code>mon.risk_event</code>：handle_status=1、handle_remark="闭环结果中文名：remark"（截断 255）；</li>
+      <li><code>InterventionService.autoFromClose</code> 自动补一条 SYSTEM 干预：FALSE_ALARM 不生成；PHONE_REMIND→PHONE_REMIND、EDUCATION→EDUCATION、REPORT_PENALTY/TRAFFIC_VIOLATION→PENALTY；</li>
+      <li>若非负责人本人闭环，向原负责人发 ORDER_CLOSE 通知。</li>
+    </ol>
+
+    <h3 id="s7-7">7.7 干预动作与自动补录</h3>
+    <p><code>mon.risk_intervention</code>：action_type ∈ <strong>PHONE_REMIND / EDUCATION / STOP / PENALTY / OTHER</strong>；action_result ∈ SUCCESS / FAILED / NO_ANSWER / PENDING（默认 SUCCESS）；source ∈ MANUAL / SYSTEM。手动新增经 <code>InterventionService.add</code>：operator_id/name 强制取 UserContext 当前人，source=MANUAL。干预与工单多对一（一单可多条干预），order_id/event_id/plate_no/identity_code 冗余便于统计。</p>
+
+    <h3 id="s7-8">7.8 可分派名单与权限</h3>
+    <p><code>selectAssignableUsers</code> = 启用用户 ∩ 启用角色 ∩（role id=1 超级管理员 或 角色拥有菜单 915）。端点 <code>GET /api/risk/orders/assignable-users</code> 供分派下拉。角色授权种子：role1 全量；role2 安全管理员 view+handle+assign；role3 调度监控员、role4 车队长 view+handle（无分派/重开/SLA 权限）。列表查询还会按当前人数据范围（deptScope → 可见车牌集）过滤，越权访问他人工单详情返回 40401（fail-closed）。</p>
+
+    <h3 id="s7-9">7.9 统计卡与漏斗口径</h3>
+    <p><code>OrderStatsVO</code>：pendingCount、processingCount、overdueCount、escalatedCount、closedTodayCount、avgCloseSeconds、avgCloseMinutes。selectStats 全部实时按 deadline 计算；平均闭环时长仅统计今日 CLOSED 单的 <code>EXTRACT(EPOCH FROM close_time - create_date)</code>。</p>
+    <p><code>OrderFunnelVO</code>（RiskOrderService.funnel，区间 [start,end)）：</p>
+    <ul>
+      <li>eventTotal = risk_event 按 <strong>create_date</strong> 落区间计数；</li>
+      <li>orderTotal = 工单按 <strong>create_date</strong> 落区间；closedTotal 同样按工单 create_date（CLOSED 状态）；</li>
+      <li>interventionTotal = <code>InterventionService.countIntervenedOrders</code>：区间内创建且存在干预记录的 distinct order_id；</li>
+      <li>率 = ×1000 / orderTotal / 10.0 保留 1 位小数；orderTotal=0 时率为 0。</li>
+    </ul>
+    <blockquote class="warn">
+      <p><strong>口径差异（风险提示）：</strong>本漏斗 closedTotal 按工单 <code>create_date</code> 统计；MOD-010 画像对象卡 ProfileOrderMapper.closedTotal 按 <code>close_time</code> 落在区间统计。同一时间窗两个页面的"闭环数"可能不同，比较数据时须先对齐口径。</p>
+    </blockquote>
+
+    <h2 id="s8">8 数据流程</h2>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">事件产生</div>
+        <div class="s-desc">CEP 落 risk_event（北斗点/边缘信号/围栏）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">自动建单</div>
+        <div class="s-desc">同事务建 PENDING 单+CREATE 日志，deadline=event_time+等级时限。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">接单</div>
+        <div class="s-desc">坐席认领或主管分派 → PROCESSING；新单/分派通知触达（MOD-011）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">干预/督办</div>
+        <div class="s-desc">登记电话提醒等干预；超时标红、超宽限升级并通知负责人+主管。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">闭环归档</div>
+        <div class="s-desc">5 种结果+说明 → CLOSED；事件回置已处置；自动补干预；必要时重开。</div>
+      </div>
+    </div>
+
+    <h3 id="s8-1">8.1 异常与越权行为</h3>
+    <table>
+      <thead><tr><th>情形</th><th>系统行为</th></tr></thead>
+      <tbody>
+        <tr><td>对 CLOSED 单认领/分派/闭环</td><td>状态守卫拒绝，返回业务错误（状态不允许该操作）</td></tr>
+        <tr><td>非负责人且无 assign 权限闭环</td><td>拒绝；仅负责人本人（handle）或主管（assign）可闭环</td></tr>
+        <tr><td>查看/操作数据范围外工单</td><td>详情 40401（不暴露存在性）；列表不返回</td></tr>
+        <tr><td>闭环结果非法 / 说明长度不合规</td><td>后端按 VALID_RESULTS 与 10~255 字校验拒绝（前端拦截可被绕过，后端兜底）</td></tr>
+        <tr><td>分派目标不在可分派名单</td><td>assign 校验目标用户启用且具备处置角色，否则拒绝</td></tr>
+        <tr><td>通知派发失败</td><td>NotifyService 异步且全程吞异常；工单状态与日志不受影响</td></tr>
+        <tr><td>调度器重启期间超时</td><td>不丢：扫描是幂等集合更新，重启后首个节拍补齐 overdue/escalated；ESCALATE 日志去重防重复通知</td></tr>
+        <tr><td>手动干预传他人 operatorId</td><td>忽略入参，强制写当前登录用户（MANUAL）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/约束</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mon.risk_work_order</code></td>
+          <td>处置工单（与 risk_event 1:1）</td>
+          <td>order_no 唯一、event_id UNIQUE、事件快照五字段（title/code/source/plate/identity）、status、assignee_id/name、assign/claim/close_time、close_result/remark、deadline/sla_limit_min/grace_min、overdue/escalated/escalate_time/reopen_count、valid_mark</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_work_order">DDL · tbl-mon_risk_work_order</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_order_log</code></td>
+          <td>流转日志</td>
+          <td>action(CREATE/ASSIGN/CLAIM/TRANSFER/CLOSE/REOPEN/ESCALATE)、from_status/to_status、from/to_user_id|name、operator、remark；索引 (order_id,id)</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_order_log">DDL · tbl-mon_risk_order_log</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_order_sla</code></td>
+          <td>按等级的时限配置</td>
+          <td>risk_level PK、limit_min、grace_min、update_date</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_order_sla">DDL · tbl-mon_risk_order_sla</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_intervention</code></td>
+          <td>坐席干预记录</td>
+          <td>order_id/event_id/plate_no/identity_code、action_type、action_result、operator_id/name、source(MANUAL/SYSTEM)、remark(500)；order/event/time 三索引</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_intervention">DDL · tbl-mon_risk_intervention</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 id="s9-1">9.1 枚举值速查（以代码白名单为准）</h3>
+    <table>
+      <thead><tr><th>字段</th><th>取值</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td>risk_work_order.status</td><td>PENDING / PROCESSING / CLOSED</td><td>严格三态；字典 order_status 提供中文名</td></tr>
+        <tr><td>close_result</td><td>PHONE_REMIND / EDUCATION / REPORT_PENALTY / TRAFFIC_VIOLATION / FALSE_ALARM</td><td>RiskOrderService.VALID_RESULTS；SQL 注释里的 SUSPEND/OTHER 已废弃</td></tr>
+        <tr><td>risk_order_log.action</td><td>CREATE / ASSIGN / CLAIM / TRANSFER / CLOSE / REOPEN / ESCALATE</td><td>时间线按此渲染</td></tr>
+        <tr><td>intervention.source</td><td>MANUAL / SYSTEM</td><td>MANUAL 强制当前操作人；SYSTEM 仅闭环自动补录</td></tr>
+        <tr><td>intervention.action_type</td><td>5 类动作（含 PHONE / EDUCATION / ONSITE / STOP / PENALTY 等）</td><td>以前端动作枚举与 InterventionService 白名单为准</td></tr>
+        <tr><td>intervention.action_result</td><td>4 类结果（有效/无效/拒接/其他等）</td><td>登记弹窗下拉</td></tr>
+        <tr><td>overdue / escalated</td><td>0/1</td><td>调度器批量更新；闭环/重开后的展示行为见第 17 节</td></tr>
+        <tr><td>risk_order_sla 档位</td><td>3:15+10 / 2:60+30 / 1:240+60（分钟）</td><td>建单时快照 limit/grace/deadline</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/risk/orders</code></td><td>分页（keyword/status/riskLevel/closeResult/timeFlag/assigneeId/时间窗）</td><td>risk:order:view + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET <code>/api/risk/orders/{id}</code></td><td>工单详情（越权 40401）</td><td>risk:order:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET <code>/api/risk/orders/stats</code></td><td>6 项统计</td><td>risk:order:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET <code>/api/risk/orders/funnel</code></td><td>F21 漏斗（start/end，ISO DATE_TIME）</td><td>risk:order:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET <code>/api/risk/orders/{id}/interventions</code></td><td>干预记录列表</td><td>risk:order:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/interventions</code></td><td>手动登记干预（@AuditLog HANDLE INTERVENTION）</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET <code>/api/risk/orders/assignable-users</code></td><td>可分派名单</td><td>risk:order:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/ensure/{eventId}</code></td><td>按事件确保工单存在</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/{id}/claim</code></td><td>认领</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/{id}/assign</code></td><td>分派</td><td>risk:order:assign</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/{id}/transfer</code></td><td>转派</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/{id}/close</code></td><td>闭环（5 结果+10~255 字说明）</td><td>本人 handle 或 assign</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>POST <code>/api/risk/orders/{id}/reopen</code></td><td>重开</td><td>risk:order:assign</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+        <tr><td>GET/PUT <code>/api/risk/orders/sla</code></td><td>SLA 查询/三等级同时更新</td><td>PUT 需 risk:order:assign</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-risk-order">grp-risk-order</a></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s10-1">10.1 主要写接口请求体</h3>
+    <table>
+      <thead><tr><th>接口</th><th>请求体关键字段</th><th>校验要点</th></tr></thead>
+      <tbody>
+        <tr><td>POST /interventions</td><td>orderId、actionType、actionResult、remark</td><td>动作/结果在白名单；remark ≤500；operator 强制取登录态；@AuditLog</td></tr>
+        <tr><td>POST /{id}/assign</td><td>assigneeId</td><td>目标人 ∈ assignable-users（启用且有处置角色）；非 CLOSED</td></tr>
+        <tr><td>POST /{id}/transfer</td><td>assigneeId、remark</td><td>工单已有负责人且非 CLOSED</td></tr>
+        <tr><td>POST /{id}/close</td><td>closeResult、closeRemark</td><td>结果 ∈ VALID_RESULTS；说明 10~255 字；本人或 assign 权限</td></tr>
+        <tr><td>PUT /sla</td><td>三行 {riskLevel, limitMin, graceMin}</td><td>同时更新三档；分钟数为正整数；仅影响新单</td></tr>
+        <tr><td>GET /orders 分页</td><td>keyword/status/riskLevel/closeResult/timeFlag/assigneeId/startTime/endTime/page/size</td><td>timeFlag ∈ all/due/overdue/escalated；追加数据范围过滤</td></tr>
+        <tr><td>GET /funnel</td><td>start、end（ISO DATE_TIME）</td><td>区间非法返回参数错误；闭环按 create_date 时基</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s11">11 定时任务</h2>
+    <table>
+      <thead><tr><th>任务</th><th>调度方式</th><th>行为</th></tr></thead>
+      <tbody>
+        <tr><td><code>RiskOrderScheduler.scan</code></td><td><code>@Scheduled(fixedDelay=60_000, initialDelay=20_000)</code>（每 60 秒，启动后 20 秒首跑；<strong>fixedDelay 非 cron</strong>）</td><td>runTimeoutScan（置超时/升级、补 ESCALATE 日志、通知负责人+916 主管）→ scanNewOrders（id 游标每批 50 新单，通知 915 在线坐席）</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p>部署注意（项目既有经验）：<code>@EnableScheduling</code> 必须放在启动类 PlatformApplication 上；若放在业务 @Component 上，ScheduledAnnotationBeanPostProcessor 注册时机偏晚可能导致其他模块 @Scheduled 不被调度。</p>
+    </blockquote>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>事件与工单 1:1 且同事务创建</strong>：风险处置不允许"无主事件"，uk_risk_order_event 从数据库层杜绝重复单；ensure 接口用 DuplicateKeyException 兜底并发点击。</li>
+      <li><strong>三态极简状态机</strong>：PENDING/PROCESSING/CLOSED 覆盖运输安全处置实际流程，迁移规则全部集中在 Service 常量与守卫方法中，避免状态膨胀。</li>
+      <li><strong>SLA 快照入单</strong>：sla_limit_min/grace_min/deadline 在建单时写入工单行，后续 SLA 调整不改历史单，考核口径可重现。</li>
+      <li><strong>扫描器只做幂等批量更新</strong>：超时标记用 SQL 集合更新，通知通过"近 2 分钟新升级 + 无 ESCALATE 日志"去重，单实例重启/漏跑后下一节拍自动补齐且不重复通知。</li>
+      <li><strong>新单用 id 游标而非时间窗</strong>：lastNotifiedOrderId 初始化为 MAX(id)，重启不回放历史，调度抖动不丢不重（项目既有避坑经验）。</li>
+      <li><strong>通知异步且失败隔离</strong>：调度器只负责"找人+发事件"，NotifyService 异步派发全程吞异常，通知故障不影响工单状态正确性（见 MOD-011）。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>证据</th><th>影响</th><th>对策</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>单实例内存调度</td>
+          <td>@Scheduled + 内存 id 游标；WS 会话也在单机内存</td>
+          <td>多实例部署会重复扫描/通知；实例宕机期间新单不推送（入库不受影响）</td>
+          <td>当前单节点部署已验证；多实例前改为 ShedLock/分布式锁 + 游标落表</td>
+        </tr>
+        <tr>
+          <td>SLA 调整只对新单生效</td>
+          <td>limit/grace 在建单时快照</td>
+          <td>管理员误以为改完存量单时限也变</td>
+          <td>SLA 弹窗注明"仅对新单生效"；如需回溯另做批量迁移方案</td>
+        </tr>
+        <tr>
+          <td>闭环率口径不统一</td>
+          <td>漏斗按 create_date；画像按 close_time</td>
+          <td>跨页面对账数字不一致引疑问</td>
+          <td>两处文档均已标注；中期统一为同一 SQL 口径或在页面注明时基</td>
+        </tr>
+        <tr>
+          <td>close_result 注释误导</td>
+          <td>SQL/实体注释含 SUSPEND/OTHER，代码白名单不含</td>
+          <td>新开发按注释写出非法枚举</td>
+          <td>以 VALID_RESULTS 为准；建议后续修订 SQL COMMENT 与实体注释</td>
+        </tr>
+        <tr>
+          <td>自动建单依赖 SLA 缓存</td>
+          <td>Python _load_sla 60 秒缓存，缺省值兜底</td>
+          <td>SLA 改动后最多 60 秒内新单仍按旧值算 deadline</td>
+          <td>可接受（仅影响边界时刻新单）；文档明示延迟</td>
+        </tr>
+        <tr>
+          <td>升级通知只发一次</td>
+          <td>ESCALATE 日志去重</td>
+          <td>通知丢失（如全员离线）后不再补发提醒</td>
+          <td>列表 overdue/escalated 标记持续可见；必要时增加周期性再提醒任务</td>
+        </tr>
+        <tr>
+          <td>临期 20% 为字面量</td>
+          <td>列表 due 判定 SQL/代码中写死 ×0.2，未见读取 sla.grace_ratio 配置</td>
+          <td>调整 sys_config 中比例不生效，运营误以为可配</td>
+          <td>要么接入配置消费，要么移除种子项；在第 17 节标待核实</td>
+        </tr>
+        <tr>
+          <td>干预动作/结果枚举分散</td>
+          <td>前端动作枚举、InterventionService 白名单、字典表三处并存</td>
+          <td>新增动作时三处不一致会导致登记失败或展示丢标签</td>
+          <td>短期以 Service 白名单为准做联调；中期统一收口到字典（MOD-012）</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-008-风控规则引擎.html">MOD-DBD-008 风控规则引擎</a></td><td>规则事件在 insert_risk_events 同事务自动建 PENDING 单（creator='cep-engine'、CREATE 日志 operator='CEP'）；SLA 快照随单写入</td><td>db.insert_risk_events、risk_order_sla</td></tr>
+        <tr><td><a href="MOD-DBD-007-电子围栏.html">MOD-007 电子围栏</a></td><td>GEO_ENTER/GEO_EXIT 围栏事件走同一建单事务，工单处理流程与规则事件完全一致</td><td>mon.risk_event.fence_id</td></tr>
+        <tr><td><a href="MOD-DBD-010-驾驶评分与风险画像.html">MOD-010 评分/画像</a></td><td>FALSE_ALARM 闭环事件被评分 NOT EXISTS 排除；画像对象卡取工单 Top5、日均分；<strong>漏斗闭环口径两处不同</strong>：工单漏斗按 create_date 区间，画像卡 closedTotal 按 close_time 区间</td><td>ScoreCalcService、ProfileCardService、ProfileOrderMapper</td></tr>
+        <tr><td>MOD-005 实时监控</td><td>风险预警分析页"去处理"调 ensure 幂等补单并跳转；事件直接处置入口同样受 risk:order:handle 控制</td><td>MonitorController、RiskOrders.vue?openOrder=</td></tr>
+        <tr><td><a href="MOD-DBD-011-通知中心与多渠道预警.html">MOD-011 通知中心</a></td><td>四个触发点：新单 ORDER_CREATE（915 全员）、升级 ORDER_ESCALATE（负责人+916，level=3）、分派/转派 ORDER_ASSIGN、非本人闭环 ORDER_CLOSE；仅站内信 + WebSocket 真实可达</td><td>RiskOrderScheduler、RiskOrderService</td></tr>
+        <tr><td><a href="MOD-DBD-012-系统配置与数据字典.html">MOD-012 系统配置</a></td><td>状态/闭环结果中文名取 order_status、close_result 字典；sys_config 中 sla.grace_ratio 的消费方未见（见第 17 节）</td><td>09-system-config.sql</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">谁可以认领、谁可以闭环？</div><div class="vv">持有 risk:order:handle 的角色（role1 全部、role2 三项权限、role3/role4 view+handle）可认领；闭环限负责人本人或有 assign 权限者；数据范围外车辆的单不可见，详情直调返回 40401。</div></div>
+      <div class="kv"><div class="k">"超时"和"升级"是一回事吗？</div><div class="vv">不是。now&gt;deadline 仅置 overdue=1（列表标红）；now&gt;deadline+grace_min 且未升级过才置 escalate=1 并向负责人与主管发一次 ORDER_ESCALATE 高优先级通知。</div></div>
+      <div class="kv"><div class="k">调整 SLA 后，存量工单时限会变吗？</div><div class="vv">不会。limit_min/grace_min/deadline 在建单时快照写入工单行；SLA 配置页也注明"仅对新单生效"。</div></div>
+      <div class="kv"><div class="k">闭环时为什么要求填写说明？</div><div class="vv">必须选择闭环结果且说明长度 10~255 字，前端与后端双重校验；目的是保证每条闭环可审计、可回溯教育/提醒内容。</div></div>
+      <div class="kv"><div class="k">"误报排除"闭环与其他结果有何不同？</div><div class="vv">FALSE_ALARM 闭环：回写事件已处置但<strong>不自动补录</strong> SYSTEM 干预记录；且次日驾驶评分 NOT EXISTS 排除该事件，不扣分。</div></div>
+      <div class="kv"><div class="k">闭环后发现处置不实怎么办？</div><div class="vv">有 risk:order:assign 权限的主管可"重新打开"，工单回到 PROCESSING 并写 REOPEN 日志；事件关联不变，之后可再次闭环。</div></div>
+      <div class="kv"><div class="k">事件页点"去处理"为什么有时直接打开了已有工单？</div><div class="vv">ensure/{eventId} 是幂等的：工单已存在直接返回既有单（含并发点击被唯一约束拒绝后回查）；不存在才补建 PENDING 单。</div></div>
+      <div class="kv"><div class="k">工单可以删除吗？</div><div class="vv">不提供删除接口。工单是处置审计对象，只能沿状态机流转；三态之外没有作废/物理删除路径。</div></div>
+      <div class="kv"><div class="k">新单铃铛为什么没收到通知？</div><div class="vv">ORDER_CREATE 只投给拥有 915 处置权限的启用用户；WebSocket 不在线时站内信仍落库（铃铛未读数可见），但弹窗需要在线会话；外部短信/语音/App 通道本期为预留，不会真实外发（MOD-011）。</div></div>
+      <div class="kv"><div class="k">手动登记干预能代他人登记吗？</div><div class="vv">不能。MANUAL 来源的 operatorId/operatorName 强制取当前登录用户，请求体传他人 id 无效；只有 SYSTEM 自动补录的来源是系统。</div></div>
+      <div class="kv"><div class="k">工单漏斗和画像页闭环数为什么对不上？</div><div class="vv">时基不同：工单漏斗闭环按 create_date 区间（建单时间在窗口内），画像对象卡 closedTotal 按 close_time 区间（闭环动作发生在窗口内）。跨页对账需先统一时基。</div></div>
+      <div class="kv"><div class="k">分派后还能改派吗？</div><div class="vv">可以。持单坐席或主管可转派（transfer），写 TRANSFER 日志并向新负责人发 ORDER_ASSIGN；转派不改变 deadline 与超时状态。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>菜单与按钮权限</td><td>处置工单菜单对 role1~4 可见；915/916 按钮按角色显隐，越权直调被拦截</td><td>多角色登录</td></tr>
+        <tr><td>2</td><td>自动建单</td><td>新风险事件同事务出现 PENDING 工单与 CREATE 日志，deadline=事件时间+等级时限</td><td>risk_work_order 联查</td></tr>
+        <tr><td>3</td><td>1:1 唯一约束</td><td>重复 ensure/并发点击只返回同一工单，不产生第二单</td><td>并发调用 ensure</td></tr>
+        <tr><td>4</td><td>认领流转</td><td>PENDING→PROCESSING，assignee=当前用户，写 CLAIM 日志，新单通知到达</td><td>界面操作</td></tr>
+        <tr><td>5</td><td>分派/转派</td><td>主管可从可分派名单指定坐席；转派后 ORDER_ASSIGN 通知新负责人</td><td>assign/transfer</td></tr>
+        <tr><td>6</td><td>闭环校验</td><td>未选结果或说明 &lt;10 字被拒；合法闭环写 CLOSE 日志、回写事件已处置</td><td>边界值提交</td></tr>
+        <tr><td>7</td><td>误报闭环</td><td>FALSE_ALARM 不补 SYSTEM 干预；次日评分无该事件扣分</td><td>闭环后重算评分</td></tr>
+        <tr><td>8</td><td>自动补录</td><td>非误报闭环自动产生一条 SYSTEM 干预记录（动作/结果映射闭环结果）</td><td>interventions 列表</td></tr>
+        <tr><td>9</td><td>重开</td><td>主管 reopen 后状态回 PROCESSING，日志含 REOPEN，可再次闭环</td><td>界面操作</td></tr>
+        <tr><td>10</td><td>超时标记</td><td>过 deadline 未闭单，下一扫描节拍内置 overdue=1</td><td>构造过期单等待 60s</td></tr>
+        <tr><td>11</td><td>升级通知</td><td>过宽限后 escalate=1、补 ESCALATE 日志、负责人+主管收到一条 level=3 通知；不重复发</td><td>通知中心核对</td></tr>
+        <tr><td>12</td><td>新单游标</td><td>新单只通知一次；调度器重启后不回放历史单</td><td>重启验证</td></tr>
+        <tr><td>13</td><td>数据范围</td><td>非 allData 用户只看到本部门车牌工单，越权详情 40401</td><td>跨账号验证</td></tr>
+        <tr><td>14</td><td>统计卡/漏斗</td><td>6 卡与漏斗数字和 SQL 对账一致；漏斗时基为 create_date</td><td>SQL 对账</td></tr>
+        <tr><td>15</td><td>干预登记</td><td>5 类动作×4 类结果可登记，操作人强制为本人，remark ≤500 字</td><td>接口直调篡改 operator</td></tr>
+        <tr><td>16</td><td>SLA 配置</td><td>三等级可同时更新；改动只影响之后新建工单</td><td>改后对比新旧单</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中证据不足或依赖运行环境，按"待核实"标注：</p>
+    </blockquote>
+    <ul>
+      <li><strong>sla.grace_ratio 配置项的消费方</strong>：09 脚本种子含 <code>sla.grace_ratio=0.2</code>（注"工单剩余时限低于该比例视为临期"），但工单时限/宽限实际走 risk_order_sla 三档分钟数，代码中未见读取该 config 的位置；临期比例是否计划接入待确认。</li>
+      <li><strong>多实例调度</strong>：@Scheduled 扫描、内存 id 游标、WebSocket 会话均为单机语义，水平扩展前需要 ShedLock/分布式锁与游标持久化，当前按单节点部署验证。</li>
+      <li><strong>close_result 枚举对齐</strong>：代码白名单 VALID_RESULTS 与 SQL/实体注释（含 SUSPEND/OTHER）、字典 close_result 种子三处需逐项核对，避免新增端按注释写出非法值。</li>
+      <li><strong>overdue/escalated 在闭环与重开后的表现</strong>：标记在闭环后如何展示、重开后是否沿用旧标记或重新计时，代码分支未在本次阅读中完整确认，使用前应实测一条。</li>
+      <li><strong>升级仅一次提醒</strong>：全员离线导致当次升级通知无人读时，没有周期性再提醒任务，是否需要"持续未闭环再提醒"策略待业务确认。</li>
+      <li><strong>外部通知渠道</strong>：短信/语音/App 推送均为预留实现（开关默认关且 send 抛 UnsupportedOperationException），升级督办目前只保证站内信与在线 WebSocket 触达。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>初版。以源代码固化三态状态机与全部守卫、SLA 15/60/240+宽限口径、60 秒调度器（超时/升级/id 游标新单通知）、干预 5 动作×4 结果与闭环自动补录、统计与漏斗口径；指出 close_result 注释与代码白名单不一致、漏斗与画像闭环口径差异。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-009 处置工单与坐席干预 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

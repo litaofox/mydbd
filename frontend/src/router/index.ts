@@ -117,6 +117,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统参数', perm: 'system:config:view' }
       },
       {
+        path: 'system/gateway',
+        name: 'system-gateway',
+        component: () => import('@/views/system/GatewayStatus.vue'),
+        meta: { title: '运行模式', perm: 'system:gateway:view' }
+      },
+      {
         path: 'system/messages',
         name: 'system-messages',
         component: () => import('@/views/system/MessageCenter.vue'),

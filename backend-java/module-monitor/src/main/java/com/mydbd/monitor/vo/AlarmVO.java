@@ -62,4 +62,24 @@ public class AlarmVO {
 
     /** 详情接口附带：同车牌 ±30min 的 mon.risk_event 前 5 条（§3.3） */
     private List<Map<String, Object>> relatedRisks;
+
+    /** 详情接口附带：网关报警附件（traj_warn_media，按 warn_id = source_id 关联） */
+    private List<MediaAttachment> attachments;
+
+    /**
+     * 网关报警附件出参（GATEWAY-PLAN-001）。
+     * 文件流经 /api/monitor/alarm/media/{id} 中转下载，不透出本地路径。
+     */
+    @Data
+    public static class MediaAttachment {
+        @JsonSerialize(using = ToStringSerializer.class)
+        private Long id;
+        private String fileName;
+        /** 0 图片 1 音频 2 视频 */
+        private Integer fileType;
+        private Long fileSize;
+        private Integer fileStatus;
+        /** local_path 非空（已完成转存可下载） */
+        private Boolean hasLocal;
+    }
 }

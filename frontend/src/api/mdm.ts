@@ -95,6 +95,9 @@ export interface Terminal {
   remark?: string | null
   validMark: number
   boundVehicleNo?: string | null
+  gatewayTruckId?: string | null
+  onlineStatus?: number | null
+  lastHeartbeatTime?: string | null
 }
 
 export interface TerminalSaveRequest {
@@ -103,6 +106,7 @@ export interface TerminalSaveRequest {
   oemCode?: string
   tlModel?: string
   simAccount?: string
+  gatewayTruckId?: string
   protocolType?: string
   equipmentType?: string
   videoChannel?: number | null
@@ -210,6 +214,7 @@ export const getTerminals = (params: {
   page?: number
   size?: number
   keyword?: string
+  simAccount?: string
   status?: number
   protocolType?: string
   equipmentType?: string

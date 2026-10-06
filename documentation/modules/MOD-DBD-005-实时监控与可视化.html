@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-005 实时监控与可视化 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">MOD-DBD-005 实时监控与可视化 · WebSocket 实时推送 / 实时导航监控 / 监控总览大屏 / 车辆详情聚合面板</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 实时导航监控页</a></li>
+            <li><a href="#s3-2">3.2 监控总览大屏</a></li>
+            <li><a href="#s3-3">3.3 车辆详情聚合面板</a></li>
+            <li><a href="#s3-4">3.4 风险事件列表与轻量处置</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 WebSocket 链路与握手鉴权</a></li>
+            <li><a href="#s7-2">7.2 按会话数据范围过滤（fail-closed）</a></li>
+            <li><a href="#s7-3">7.3 推送调度与 id 游标</a></li>
+            <li><a href="#s7-4">7.4 最新点查询的 LATERAL 优化</a></li>
+            <li><a href="#s7-5">7.5 大屏六块聚合</a></li>
+            <li><a href="#s7-6">7.6 车辆面板聚合与轨迹抽稀</a></li>
+            <li><a href="#s7-7">7.7 前端渲染与状态口径</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 种子数据与初始化</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-005 实时监控与可视化</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-005<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F14 / F15 / F16 / P07
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码（backend-java module-monitor、module-trajectory）与初始化 SQL（<code>06-iam-tables.sql</code>、<code>09-system-config.sql</code>、<code>12-dashboard.sql</code>）、nginx 配置（<code>portal.conf</code>）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>MonitorController</code> / <code>DashboardController</code> / <code>VehiclePanelController</code> / <code>GeocodeController</code>；WebSocket 链 <code>RealtimeWebSocketConfig</code> / <code>AuthHandshakeInterceptor</code> / <code>RealtimeWebSocketHandler</code> / <code>SessionRegistry</code> / <code>RealtimePushScheduler</code> / <code>WsScopeResolver</code>；<code>MonitorService</code> / <code>DashboardService</code> / <code>VehiclePanelService</code>（module-monitor）；前端 <code>views/monitor/Monitor.vue</code>、<code>views/dashboard/Dashboard.vue</code>、<code>components/VehicleDetailDrawer.vue</code>、<code>composables/useRealtime.ts</code>、<code>api/monitor.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>实时监控与可视化模块回答三件事：<strong>车在哪里、状态如何、出了什么事</strong>。它以秒级节拍把轨迹接入模块（MOD-DBD-004）落库的定位点、终端报警（<code>traj.traj_warn_info</code>）与风险事件（<code>mon.risk_event</code>）推送到坐席浏览器，并提供两个工作台（坐席监控页、值班大屏）与一个车辆级聚合视图（详情面板）。</p>
+    <ul>
+      <li><strong>WebSocket 实时推送（P07）</strong>：端点 <code>/ws/realtime</code>，1 秒一拍推送三类消息——位置全量快照 <code>POINTS</code>、增量风险事件 <code>RISK</code>、增量终端报警 <code>ALARM</code>；所有消息按各会话用户的数据范围过滤（fail-closed）；断连自动降级为 5 秒 REST 轮询。</li>
+      <li><strong>实时导航监控（F14）</strong>：<code>/monitor</code> 页面，左栏组织车辆树 + 状态统计，中央高德瓦片地图实时车标，底部车辆明细表；气泡与右键菜单提供轨迹回放跳转、详情面板与预留终端指令入口。</li>
+      <li><strong>监控总览大屏（F15）</strong>：<code>/dashboard</code> 页面，面向值班室的整屏可视化——在线率、今日里程、工单积压、车队/区域 TOP8、风险热力、报警滚动条；30 秒一次聚合轮询 + 实时消息即时修正。</li>
+      <li><strong>车辆详情聚合面板（F16）</strong>：单一接口一次返回车辆档案、当前终端与在班司机、最新定位点、当日轨迹（抽稀 ≤500 点）、最新 5 条报警与当日计数；以共享抽屉组件在监控页与大屏复用。</li>
+      <li><strong>地理编码代理</strong>：高德逆地理与地点检索的服务端代理（Key 不下发前端），供监控气泡显示文字地址与地图地点搜索。</li>
+    </ul>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>本模块只做"看"——定位点与报警/风险数据的生产与落库在 MOD-DBD-004 与风控模块；报警的确认/解除闭环在 MOD-DBD-006；风险事件的工单流转在风控工单模块；轨迹存储与历史回放在 MOD-DBD-004。本模块保留一个风险"轻量处置"入口（与工单处置同一权限码）。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>WS 握手鉴权</td><td>query 参数 token 解析 JWT，purpose 须为 access；uid/username 写入会话属性；失败拒绝握手</td><td><code>AuthHandshakeInterceptor</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>位置推送 POINTS</td><td>1s 一拍全量快照（每终端最新点）；新连接立即推首帧；按会话范围过滤</td><td><code>RealtimePushScheduler.pushPoints/pushPointsOnce</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>风险推送 RISK / 报警推送 ALARM</td><td>按 id 游标增量（每拍 ≤50 条）；游标启动时初始化为当前最大 id，不回放历史</td><td><code>RealtimePushScheduler.pushRisks/pushAlarms</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>按会话范围过滤</td><td>范围=null 共享一份序列化；空集合跳过该会话；非空按范围签名缓存序列化结果</td><td><code>SessionRegistry.broadcastScoped</code> + <code>WsScopeResolver</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>断连降级轮询</td><td>指数退避重连（1s×2ⁿ 封顶 30s），期间每 5s 轮询 overview + latest</td><td><code>composables/useRealtime.ts</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>实时监控页</td><td>车辆树（勾选/搜索/筛选/展示设置）、状态统计格、地图车标、底部明细表、气泡、右键菜单、持续跟踪</td><td><code>Monitor.vue</code>（1371 行）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>监控大屏</td><td>六块聚合 + 地图 + 热力层 + 报警滚动 + 风险飘条 + 卡片钻取 + 全屏</td><td><code>Dashboard.vue</code>（752 行）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>大屏聚合接口</td><td>一次返回 在线/里程/工单/车队/区域/热力 六块；逐块按 deptScope 裁剪</td><td><code>DashboardController</code> + <code>DashboardService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>车辆详情面板</td><td>档案/终端/司机/最新点/当日轨迹(≤500 抽稀)/报警 Top5/当日计数；越权 40301</td><td><code>VehiclePanelController</code> + <code>VehiclePanelService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>监控总览计数</td><td>在途车辆/今日风险/未处置风险/今日终端报警，按范围过滤</td><td><code>MonitorController.overview</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>风险事件分页与轻量处置</td><td>六条件筛选（含 cityCode 区域钻取换算）；处置写 handleStatus/handleRemark，审计</td><td><code>MonitorController.risks/handle</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>风险类型分布 / 报警列表 / 视频分析列表</td><td>饼图聚合、最近 100 条终端报警、视频分析任务列表，均按范围过滤</td><td><code>MonitorController.typeStats/warnings/videoAnalyses</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>地理编码代理</td><td>逆地理（经纬度→地址）与地点检索；Key 未配置返回 50301</td><td><code>GeocodeController</code> + <code>AmapProperties</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>实时视频 / 语音对讲 / 远程抓拍</td><td>界面入口已留（气泡与右键菜单），指令通道为预留，提示"下一版本开放"</td><td><code>VehicleContextMenu.vue</code> / <code>api/terminal.ts sendCommand</code></td><td><span class="badge gray">预留（未开放）</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>POINTS / RISK / ALARM</td><td>WS 三类消息封套 <code>{type, data}</code> 的 type 值：位置全量快照 / 增量风险事件 / 增量终端报警。</td></tr>
+        <tr><td>id 游标</td><td>增量推送记录 lastRiskId / lastAlarmId，每拍查 <code>id &gt; 游标</code> 的记录；不丢不重，重启不回放（初始化为当前最大 id）。</td></tr>
+        <tr><td>范围签名</td><td><code>broadcastScoped</code> 内把会话可见车牌集合排序拼接成 key，同一次调用内相同范围的会话共享一份 JSON 序列化结果。</td></tr>
+        <tr><td>fail-closed</td><td>任何环节拿不到有效范围（无 uid、用户停用、空范围）一律视为"不可见任何数据"，宁可不推也不错推。</td></tr>
+        <tr><td>refTime（数据时基）</td><td>前端以"全局最新定位时间"作为在线判定参考点，而非浏览器墙钟；历史数据集演示时数据时基滞后墙钟十几小时仍能正确区分在线/离线。</td></tr>
+        <tr><td>在线窗口</td><td>定位时间距参考点不超过 N 分钟视为在线。监控页前端可选 10/30/60/1440（默认 10）；大屏后端读 sys_config 键 <code>monitor.online.window.minutes</code>（缺省 5）。</td></tr>
+        <tr><td>LATERAL 优化</td><td>最新点查询以终端表驱动，<code>CROSS JOIN LATERAL</code> 逐台走索引取最新一条，避免对 890 万行轨迹表做全量聚合。</td></tr>
+        <tr><td>GCJ-02</td><td>平台点位坐标与高德瓦片底图同为火星坐标系，逆地理直接透传；若未来接入 WGS-84 原始 GPS 须在接入层统一转换（代码注释口径）。</td></tr>
+        <tr><td>轻量处置</td><td>监控域对风险事件的单步处置（写处置状态+备注），与工单处置共用权限码 <code>risk:order:handle</code>；完整流转仍在工单模块。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">全网车辆一屏掌握</div>
+        <div class="sc-desc">打开实时导航监控页：左栏组织树按车队勾选车辆，地图 1 秒一拍刷新车标位置与方向，底部统计格实时显示 在线/行驶/停车/离线/报警 数量；点统计格即勾选对应分组。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">新风险与报警即时提示</div>
+        <div class="sc-desc">值守期间终端上报报警或规则引擎产生风险事件，浏览器 1 秒内弹出 ElMessage 提示（车牌 + 事件码/类型 + 等级），无需刷新页面；每拍最多提示最近 3 条。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">值班长</div>
+        <div class="sc-name">大屏值守与钻取</div>
+        <div class="sc-desc">值班室投屏监控总览大屏：左侧在线率环图与今日里程，中央地图叠加风险热力，右列报警滚动条实时置顶；新风险以飘条提示 5 秒。点"待处理"数字直接带条件跳到报警中心。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业车队长</div>
+        <div class="sc-name">核查某辆车当前状况</div>
+        <div class="sc-desc">在监控页点车标气泡"车辆详情"：抽屉一次展示档案、当前终端与在班司机、最新定位（速度/方向/时间）、当日轨迹曲线、最新 5 条报警与当日计数；可一键跳轨迹回放锁定当天。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">气泡快速操作</div>
+        <div class="sc-desc">点击车标弹出气泡：速度/方向/定位时间/坐标/文字地址（高德逆地理），按钮直达轨迹回放（自动锁定该车最新定位当天 0~24 点）与详情抽屉；视频/对讲/抓拍按钮标注"预留"。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">省份受限用户</div>
+        <div class="sc-name">只见本范围数据</div>
+        <div class="sc-desc">山东测试账号登录后：监控页只见本省车辆，WS 推送的 POINTS/RISK/ALARM 均已被服务端按会话过滤；大屏六块聚合只统计本省；直输他省车辆的面板地址返回 40301。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>菜单路径：<strong>实时监控</strong>一级目录（<code>sys_menu</code> id=10，图标 Monitor），下挂：实时导航监控（id=11，<code>/monitor</code>，权限点 <code>monitor:view</code>）、历史轨迹回放（id=12，<code>/playback</code>，<code>playback:view</code>，属 MOD-DBD-004）、监控总览大屏（id=15，<code>/dashboard</code>，<code>monitor:dashboard:view</code>，由 <code>12-dashboard.sql</code> 种子并授权 role 1~4 全员）。大屏路由为顶层独立路由（不进 MainLayout 侧栏框架），菜单点击后以整屏模式打开。</p>
+
+    <h3 id="s3-1">3.1 实时导航监控页</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入页面</div>
+        <div class="s-desc">首屏并行执行：REST 拉一次 overview + 最新点（pollOnce），同时建立 WS 连接；顶栏连接胶囊显示"实时连接 · 1s 推送"或"降级轮询 · 5s"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">组织树勾选</div>
+        <div class="s-desc">左侧树按"组织 → 车辆"两级展示（带车队统计后缀），首次进入自动全选；搜索框按车牌/终端号/SIM 过滤；漏斗图标按状态/颜色/车型筛选并自动勾选结果。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">地图浏览</div>
+        <div class="s-desc">车标 1s 差分刷新（仅位置/状态/方向变化的标记重建）；点标气泡看详情，右键车标打开操作菜单；工具条支持地点搜索、标准/卫星底图切换、复位视野。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">底部明细与跟踪</div>
+        <div class="s-desc">五个页签（全部/行驶中/停车/离线/报警）过滤明细表；行点击定位到该车；🎯 开启持续跟踪后地图自动跟随该车移动。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 监控总览大屏</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">打开与自适应</div>
+        <div class="s-desc">进入 /dashboard 即整屏布局（左列指标 / 中央地图+条形图 / 右列报警），根字号按 1920 基准 rem 流式缩放（clamp 12~32px），适配 1080P 与 4K。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">30s 聚合轮询</div>
+        <div class="s-desc">每 30 秒拉一次 summary（六块）与报警统计，重绘环图/条形图/热力层；WS POINTS 驱动地图车标，RISK 驱动热力即时 +1 与飘条，ALARM 驱动滚动条置顶。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">卡片钻取</div>
+        <div class="s-desc">各卡片标题栏"›"与关键数字可点击：在线率→/monitor，里程→/playback，工单→/risk/orders（带状态条件），今日报警→/alarms（带今日时间窗），滚动条条目→/alarms（带车牌）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">全屏与退出</div>
+        <div class="s-desc">顶栏"全屏"切换浏览器全屏；"退出大屏"返回上一页；离开页面自动恢复根字号 16px，不污染常规页面。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 车辆详情聚合面板</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">打开抽屉</div>
+        <div class="s-desc">监控页气泡"车辆详情"、右键菜单"车辆详情"、大屏车标点击、风险飘条点击均可打开；无车辆档案 id（未建档或无权）时提示并拦截。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">一次聚合加载</div>
+        <div class="s-desc">GET /api/monitor/vehicle-panel/{id} 一次返回六个区块：档案、当前终端、在班司机、最新点、当日轨迹、报警 Top5 与当日计数；越权返回 40301。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">在线状态展示</div>
+        <div class="s-desc">抽屉头部的在线标签优先使用调用页传入的 online（监控页 refTime 口径），未传时用接口 latestPoint.online（后端墙钟 5 分钟口径）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">跳转联动</div>
+        <div class="s-desc">面板内可跳"前往车辆档案"、"查看全部报警"、"轨迹回放"（无绑定终端时禁用）。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 风险事件列表与轻量处置</h3>
+    <ul>
+      <li>监控域提供风险事件分页接口（/api/monitor/risks），筛选条件：事件来源 eventSource、风险等级 riskLevel、处置状态 handleStatus、规则 ruleId、车牌 plateNo（模糊）、注册地 cityCode（经车辆表换算车牌集合，供大屏区域柱钻取）。</li>
+      <li>处置入口 POST /api/monitor/risks/{id}/handle，仅需备注 remark；权限点 <code>risk:order:handle</code> 与工单处置同码，并写操作审计（@AuditLog MONITOR/HANDLE/RISK_EVENT）。</li>
+      <li>不存在与越权同一口径返回 40401，避免借处置接口探测事件存在性（与 AlarmService 对齐）。</li>
+      <li>前端风险事件完整列表页在风控模块（/risk）；本模块接口同时服务监控页侧栏与大屏钻取。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块前端为 2 个页面 + 2 个共享组件（抽屉 / 右键菜单）。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">🗺️</div>
+      <div class="sh-t">截图 4-1：实时导航监控页（/monitor）</div>
+      <div class="sh-p">应截：左栏搜索+组织树（节点带车队统计后缀）+七个状态统计格；中央地图（车标、图例、连接徽标、工具条）；底部五个状态页签与车辆明细表；顶栏连接胶囊"实时连接 · 1s 推送"。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">💬</div>
+      <div class="sh-t">截图 4-2：车辆气泡与右键菜单</div>
+      <div class="sh-p">应截：点开车标后的气泡（车牌+状态标签、速度/方向、定位时间、坐标、文字地址行、六个操作按钮含"预留"角标）；以及右键车标的操作菜单（轨迹回放/实时视频通道子项/持续跟踪/语音对讲(预留)/远程抓拍(预留)/车辆详情）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📊</div>
+      <div class="sh-t">截图 4-3：监控总览大屏（/dashboard）</div>
+      <div class="sh-p">应截：整屏三列布局——左列在线率环图/今日里程/工单积压三格+闭环率，中央地图（车标+热力圆点）与车队/区域 TOP8 条形图，右列今日报警态势环图（高中低三级图例）与报警滚动条；顶栏时钟与"实时推送"标签。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📋</div>
+      <div class="sh-t">截图 4-4：车辆详情聚合面板（共享抽屉）</div>
+      <div class="sh-p">应截：抽屉头部（车牌+在线标签）与四个区块——车辆档案描述列表、当前终端与在班司机、当日轨迹（标注总点数与"已抽稀至 500 点"）、最新报警 Top5 与当日计数卡片。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">1 秒</div><div class="l">位置/风险/报警推送节拍，断连 5s 轮询兜底</div></div>
+      <div class="stat"><div class="v">3 类消息</div><div class="l">POINTS / RISK / ALARM 统一封套，全部按会话范围过滤</div></div>
+      <div class="stat"><div class="v">6 块聚合</div><div class="l">大屏一次接口返回在线/里程/工单/车队/区域/热力</div></div>
+      <div class="stat"><div class="v">≤500 点</div><div class="l">当日轨迹等间隔抽稀上限，首末点必留</div></div>
+    </div>
+    <ul>
+      <li><strong>零刷新值守</strong>：位置、风险、报警全部服务端推送；监控页与 Chrome 标签页并存的多标签会话各自独立过滤、互不干扰。</li>
+      <li><strong>权限到推送</strong>：受限角色不仅页面查不到范围外数据，连实时推送字节都不会收到——过滤在服务端发送环节完成。</li>
+      <li><strong>一屏决策</strong>：大屏六块聚合一次取回，钻取链接预置查询条件，从"看到异常"到"进入处置页"两次点击。</li>
+      <li><strong>历史数据可演示</strong>：refTime 数据时基口径让装载的历史数据集在监控页正确呈现在线/离线/行驶状态，不受墙钟影响。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>监控域后端集中在 module-monitor（4 个 Controller + 3 个 Service + WebSocket 六类），另复用 module-trajectory 的最新点查询；前端为 2 页 + 2 共享组件 + 1 个 WS composable。nginx 把 <code>/ws/</code> 前缀以 Upgrade 方式反代到 platform-app:8080，<code>/api/monitor</code>、<code>/api/terminal/geocode</code> 走默认 /api/ 分支。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>Monitor.vue</b> 实时监控页（1371 行：树/地图/表格/气泡/右键）</span>
+          <span class="node"><b>Dashboard.vue</b> 大屏（752 行：六块聚合+热力+滚动条）</span>
+          <span class="node"><b>VehicleDetailDrawer.vue</b> 详情抽屉（511 行，两页共用）</span>
+          <span class="node"><b>useRealtime.ts</b> WS 连接/重连/降级轮询（130 行）</span>
+          <span class="node"><b>HeatLayer.ts / useAdaptive.ts / AlarmTicker.vue</b> 热力层/rem 自适应/报警滚动</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">WebSocket<br>/ws/realtime</div>
+        <div class="al-body">
+          <span class="node"><b>RealtimeWebSocketConfig</b> 端点注册 + 拦截器挂载</span>
+          <span class="node"><b>AuthHandshakeInterceptor</b> query token → JWT → uid 属性</span>
+          <span class="node"><b>RealtimeWebSocketHandler</b> 建连注册 + 首帧快照</span>
+          <span class="node"><b>SessionRegistry</b> 会话注册中心（实现 F19 RealtimePusher）</span>
+          <span class="node"><b>RealtimePushScheduler</b> 1s 调度 + id 游标</span>
+          <span class="node"><b>WsScopeResolver</b> uid → 可见车牌集合</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Controller<br>@RestController</div>
+        <div class="al-body">
+          <span class="node"><b>MonitorController</b> /api/monitor（overview/risks/handle/type-stats/warnings/video-analyses）</span>
+          <span class="node"><b>DashboardController</b> /api/monitor/dashboard（类级 monitor:dashboard:view）</span>
+          <span class="node"><b>VehiclePanelController</b> /api/monitor/vehicle-panel（类级 monitor:view）</span>
+          <span class="node"><b>GeocodeController</b> /api/terminal/geocode（高德代理）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Service / Mapper<br>聚合与过滤</div>
+        <div class="al-body">
+          <span class="node"><b>MonitorService</b> 范围裁剪 + 轻量处置 + 聚合</span>
+          <span class="node"><b>DashboardService / DashboardMapper</b> 六块聚合（全 @Select 跨 schema）</span>
+          <span class="node"><b>VehiclePanelService / VehiclePanelMapper</b> 面板聚合 + 轨迹抽稀</span>
+          <span class="node"><b>TrajectoryService / GpsPointMapper</b> listLatestPoints（LATERAL，module-trajectory）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">PostgreSQL<br>traj / mon</div>
+        <div class="al-body">
+          <span class="node"><b>traj_gps_point</b> 定位点（推送与轨迹数据源）</span>
+          <span class="node"><b>traj_warn_info / mon.risk_event</b> 报警与风险（增量推送源）</span>
+          <span class="node"><b>traj_vehicle / traj_terminal / traj_vehicle_terminal</b> 归属锚点与绑定链</span>
+          <span class="node"><b>mon.risk_work_order</b> 工单积压统计</span>
+          <span class="node"><b>traj.sys_config</b> 在线窗口键 monitor.online.window.minutes</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>RealtimeWebSocketConfig</code></td><td>ws 配置</td><td>注册 /ws/realtime</td><td>@EnableWebSocket；挂 AuthHandshakeInterceptor；setAllowedOriginPatterns("*")（演示放开）</td></tr>
+        <tr><td><code>AuthHandshakeInterceptor</code></td><td>ws 鉴权</td><td>握手前校验 token</td><td>从 URI query 取 token；JwtUtil.parse 验签且 purpose=access；写 attributes uid/username；任何异常返回 false 拒绝握手</td></tr>
+        <tr><td><code>RealtimeWebSocketHandler</code></td><td>ws 处理</td><td>会话生命周期</td><td>建连 registry.add + pushPointsOnce 首帧；handleTextMessage 空实现（单向推送）；关闭/传输错误移除会话</td></tr>
+        <tr><td><code>SessionRegistry</code></td><td>ws 注册中心</td><td>会话管理与发送</td><td>sessions/uidSessions 双 ConcurrentHashMap（同用户多标签）；broadcastScoped 范围签名缓存序列化；send 失败移除会话；实现 RealtimePusher.sendToUsers/isOnline（F19 站内信推送复用）</td></tr>
+        <tr><td><code>RealtimePushScheduler</code></td><td>ws 调度</td><td>1s 推送节拍</td><td>@Scheduled(fixedDelay=1000, initialDelay=5000)；@PostConstruct 游标=max id；RISK/ALARM 增量 gt 游标 order asc limit 50；tick 异常整体 catch 记日志</td></tr>
+        <tr><td><code>WsScopeResolver</code></td><td>ws 范围</td><td>会话 → 可见车牌</td><td>uid 缺失/用户停用 → 空集合；allData → null；deptScope 经 DashboardMapper.selectVehicleNosByDeptScope 换算；与 HTTP 链路共用 PermissionCache（TTL 120s）</td></tr>
+        <tr><td><code>MonitorController / MonitorService</td></td><td>web/service</td><td>总览/风险/报警/视频分析</td><td>全部读取按 currentPlates() 裁剪（null 不限/空集 fail-closed）；handleRisk 越权与不存在同口径 40401；@Transactional 写处置</td></tr>
+        <tr><td><code>DashboardController / DashboardService</code></td><td>web/service</td><td>大屏六块聚合</td><td>类级 @RequiresPerm("monitor:dashboard:view")；空范围 closedSummary 全零；在线窗口每次实时读 sys_config（缺省/非法回落 5，合法域 1~1440）</td></tr>
+        <tr><td><code>DashboardMapper</code></td><td>mapper</td><td>聚合 SQL</td><td>全 @Select 注解、跨 schema 直查 traj.*/mon.* 零跨模块 import；FILTER 紧跟聚合函数；窗口分钟 make_interval 参数化</td></tr>
+        <tr><td><code>VehiclePanelController / Service / Mapper</code></td><td>web/service/mapper</td><td>车辆聚合面板</td><td>类级 monitor:view；vehicleId 手动 parse（非法 40001）；deptScope 校验（越权 40301）；当日轨迹 Java 端等间隔抽稀 ≤500 首末必留</td></tr>
+        <tr><td><code>GeocodeController / AmapProperties</code></td><td>web/配置</td><td>逆地理/地点检索代理</td><td>Key 未配置 50301；坐标范围校验 40001；RestTemplate 3s 连接/5s 读超时；byte[] 接收按 UTF-8 解码；高德 status!=1 归一 50000</td></tr>
+        <tr><td><code>useRealtime.ts</code></td><td>前端</td><td>WS 客户端</td><td>token 从 localStorage 取；onclose 启动 5s 轮询降级 + 指数退避重连（封顶 30s）；卸载置 closedByUser 停止一切定时器</td></tr>
+        <tr><td><code>Monitor.vue</code></td><td>前端</td><td>实时监控页</td><td>refTime 数据时基状态判定；rosterSig 防树每秒重建；divIcon 签名脏检查；fetchAllVehicles 并发拉满分页（size=100）</td></tr>
+        <tr><td><code>Dashboard.vue</code></td><td>前端</td><td>大屏页</td><td>rAF 合帧差分更新车标；30s summary 轮询；HeatLayer.bump 热力即时 +1；ALARM id 去重缓存 100、列表封顶 50</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 WebSocket 链路与握手鉴权</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">建连</div>
+        <div class="s-desc">前端 new WebSocket("wss?://host/ws/realtime?token=...")；nginx location /ws/ 以 Upgrade 反代 platform-app:8080（proxy_read_timeout 3600s）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">握手拦截</div>
+        <div class="s-desc">AuthHandshakeInterceptor 从 query 取 token，JwtUtil.parse 验签并校验 purpose=access，把 uid（Number）与 username 写入会话 attributes；缺 token/验签失败/purpose 不符一律返回 false，握手被拒绝。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">注册与首帧</div>
+        <div class="s-desc">RealtimeWebSocketHandler.afterConnectionEstablished：SessionRegistry.add 登记会话（并按 uid 归集多标签），随即 pushPointsOnce 推一次按该会话范围过滤的位置快照，避免首屏空等下一拍。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">运行与释放</div>
+        <div class="s-desc">服务端单向推送，客户端消息被忽略（注释注明可扩展 ping/pong 或订阅控制）；连接关闭或传输异常即从注册中心移除，uid 下无会话时一并清理映射。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-2">7.2 按会话数据范围过滤（fail-closed）</h3>
+    <p>2026-10-05 数据权限改造后，WS 推送与 HTTP 查询同口径。核心是两个类的协作：</p>
+    <table>
+      <thead><tr><th>环节</th><th>实现</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>范围解析</td><td><code>WsScopeResolver.allowedPlates(session)</code></td><td>attributes 无 uid → 空集合（异常 fail-closed）；permissionCache.getOrLoad 加载用户，停用/删除 → 空集合；allData() → null（不限制）；deptScope 空 → 空集合；否则 selectVehicleNosByDeptScope 换算车牌集</td></tr>
+        <tr><td>权限缓存</td><td><code>PermissionCache</code>（platform-common）</td><td>与 HTTP 请求链路共用同一缓存（TTL 120s），角色/数据范围调整后两条链路在 120s 内同时收敛</td></tr>
+        <tr><td>过滤发送</td><td><code>SessionRegistry.broadcastScoped</code></td><td>DB 只查一次全量；逐会话取范围：null 共享一份序列化；空集合 continue 跳过；非空把范围排序拼成签名 key，computeIfAbsent 缓存"该范围的过滤结果 JSON"，同范围多会话不重复序列化</td></tr>
+        <tr><td>首帧过滤</td><td><code>SessionRegistry.sendScoped</code></td><td>单会话版本：空集合不发送；非空按车牌过滤后 sendTo</td></tr>
+        <tr><td>失败治理</td><td><code>SessionRegistry.send</code></td><td>会话已关闭直接除名；sendMessage 抛 IOException 记 warn 并移除会话，不影响其他会话</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>为什么过滤放在发送环节：</strong>位置快照是"每终端一条"的全量集合，所有会话共用同一份查询结果；如果每个会话各查一次数据库，N 个在线会话就是 N 次 LATERAL 查询。发送环节过滤 + 范围签名缓存序列化，把成本压到"1 次查询 + 每范围 1 次过滤与序列化"。</p>
+    </blockquote>
+
+    <h3 id="s7-3">7.3 推送调度与 id 游标</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">启动初始化</div>
+        <div class="s-desc">@PostConstruct initCursor：分别查 risk_event / traj_warn_info 当前最大 id 作为游标起点——只推启动后的新增记录，避免重启时把全量历史回放给在线用户。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">每拍三件事</div>
+        <div class="s-desc">@Scheduled(fixedDelay=1000, initialDelay=5000)：pushPoints（无会话直接返回）→ pushRisks → pushAlarms；单拍异常整体 catch 记 error，不影响下一拍。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">位置快照</div>
+        <div class="s-desc">trajectoryService.listLatestPointsForPush() 取全量最新点，broadcastScoped("POINTS", ...) 按会话过滤。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">增量事件</div>
+        <div class="s-desc">pushRisks/pushAlarms：LambdaQueryWrapper gt(游标) orderByAsc limit 50；取到则先把游标推进到本批最大 id，再 broadcastScoped("RISK"/"ALARM")；单拍超 50 条时下一拍继续追。</div>
+      </div>
+    </div>
+    <p>选择 id 游标而非"最近 2 秒时间窗口"的原因：调度抖动会让时间窗口丢消息或重复；id 单调递增天然有序，游标语义不丢不重（项目避坑经验固化）。</p>
+
+    <h3 id="s7-4">7.4 最新点查询的 LATERAL 优化</h3>
+    <p>推送与大屏/下拉共用的"每终端最新点"查询在 <code>GpsPointMapper.listLatestPoints</code>（module-trajectory）：</p>
+    <ul>
+      <li><strong>写法</strong>：以 <code>traj_terminal</code>（valid_mark=1）为驱动表，<code>CROSS JOIN LATERAL</code> 对每台终端沿 <code>idx_traj_gps_point_identity_time</code> 做 <code>ORDER BY gps_time DESC LIMIT 1</code> 索引探测。</li>
+      <li><strong>效果</strong>：原 DISTINCT ON 全量扫索引约 53s，改造后约 0.5s（500 终端）；同文件的 listActiveVehicles（在途车辆下拉）由约 19s 降至亚秒级（SQL 注释内实测口径）。</li>
+      <li><strong>范围参数</strong>：plates=null 不限制；空集合由调用方提前返回不入 SQL。推送链路传 null（全量查出后发送环节过滤），HTTP 链路（/api/traj/latest）传入当前用户可见车牌集（见 MOD-DBD-004）。</li>
+    </ul>
+
+    <h3 id="s7-5">7.5 大屏六块聚合</h3>
+    <table>
+      <thead><tr><th>区块</th><th>SQL / 逻辑</th><th>口径要点</th></tr></thead>
+      <tbody>
+        <tr><td>① 在线率</td><td><code>selectOnline</code>：vehicle→有效绑定→terminal→相关子查询 max(gps_time)</td><td>窗口内有定位记在线；onlineRate 四位小数（vehicleTotal=0 时 null，前端显"—"）；窗口分钟经 make_interval(mins =&gt; #{n}) 参数化</td></tr>
+        <tr><td>② 今日里程</td><td><code>selectTodayMileage</code>：当日按 identity_code 分组，Σ(max(mileage)−min(mileage))</td><td>里程表差值近似口径（页面标注）；仅计 mileage 非空点</td></tr>
+        <tr><td>⑤ 工单积压</td><td><code>selectWorkOrder</code>：mon.risk_work_order 上 FILTER 聚合</td><td>pending/processing/overdue（overdue=1 且未闭环）+ 近 7 日 closed/created；closeRate=closed7d/created7d（分母 0 时 null）；FILTER 必须紧跟聚合函数（项目避坑经验）</td></tr>
+        <tr><td>⑥ 车队 TOP8</td><td><code>selectFleetStats</code>：dept JOIN vehicle LEFT JOIN 绑定/终端 LEFT JOIN LATERAL 最新点</td><td>按在线数降序再按总数，LIMIT 8；deptId 用 ToStringSerializer 输出（前端 string）</td></tr>
+        <tr><td>⑦ 区域 TOP8</td><td>selectRegionVehicleCounts + selectRegionRiskCounts 两路查询 Java 合并</td><td>按注册地 city_code 分组（空串归"未知"）；合并后按车辆数降序取前 8；city_code 库内存中文城市名，无城市字典表，直接回显 code 作为名称</td></tr>
+        <tr><td>⑩ 风险热力</td><td><code>selectRiskHeat</code>：近 24h risk_event 按 0.02°×0.02° 网格聚合</td><td>count 降序封顶 500 格；格内取 max(risk_level) 供前端着色</td></tr>
+      </tbody>
+    </table>
+    <p><strong>范围裁剪</strong>：summary() 先取当前用户 deptScope——null 不限制；<strong>空集合直接返回 closedSummary（全零结构，含 serverTime 与窗口分钟）</strong>，不进任何 SQL；非空则车辆类聚合按 dept_id IN、事件/工单类聚合先换算车牌集再 plate_no IN。</p>
+    <p><strong>在线窗口配置</strong>：每次请求实时读 <code>traj.sys_config</code> 键 <code>monitor.online.window.minutes</code>；键缺失、非数字、≤0 或 &gt;1440 一律回落缺省 5。该键不在种子脚本内（12-dashboard.sql 注释声明由运维在 F35 系统参数页按需新增）。</p>
+    <blockquote class="warn">
+      <p><strong>两处注释与行为的偏差（以代码行为为准）：</strong>① DashboardController 类注释仍写"无数据范围裁剪"，系 2026-10-05 数据权限改造前的旧文，Service 实际已实现逐块裁剪；② DashboardMapper.selectFleetStats 注释注明：MOD 原文限定 dept_type=2（车队），现库挂车部门均为 dept_type=1，严格过滤将恒空，实现按"全部有效部门"分组（实施记录已注明）。</p>
+    </blockquote>
+
+    <h3 id="s7-6">7.6 车辆面板聚合与轨迹抽稀</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">入参与存在性</div>
+        <div class="s-desc">路径变量 vehicleId 为 String 手动 Long.parseLong（非法 → 40001，不依赖类型转换异常处理）；selectVehicle 查不到（不存在或已软删）→ 40401"车辆不存在"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">数据范围校验</div>
+        <div class="s-desc">checkDeptScope：allData 放行；scope 空集 → 40301；车辆 deptId 为 NULL 或不在 scope → 40301"无权查看该车辆"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">关联聚合</div>
+        <div class="s-desc">当前有效绑定终端（bind_time 最新一条）、在班司机（按 driver_type、bind_time 排序，主班在前）；无终端时 latestPoint=null、当日轨迹返回空结构。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">当日轨迹抽稀</div>
+        <div class="s-desc">selectTodayPoints 升序取当日原始点（单车当日万级以内）；≤500 直接返回（sampled=false）；&gt;500 按等间距步长取 500 个下标，首末点强制保留（sampled=true，totalPoints 带原始总数）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">报警与计数</div>
+        <div class="s-desc">selectLatestAlarms 按车牌取最新 5 条（JOIN base_warn_type 带类型名）；countTodayAlarms / countTodayRisks 当日计数。</div>
+      </div>
+    </div>
+    <p><strong>在线判定双口径（现状）：</strong>后端 latestPoint.online 用墙钟 <code>now().minusMinutes(5)</code> 固定 5 分钟窗口；前端抽屉优先使用调用页传入的 online prop（监控页按 refTime 数据时基 + 所选窗口计算），prop 未传才回退后端口径。历史数据集演示时应由监控页传 prop，避免墙钟口径把全部车辆误判离线（项目避坑经验固化的统一口径）。</p>
+
+    <h3 id="s7-7">7.7 前端渲染与状态口径</h3>
+    <table>
+      <thead><tr><th>主题</th><th>实现</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>连接管理</td><td><code>useRealtime.ts</code></td><td>onopen 清退避并停轮询；onclose 启动 5s 轮询（getOverview+getLatestPoints）+ 1s×2ⁿ 退避重连（封顶 30s）；onerror 主动 close 触发同一流程；组件卸载置 closedByUser 并清全部定时器</td></tr>
+        <tr><td>状态判定（监控页）</td><td>rawStatus / statusOf</td><td>refTime = 全部点的最大 gpsTime；cutoff = refTime − windowMin（默认 10 分钟，可切 30/60/1440）；无点或 gpsTime &lt; cutoff → 离线；speed&gt;0 → 行驶，否则停车；非离线且 alarmFlag=1 → 报警（优先级最高）</td></tr>
+        <tr><td>车辆树稳定性</td><td>rosterSig</td><td>树 data 只依赖"车牌集合/部门归属/终端绑定/部门结构"签名，每秒的点更新不会触发 el-tree 重建，搜索过滤与展开状态不被冲掉</td></tr>
+        <tr><td>车标差分</td><td>syncMarkers</td><td>签名 <code>状态|方向|车型</code> 不变不 setIcon；setLatLng/zIndexOffset 先做值比较；报警车 zIndexOffset=1000 置顶；divIcon 根节点带 role="button" 与 aria-label（自动化/a11y 可定位）</td></tr>
+        <tr><td>气泡与右键</td><td>popHtml / contextmenu</td><td>bindPopup 用函数延迟生成；逆地理结果按坐标三位小数缓存（geoCache/geoFailed/geoPending 防重复请求）；popupopen 经 (popup as any)._source._plate 取归属车标（当前 Leaflet 版本无 getSource）；地图 contextmenu 统一 preventDefault</td></tr>
+        <tr><td>大屏合帧</td><td>renderFrame（rAF）</td><td>WS 回调只暂存 + 置脏，requestAnimationFrame 帧内统一差分更新车标，避免 1s 推送与渲染争抢主线程</td></tr>
+        <tr><td>热力层</td><td><code>HeatLayer.ts</code></td><td>divIcon 圆点：半径 min(6+count×2, 40)px、颜色按 maxLevel（3 红 #dc2626 / 2 橙 #f97316 / 1 黄 #eab308）、不透明度随 count 递增；30s summary 全量 render 校正 + RISK 消息 bump 同格 +1</td></tr>
+        <tr><td>大屏自适应</td><td><code>useAdaptive.ts</code></td><td>根字号 = clamp(12, clientWidth/1920×16, 32)px；resize 经 rAF 节流；卸载恢复默认，不污染常规页面</td></tr>
+        <tr><td>报警滚动条</td><td><code>AlarmTicker.vue</code> + Dashboard.handleAlarm</td><td>WS ALARM 按 id 去重（缓存最近 100 个 id）后 unshift 置顶，列表封顶 50；态势卡 total 与待处理本地 +1，30s 后轮询校正</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>端到端实时链路（以"终端上报一个定位点/报警到坐席看到"为例）：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">数据落库</div>
+        <div class="s-desc">processing-service（模拟器/接入）写 traj_gps_point / traj_warn_info；风控规则引擎写 mon.risk_event（见 MOD-DBD-004 与风控模块）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">调度轮询</div>
+        <div class="s-desc">RealtimePushScheduler 每 1s：LATERAL 查全部最新点；按 id 游标查新增风险与报警（各 ≤50）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">逐会话过滤</div>
+        <div class="s-desc">broadcastScoped：WsScopeResolver 把会话 uid 换算成可见车牌集；null 共享序列化、空集跳过、非空按范围签名缓存。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">浏览器接收</div>
+        <div class="s-desc">useRealtime 按 type 分发：POINTS 差分刷车标/统计，RISK 弹提示 + 热力 bump + 飘条，ALARM 弹提示 + 滚动条置顶。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">断连兜底</div>
+        <div class="s-desc">WS 断开 → 5s REST 轮询（/api/monitor/overview + /api/traj/latest，均按 HTTP 链范围过滤）+ 指数退避重连；恢复后停轮询。</div>
+      </div>
+    </div>
+    <p>大屏聚合链路：浏览器每 30s GET /api/monitor/dashboard/summary → DashboardController（monitor:dashboard:view）→ DashboardService 读窗口配置 + deptScope 判定 → DashboardMapper 六组 @Select 聚合（跨 schema 直查）→ DashboardSummaryVO 一次返回；WS 增量消息在两次轮询之间即时修正车标、热力与报警滚动条。</p>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>本模块用法</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.traj_gps_point</code></td>
+          <td>定位点（轨迹大表）</td>
+          <td>POINTS 快照与 /api/traj/latest 数据源（LATERAL 逐终端最新点）；面板当日轨迹；大屏在线判定（max gps_time 相关子查询）</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_gps_point">DDL · tbl-traj_traj_gps_point</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_terminal</code></td>
+          <td>终端档案</td>
+          <td>LATERAL 驱动表（valid_mark=1）；面板"当前终端"经有效绑定带出</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_terminal">DDL · tbl-traj_traj_terminal</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_vehicle</code> / <code>traj.traj_dept</code></td>
+          <td>车辆档案 / 组织</td>
+          <td>deptScope → 车牌集换算（selectVehicleNosByDeptScope）；区域分布 city_code；面板档案与组织名</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_vehicle">DDL · tbl-traj_traj_vehicle</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.traj_warn_info</code></td>
+          <td>终端报警</td>
+          <td>ALARM 增量推送源（id 游标）；/api/monitor/warnings 最近 100 条；面板报警 Top5 与当日计数</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_warn_info">DDL · tbl-traj_traj_warn_info</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_event</code></td>
+          <td>风险事件</td>
+          <td>RISK 增量推送源；监控 risks 分页/类型分布/轻量处置；大屏热力与区域风险计数</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_event">DDL · tbl-mon_risk_event</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_work_order</code></td>
+          <td>处置工单</td>
+          <td>大屏工单积压三格与近 7 日闭环率（FILTER 聚合）</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_work_order">DDL · tbl-mon_risk_work_order</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_config</code></td>
+          <td>系统参数</td>
+          <td>键 monitor.online.window.minutes 控制大屏在线窗口（缺省回落 5；种子不含，运维在系统参数页新增）</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_config">DDL · tbl-traj_sys_config</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块端点与权限点。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限点</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/monitor/overview</code></td><td>监控总览四项计数（在途/今日风险/未处置/今日报警）</td><td>认证 + 数据范围（类级无权限点，见 13/17 节）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>GET <code>/api/monitor/risks</code></td><td>风险事件分页（eventSource/riskLevel/handleStatus/ruleId/plateNo/cityCode）</td><td>认证 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>POST <code>/api/monitor/risks/{id}/handle</code></td><td>风险轻量处置（备注）；写审计 MONITOR/HANDLE</td><td>risk:order:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>GET <code>/api/monitor/risks/type-stats</code></td><td>风险类型分布（饼图 name/value）</td><td>认证 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>GET <code>/api/monitor/warnings</code></td><td>终端报警最近 100 条</td><td>认证 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>GET <code>/api/monitor/video-analyses</code></td><td>视频分析任务列表</td><td>认证 + 数据范围</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-monitor">grp-monitor</a></td></tr>
+        <tr><td>GET <code>/api/monitor/dashboard/summary</code></td><td>大屏六块聚合一次返回</td><td>monitor:dashboard:view（类级）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dashboard">grp-dashboard</a></td></tr>
+        <tr><td>GET <code>/api/monitor/vehicle-panel/{vehicleId}</code></td><td>车辆详情聚合面板（六区块）</td><td>monitor:view（类级）+ deptScope 校验</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-panel">grp-panel</a></td></tr>
+        <tr><td>GET <code>/api/terminal/geocode/reverse</code></td><td>逆地理：lng,lat → { address }</td><td>认证即可（无权限点）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geocode">grp-geocode</a></td></tr>
+        <tr><td>GET <code>/api/terminal/geocode/search</code></td><td>地点检索：keyword[,city] → 候选坐标列表</td><td>认证即可（无权限点）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geocode">grp-geocode</a></td></tr>
+        <tr><td>GET <code>/api/traj/latest</code></td><td>每终端最新点（降级轮询与手动刷新用）</td><td>见 MOD-DBD-004（认证 + 数据范围）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-traj">grp-traj</a></td></tr>
+        <tr><td>WS <code>/ws/realtime?token=</code></td><td>实时推送（POINTS/RISK/ALARM，封套 {type,data}）</td><td>握手 JWT（purpose=access）+ 会话级数据范围过滤</td><td>非 HTTP 端点，未收录于接口手册</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s11">11 种子数据与初始化</h2>
+    <table>
+      <thead><tr><th>来源</th><th>内容</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>06-iam-tables.sql</code></td><td>菜单组 10"实时监控"（图标 Monitor，sort 10）、菜单 11"实时导航监控"（/monitor，monitor:view）、菜单 12"历史轨迹回放"（/playback，playback:view）；四角色（管理员/安全管理员/调度监控员/企业车队长）均含监控组授权</td><td>调度监控员定位即"监控/回放/风险与主数据只读，限本部门及以下"</td></tr>
+        <tr><td><code>12-dashboard.sql</code></td><td>菜单 15"监控总览大屏"（/dashboard，monitor:dashboard:view，图标 DataBoard）+ role 1~4 授权；setval 校准 sys_menu 序列</td><td>幂等 ON CONFLICT DO NOTHING；注释明确 monitor.online.window.minutes 不在本脚本种子，由运维在 F35 系统参数页新增</td></tr>
+        <tr><td><code>09-system-config.sql</code></td><td>菜单 921"系统参数"（/system/config，system:config:view）——在线窗口键的维护入口</td><td>后端读取缺省回落 5 分钟，不依赖该键存在</td></tr>
+        <tr><td>环境变量 <code>AMAP_KEY</code></td><td>高德 Web 服务 Key（application.yml: mydbd.amap.key）</td><td>未配置时逆地理/检索接口返回 50301，监控气泡地址行保持"地址解析中…/接入后显示"</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>服务端单向推送，而非双向订阅协议</strong>：消息主题固定三类、无订阅管理诉求；TextWebSocketHandler + 定时调度即可覆盖，客户端实现（useRealtime 130 行）保持轻量；双向能力以注释预留。</li>
+      <li><strong>发送环节过滤 + 范围签名序列化缓存，而非每会话一次查询</strong>：N 个会话共享 1 次 LATERAL 查询；不限范围的会话共享同一份 JSON，同范围会话共享过滤结果，把每秒成本压到最低。</li>
+      <li><strong>id 游标而非时间窗口</strong>：调度抖动下时间窗会丢/重；id 单调有序，"gt 游标 + limit 50"不丢不重，重启以 max id 初始化避免回放历史（项目避坑经验）。</li>
+      <li><strong>终端表驱动 + LATERAL 取最新点</strong>：对 890 万行轨迹大表，DISTINCT ON 全量扫索引约 53s；LATERAL 把探测次数降到终端数量级（约 0.5s），使 1s 推送节拍可行。</li>
+      <li><strong>新连接首帧快照 pushPointsOnce</strong>：否则首屏要等下一拍（最坏 1s 空白）；首帧同样按该会话范围过滤，不绕过权限。</li>
+      <li><strong>当日轨迹 Java 端等间隔抽稀，而非 SQL 抽稀或前端抽稀</strong>：单车当日点量万级以内，一次取出后 Java 等间距取 500 个下标，首末必留；SQL 保持简单索引扫描，前端拿到即可直接渲染。</li>
+      <li><strong>前端在线判定用 refTime 数据时基，而非墙钟</strong>：演示用历史数据集的数据时基滞后墙钟十几小时，墙钟口径会把全部车辆误判离线；以"全局最新点 gpsTime"为参考则两种场景都正确（项目避坑经验固化的统一口径）。</li>
+      <li><strong>divIcon 签名脏检查，而非每秒全量 setIcon</strong>：500 标记每秒重建 DOM 会造成明显抖动；仅"状态|方向|车型"签名变化才重建图标，setLatLng/zIndexOffset 同样先比较再调用。</li>
+      <li><strong>rosterSig 结构签名，而非直接 watch 点数据</strong>：车辆树结构只在"车牌集合/归属/绑定/部门"变化时重建，每秒的点更新不冲掉树的搜索与展开状态。</li>
+      <li><strong>高德 Key 服务端代理</strong>：Key 不出现在前端产物；GCJ-02 与底图同系直接透传；统一错误归一（50301 未配置/服务不可用，50000 上游失败）。</li>
+      <li><strong>WS 与 HTTP 共用 PermissionCache</strong>：权限数据一处加载两处使用，角色调整后两条链路在同一 TTL（120s）内收敛，不会出现"页面已受限但推送仍放行"的窗口。</li>
+      <li><strong>大屏 30s 轮询 + WS 即时修正</strong>：聚合六块没必要秒级重算；轮询保底口径一致，RISK/ALARM/POINTS 消息在间隔期内即时修正视觉，成本与时效平衡。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>MonitorController 无类级权限点</td>
+          <td>类上仅 @RestController/@RequestMapping；overview/risks/type-stats/warnings/videoAnalyses 无 @RequiresPerm，仅 handle 有 risk:order:handle</td>
+          <td>任何登录用户（含无 monitor:view 菜单的角色）可直调这些只读接口；数据仍受服务层范围裁剪，不越界，但功能权限层面未与菜单对齐</td>
+          <td>现状风险可控（fail-closed 范围裁剪兜底）；建议评审补类级 monitor:view，已在 17 节登记</td>
+        </tr>
+        <tr>
+          <td>会话注册中心为单机内存态</td>
+          <td>SessionRegistry 注释"内存态，单机演示"；sessions/uidSessions 为进程内 ConcurrentHashMap</td>
+          <td>多实例部署时会话只存在于一台实例，推送与定向消息（F19）跨实例不可达</td>
+          <td>当前单实例演示无影响；集群化需外置会话目录（如 Redis）或按用户粘性路由</td>
+        </tr>
+        <tr>
+          <td>WS token 经 query 传递</td>
+          <td>AuthHandshakeInterceptor 从 URI query 取 token；浏览器 WS API 不支持自定义头</td>
+          <td>URI 可能进入访问日志（nginx access log 记录请求行）</td>
+          <td>仅传 access token（短时效）；生产启用 wss；日志侧可对 /ws/ 路径脱敏</td>
+        </tr>
+        <tr>
+          <td>位置快照每秒一次全量库查询</td>
+          <td>pushPoints 每拍 listLatestPointsForPush()（plates=null）</td>
+          <td>终端规模上大后单库 QPS 与查询成本上升（当前 500 终端约 0.5s/次，节拍紧张）</td>
+          <td>演进方向：快照结果短缓存（如 500ms）或推送节拍可配置；监控 listLatestPoints 耗时</td>
+        </tr>
+        <tr>
+          <td>大屏聚合无缓存</td>
+          <td>DashboardService 注释"只读聚合、不加事务、不加缓存"；前端 30s 轮询</td>
+          <td>多人同开大屏时聚合 SQL 重复执行</td>
+          <td>演示规模可接受；规模化可加短 TTL 缓存或物化汇总表</td>
+        </tr>
+        <tr>
+          <td>高德调用无服务端缓存与配额控制</td>
+          <td>GeocodeController 直调上游；仅前端 geoCache/geoFailed 会话级去重</td>
+          <td>高频逆地理可能消耗高德配额；上游故障时每次请求都穿透</td>
+          <td>前端缓存已削减大部分重复；服务端可加坐标格缓存与熔断（当前超时 3s/5s 已兜底）</td>
+        </tr>
+        <tr>
+          <td>WS 跨域放开</td>
+          <td>setAllowedOriginPatterns("*")</td>
+          <td>任意站点页面可尝试携带有效 token 建连（token 本身仍在握手校验）</td>
+          <td>演示环境放开；生产应收敛到门户域名白名单</td>
+        </tr>
+        <tr>
+          <td>DashboardController 注释滞后</td>
+          <td>类注释"无数据范围裁剪"与 Service 实际裁剪矛盾</td>
+          <td>阅读者误判权限口径</td>
+          <td>文档以代码行为为准并在本文澄清；建议后续提交修正注释</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-003-主数据管理.html">MOD-DBD-003 主数据</a></td><td>车辆/组织/绑定是本模块一切聚合与范围换算的锚点；监控页车辆树与下拉取 vehicles/options、dept 树接口</td><td>DashboardMapper.selectVehicleNosByDeptScope；VehiclePanelMapper JOIN traj_dept / 绑定表</td></tr>
+        <tr><td><a href="MOD-DBD-004-轨迹数据接入查询与回放.html">MOD-DBD-004 轨迹接入与回放</a></td><td>定位点生产与历史查询在轨迹模块；本模块复用其 listLatestPoints 与 /api/traj/latest；气泡/面板跳转 /playback 携带车牌+终端+日期</td><td>TrajectoryService.listLatestPointsForPush；Monitor.handleTrack 路由参数</td></tr>
+        <tr><td><a href="MOD-DBD-006-终端报警中心.html">MOD-DBD-006 报警中心</a></td><td>同读 traj_warn_info：本模块负责"最近 100 条 + 实时推送"，报警中心负责全量查询与确认/解除闭环；大屏滚动条与态势卡钻取 /alarms</td><td>WarnInfoMapper；Dashboard.todayAlarmQuery</td></tr>
+        <tr><td>风控模块（规则引擎/工单）</td><td>risk_event 的生产者；本模块是其消费方（推送/分页/热力/轻量处置）；工单积压统计读 mon.risk_work_order；处置权限与工单同码</td><td>RiskEventMapper；@RequiresPerm("risk:order:handle")</td></tr>
+        <tr><td><a href="MOD-DBD-002-用户与权限IAM.html">MOD-DBD-002 IAM</a></td><td>deptScope 由 IAM 计算；WS 与 HTTP 共用 PermissionCache/AuthRealm/UserContext；菜单与权限点由 IAM 下发到前端路由守卫</td><td>WsScopeResolver → PermissionCache；UserContext.get().deptScope()</td></tr>
+        <tr><td>站内消息（F19，module-notify）</td><td>SessionRegistry 实现 notify 模块定义的 RealtimePusher 接口，站内信的按用户定向推送（sendToUsers/isOnline）复用 WS 会话目录</td><td>SessionRegistry implements RealtimePusher</td></tr>
+        <tr><td>processing-service（Python）</td><td>模拟器/数据集产生的点位与报警是本模块推送内容的主要来源</td><td>insert_gps_points / insert_warn_info / insert_risk_events（MOD-DBD-004）</td></tr>
+        <tr><td>终端指令通道（预留）</td><td>前端 sendCommand 契约 POST /api/terminal/{identityCode}/command（PHOTO/TAP_MONITOR/TEXT_DISPATCH 等），后端实现未在已读代码中出现，界面对应入口走"预留"提示分支</td><td>api/terminal.ts；Monitor.reservedCommand / VehicleContextMenu.reserved</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">为什么打开监控页先闪一次轮询数据？</div><div class="vv">useRealtime 挂载时并行执行 pollOnce（REST 拿 overview + 最新点）与 WS 建连，首屏不依赖 WS 握手时序；WS 连通后由推送接管，轮询停止。</div></div>
+      <div class="kv"><div class="k">WS 断开后页面会怎样？</div><div class="vv">顶栏胶囊变"降级轮询 · 5s"：每 5 秒轮询 overview + latest 保底；同时按 1s、2s、4s…（封顶 30s）退避重连，成功后自动切回"实时连接 · 1s 推送"。</div></div>
+      <div class="kv"><div class="k">历史数据集里车辆为什么曾全显示离线？现在怎么判在线？</div><div class="vv">早期按墙钟判定，历史数据时基滞后墙钟导致全离线；现统一用 refTime（全局最新定位时间）− 窗口（默认 10 分钟，可切 30/60/1440）判定，真实终端与历史数据集两种时基都正确。</div></div>
+      <div class="kv"><div class="k">受限用户会收到范围外的 WS 消息吗？</div><div class="vv">不会。broadcastScoped 逐会话过滤：范围为空集合的会话直接跳过；非空范围只收集合内车牌的消息；过滤在服务端发送环节完成，范围外数据不出平台进程。</div></div>
+      <div class="kv"><div class="k">重启后端会重演历史报警/风险推送吗？</div><div class="vv">不会。游标在启动时初始化为两张表的当前最大 id，只推启动后的新增记录。</div></div>
+      <div class="kv"><div class="k">大屏区域分布为什么城市名直接是中文或"未知"？</div><div class="vv">traj_vehicle.city_code 实际存中文城市名（如"上海市"），库内无城市字典表；空 code 归"未知"，其余直接回显该值作为名称（代码注释口径）。</div></div>
+      <div class="kv"><div class="k">详情抽屉的"在线"标签与面板接口的 online 字段为什么不总一致？</div><div class="vv">抽屉优先用调用页传入的 online（refTime 口径）；接口 latestPoint.online 是后端墙钟 5 分钟口径。历史数据集场景应以页面传入为准。</div></div>
+      <div class="kv"><div class="k">气泡里文字地址一直显示"地址解析中…"？</div><div class="vv">多半是 AMAP_KEY 未配置（接口返回 50301）；同一坐标会话内不会重复请求（geoFailed 记录），配置生效后需刷新页面重试。</div></div>
+      <div class="kv"><div class="k">为什么右键有时点不中车标？</div><div class="vv">Leaflet popup-pane 层级（700）高于 marker-pane（600），打开的气泡会遮挡下方车标右键命中；实现已对车标注册 contextmenu 处理并对地图 contextmenu 统一 preventDefault，自动化验证可对元素派发 MouseEvent('contextmenu')。</div></div>
+      <div class="kv"><div class="k">风险"处置"按钮和工单是什么关系？</div><div class="vv">监控域的 handle 是轻量闭环入口（写 handleStatus + 备注），与工单处置共用权限码 risk:order:handle 与同一审计动作；完整的派单/流转/逾期管理在风控工单模块。</div></div>
+      <div class="kv"><div class="k">同一人开两个标签页，推送会重复吗？</div><div class="vv">每个标签页是独立 WS 会话，各自独立接收（按各自范围过滤）；SessionRegistry 的 uidSessions 支持同用户多会话并存，F19 定向推送会送达该用户全部在线标签。</div></div>
+      <div class="kv"><div class="k">大屏钻取报警中心为什么列表有时为 0？</div><div class="vv">大屏按"今日"（墙钟）带 beginTime/endTime 钻取；若演示数据时基滞后墙钟，今日窗口内无记录属正常，改带数据所在日期的时间窗即可（项目避坑经验）。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>WS 建连与首帧</td><td>登录后打开监控页，连接胶囊显示"实时连接 · 1s 推送"；建连后立即收到首帧 POINTS，不等下一拍</td><td>浏览器 WS 面板</td></tr>
+        <tr><td>2</td><td>握手鉴权</td><td>无 token / 伪造 token / refresh token 建连均被拒绝（握手失败）</td><td>WS 直连测试</td></tr>
+        <tr><td>3</td><td>位置推送节拍</td><td>约 1s 收到一次 POINTS，内容与每终端最新点一致</td><td>WS 面板 + 数据库比对</td></tr>
+        <tr><td>4</td><td>增量推送与游标</td><td>新产生风险/报警后 1~2s 内收到 RISK/ALARM；重启后端不重演历史</td><td>造数 + 重启验证</td></tr>
+        <tr><td>5</td><td>会话级范围过滤</td><td>山东测试账号只收到本省车辆的 POINTS/RISK/ALARM；空范围账号收不到任何业务消息</td><td>双账号对照</td></tr>
+        <tr><td>6</td><td>断连降级</td><td>停掉 WS（如断网）后 5s 轮询接管、胶囊切换；恢复后自动重连并停轮询</td><td>界面操作</td></tr>
+        <tr><td>7</td><td>监控页状态口径</td><td>装载历史数据集时，按 refTime 口径正确区分 行驶/停车/离线/报警；切换窗口（10/30/60/1440）统计即时变化</td><td>界面 + 数据集</td></tr>
+        <tr><td>8</td><td>大屏六块聚合</td><td>summary 一次返回六块；在线率=窗口内在线/有效车辆；区域/车队 TOP8 与明细页一致；空范围账号全零</td><td>接口 + 界面</td></tr>
+        <tr><td>9</td><td>在线窗口配置</td><td>sys_config 新增 monitor.online.window.minutes=30 后，大屏窗口变 30；非法值回落 5</td><td>系统参数页 + 接口</td></tr>
+        <tr><td>10</td><td>车辆面板</td><td>六个区块一次返回；当日轨迹超 500 点时 sampled=true 且首末点保留；越权车辆 40301、非法 id 40001、不存在 40401</td><td>接口直调</td></tr>
+        <tr><td>11</td><td>风险轻量处置</td><td>有 risk:order:handle 的角色处置成功并写审计；越权处置他范围事件返回 40401；无该权限点 40301</td><td>双账号对照</td></tr>
+        <tr><td>12</td><td>地理编码</td><td>配置 AMAP_KEY 后气泡显示文字地址、地图可地点搜索；未配置返回 50301 且界面不报错</td><td>界面 + 接口</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>表现为现状但口径未定或未及核实</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>MonitorController 类级权限点</strong>：只读端点（overview/risks/type-stats/warnings/videoAnalyses）当前仅"认证 + 服务层范围裁剪"，未要求 monitor:view 功能权限；是否与菜单权限对齐（补类级 @RequiresPerm）待评审。</li>
+      <li><strong>终端指令通道</strong>：前端契约 POST /api/terminal/{identityCode}/command（api/terminal.ts 注释含视频 playUrl 等更多契约），后端实现未在本次阅读的 module-monitor 代码中出现；界面已按"预留，下一版本开放"处理，正式排期待确认。</li>
+      <li><strong>大屏在线窗口与监控页窗口的关系</strong>：大屏走后端 sys_config（缺省 5），监控页走前端选择（默认 10）；两者口径独立，是否需要统一待产品确认。</li>
+      <li><strong>视频分析列表（/api/monitor/video-analyses）的数据来源</strong>：mon 侧 video_analysis 表由哪条链路写入（processing-service 分析占位链 grp-py-analysis 之外是否有正式写方）未在本文展开核实。</li>
+      <li><strong>RISK/ALARM 单拍 50 条上限</strong>：极端风暴场景下单拍截断，后续拍继续追平（游标语义保证不丢）；是否需要对外暴露"追平中"状态待评估。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>首次发布。以 2026-10-05 源代码与初始化 SQL 为准编写：固化 /ws/realtime 握手鉴权（query token + purpose=access）、SessionRegistry 会话管理与范围签名序列化缓存、1s 调度与 id 游标、WsScopeResolver 会话级数据范围过滤（fail-closed）、LATERAL 最新点优化（53s→0.5s）、大屏六块聚合与在线窗口 sys_config 读取、车辆面板聚合与 500 点抽稀、前端 refTime 状态口径/divIcon 脏检查/rAF 合帧/HeatLayer/useAdaptive、菜单 10/11/15 与 12-dashboard.sql 授权、高德代理与 AMAP_KEY 等实现事实；如实登记 MonitorController 无类级权限点、DashboardController 注释滞后两处现状。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-005 实时监控与可视化 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

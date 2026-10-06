@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-011 通知中心与多渠道预警 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-011 通知中心与多渠道预警 ｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位</a></li>
+            <li><a href="#s1-2">1.2 功能清单与状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+            <li><a href="#s1-4">1.4 五类通道现状一览</a></li>
+            <li><a href="#s1-5">1.5 本期边界（不做什么）</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 顶栏铃铛与实时弹窗</a></li>
+            <li><a href="#s3-2">3.2 消息中心列表</a></li>
+            <li><a href="#s3-3">3.3 已读、全部已读与删除</a></li>
+            <li><a href="#s3-4">3.4 一键跳转到工单</a></li>
+            <li><a href="#s3-5">3.5 事件与界面对照</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 接收人圈定</a></li>
+            <li><a href="#s7-2">7.2 异步派发主流程</a></li>
+            <li><a href="#s7-3">7.3 站内信落库</a></li>
+            <li><a href="#s7-4">7.4 WebSocket 实时推送</a></li>
+            <li><a href="#s7-5">7.5 发送日志记账</a></li>
+            <li><a href="#s7-6">7.6 外部渠道预留实现</a></li>
+            <li><a href="#s7-7">7.7 通知设置读取</a></li>
+            <li><a href="#s7-8">7.8 业务触发点</a></li>
+            <li><a href="#s7-9">7.9 前端实时单例 useNotify</a></li>
+            <li><a href="#s7-10">7.10 派发时序与一致性边界</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 异步执行器与后台行为</a>
+          <ul><li><a href="#s11-1">11.1 SQL 种子清单</a></li></ul>
+        </li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-011 通知中心与多渠道预警</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-011<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">站内信 / WebSocket 已上线</span> <span class="badge amber">短信 / 语音 / App 推送仅预留</span><span class="sep">|</span>功能编号 F19 / F35
+    </p>
+    <p class="cover-meta">事实基准：2026-10-05 源代码（module-notify + module-monitor 推送实现）与 <code>11-notify.sql</code>、<code>09-system-config.sql</code></p>
+    <p class="cover-meta">主要代码锚点：<code>NotifyController / NotifyService / NotifyMessage / NotifySendLog / NotifyEvent / NotifyAsyncConfig / SmsChannel / VoiceChannel / PushChannel</code>；前端 <code>views/system/MessageCenter.vue</code>、<code>composables/useNotify.ts</code>、<code>api/notify.ts</code></p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位</h3>
+    <p>通知中心把风险工单域的关键业务动作（工单生成、分派、超时升级、闭环）转化为<strong>面向具体坐席 / 管理员的个人消息</strong>，并负责消息的在线实时提醒。后端包 <code>com.mydbd.notify</code>（NotifyController 基址 <code>/api/notify</code>），包含两个真实通道：</p>
+    <ul>
+      <li><strong>站内信</strong>：逐接收人写入 <code>traj.sys_message</code>（msgType='INBOX'），在消息中心页面持久化展示，支持未读筛选、单条已读、全部已读、删除。</li>
+      <li><strong>WebSocket 实时弹窗</strong>：在线用户立即收到推送，浏览器右下角弹出 ElNotification、可发声、可调系统通知，点击直达工单。</li>
+    </ul>
+    <p>短信、语音外呼、App 推送三个外部通道<strong>本期只有接口、开关与"发送意图"日志，任何情况下都不会真实外发</strong>（详见 7.6），请勿在交付材料中描述为"已支持短信预警"。</p>
+    <blockquote class="tip">
+      <p><strong>安全模型一句话：</strong>NotifyController <strong>没有类级权限码</strong>，登录即可调用；但每个接口都强制用当前登录人 currentUserId 过滤 / 校验，A 永远读不到、改不了、删不掉 B 的消息（越权访问他人消息统一返回 404"消息不存在"，不暴露消息是否存在）。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>要点</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>站内信收件箱</td><td>分页 / 未读筛选；服务端 size 钳制 ≤100；按 id DESC</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>未读数与最新消息</td><td>GET /unread-count 返回 {count}；GET /latest?limit=1~50（默认 10）供顶栏铃铛</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>已读管理</td><td>单条已读（本人校验）、全部已读返回 {updated}</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>删除消息</td><td>DELETE 本人消息；非本人按 404 处理</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>实时弹窗</td><td>独立 WS /ws/realtime；按级别弹窗、880Hz 提示音、系统通知；指数退避重连</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>工单深链</td><td>消息携带 bizType=WORK_ORDER / bizId / orderNo，点击列表行或弹窗直达 /risk/orders?openOrder=</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>通知设置</td><td>popupMinLevel（默认 3）与 soundEnabled（默认 true）从系统参数读取；本模块只提供 GET</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>短信通道</td><td>接口 + notify.sms.enabled 开关 + 意图日志；send 直接抛 UnsupportedOperationException</td><td><span class="badge amber">预留未对接</span></td></tr>
+        <tr><td>语音外呼通道</td><td>同上，notify.voice.enabled；"语音外呼渠道未对接网关"</td><td><span class="badge amber">预留未对接</span></td></tr>
+        <tr><td>App 推送通道</td><td>同上，notify.push.enabled；"App 推送渠道未对接推送服务"</td><td><span class="badge amber">预留未对接</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:190px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>通知事件 NotifyEvent</td><td>record 形式的内部消息载体：eventType、bizType、bizId、title、content、level、orderNo、plateNo；由工单域构造后交给 NotifyService。</td></tr>
+        <tr><td>事件类型 eventType</td><td>ORDER_CREATE（工单生成）/ ORDER_ASSIGN（工单分派）/ ORDER_ESCALATE（超时升级）/ ORDER_CLOSE（工单闭环）/ SYSTEM（系统通知），字典 notify_event_type 同步维护中文名。</td></tr>
+        <tr><td>业务类型 bizType</td><td>本期固定 BIZ_WORK_ORDER；前端据此决定点击跳转目标（工单中心）。</td></tr>
+        <tr><td>接收人菜单口径</td><td>能接收某类工单消息 = 启用状态用户 ∩ 启用角色 ∩（role1 超管角色 或 角色被授予对应菜单 915 处置 / 916 督办）。</td></tr>
+        <tr><td>站内信 INBOX</td><td>sys_message.msg_type='INBOX'、is_read=0、creator='system' 的个人消息行。</td></tr>
+        <tr><td>WEBSOCKET 通道</td><td>对在线会话的实时投递记录；不落消息正文，只在 notify_send_log 记 SENT/SKIPPED 与在线会话数。</td></tr>
+        <tr><td>通知级别 level</td><td>smallint 1 / 2 / 3：3 高、2 中、1 低；前端弹窗门槛 popupMinLevel 表示"≥ 该级别才弹窗"（默认 3 = 仅高级弹窗）。</td></tr>
+        <tr><td>发送意图日志</td><td>notify_send_log：每个事件 × 接收人 × 通道一行，状态 SENT / SKIPPED / FAILED，detail 记会话数或失败原因（截断 500 字符）。</td></tr>
+        <tr><td>独立 WebSocket</td><td>useNotify 使用 /ws/realtime?token=JWT 单独建连，与实时监控页 useRealtime 的连接互不影响；一个用户多个标签页 = 多个 sessionId 同时收。</td></tr>
+        <tr><td>ObjectProvider 解耦</td><td>notify 模块通过 ObjectProvider&lt;RealtimePusher&gt; 可选注入推送 bean，真正实现位于 module-monitor，避免 notify → monitor 的编译期反向依赖。</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-4">1.4 五类通道现状一览</h3>
+    <table>
+      <thead><tr><th>通道（channel）</th><th>是否真实送达</th><th>默认开关</th><th>打开开关后</th><th>记账状态</th></tr></thead>
+      <tbody>
+        <tr><td><strong>INBOX 站内信</strong></td><td><span class="badge green">是</span> 写 traj.sys_message</td><td>始终启用</td><td>—</td><td>落库即成功（消息行本身）</td></tr>
+        <tr><td><strong>WEBSOCKET</strong></td><td><span class="badge green">是</span> 仅在线会话</td><td>始终启用</td><td>在线 SENT"在线会话 n"；不在线 SKIPPED"接收人不在线"</td><td>逐接收人逐次记账</td></tr>
+        <tr><td>SMS 短信</td><td><span class="badge gray">否</span></td><td>notify.sms.enabled=false</td><td>send 抛 UnsupportedOperationException → FAILED"短信渠道未对接厂商，暂不可用"</td><td>未启用 SKIPPED"渠道未启用"</td></tr>
+        <tr><td>VOICE 语音外呼</td><td><span class="badge gray">否</span></td><td>notify.voice.enabled=false</td><td>FAILED"语音外呼渠道未对接网关"</td><td>同上</td></tr>
+        <tr><td>PUSH App 推送</td><td><span class="badge gray">否</span></td><td>notify.push.enabled=false</td><td>FAILED"App 推送渠道未对接推送服务"</td><td>同上</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>旧说法纠正（重要）：</strong>部分早期材料把"多渠道预警"表述为短信 / 电话通知能力。代码事实是：NotifyChannel 接口 javadoc 明确写"本期仅接口 + 开关 + 发送意图日志"，三个外部渠道实现的 send 方法<strong>无条件抛 UnsupportedOperationException</strong>。默认配置时全部 SKIPPED；即使运维把开关改成 true，也只会记 FAILED，<strong>任何部署配置下都不会真实外发短信 / 语音 / 推送</strong>。真实通知只有站内信 + WebSocket。</p>
+    </blockquote>
+
+    <h3 id="s1-5">1.5 本期边界（不做什么）</h3>
+    <ul>
+      <li><strong>不做消息编辑 / 群发运营位</strong>：消息只能由业务事件（system 身份）产生，不提供管理员手工群发、公告编辑、消息模板管理页面。</li>
+      <li><strong>不做通知偏好自助页</strong>：popupMinLevel / soundEnabled 只有后端 GET /settings 读取，前端弹窗行为遵循参数；用户个人暂不可自行改阈值（参数在系统参数中心维护）。</li>
+      <li><strong>不对接真实外部厂商</strong>：不连短信厂商、语音网关、APNs / 各厂商推送，开关开启也不外发。</li>
+      <li><strong>不做多实例广播</strong>：WebSocket 会话注册表 SessionRegistry 是单机内存 ConcurrentHashMap，不做 Redis / MQ 跨节点路由（多节点部署见第 13 节风险）。</li>
+      <li><strong>不做消息撤回 / 已读回执同步给发送方</strong>：全部已读只影响本人收件箱状态。</li>
+      <li><strong>不持久化 WS 报文</strong>：WebSocket 报文本身不落库，不在线期间错过的实时弹窗靠站内信补看。</li>
+    </ul>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">值班监控员</div>
+        <div class="sc-name">新工单实时弹窗提醒</div>
+        <div class="sc-desc">凌晨系统自动生成高风险工单，所有有处置菜单（915）权限的在线坐席右下角立即弹出通知并响一声提示音；点击弹窗直接打开该工单。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">当班坐席</div>
+        <div class="sc-name">被分派 / 转派工单</div>
+        <div class="sc-desc">班长把工单分派给某人时，当事人收到 ORDER_ASSIGN 消息；即使当时不在线，下次登录顶栏铃铛也显示未读数，消息中心可回看。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全督办</div>
+        <div class="sc-name">超时升级督办</div>
+        <div class="sc-desc">工单 SLA 超时升级（lv3），通知发给当前负责人和全部有督办菜单（916）的人员，级别为高，确保升级动作有人接。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">坐席本人</div>
+        <div class="sc-name">闭环回执与清理</div>
+        <div class="sc-desc">别人代为闭环自己负责的工单时收到 ORDER_CLOSE 消息；在消息中心一键全部已读，或删除不再需要的消息，未读数实时变化。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">多标签页办公的坐席</div>
+        <div class="sc-name">每个标签都在线、只弹一次窗</div>
+        <div class="sc-desc">同一账号开多个浏览器标签，每个标签是独立 sessionId 都能收到推送；前端单例保证未读数与最新列表在标签内一致维护。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">网络抖动的远程坐席</div>
+        <div class="sc-name">断线自动重连不丢消息</div>
+        <div class="sc-desc">网络抖动导致 WS 断开时指数退避重连（上限 30 秒）；断线期间的事件仍有站内信兜底，重连后刷新未读数与最新 10 条。</div>
+      </div>
+    </div>
+    <h2 id="s3">3 操作流程</h2>
+    <p>消息中心是<strong>侧栏顶级单菜单</strong>：sys_menu id=924，parent=0（不在"系统管理"折叠目录 900 内），路由 <code>/system/messages</code>，图标 ChatDotRound，权限码 <code>system:message:view</code>，授予 role1~role4；同时顶栏铃铛在 MainLayout 全局常驻，无需进入菜单即可收弹窗。</p>
+
+    <h3 id="s3-1">3.1 顶栏铃铛与实时弹窗</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">登录即订阅</div><div class="s-desc">MainLayout 挂载时调用 useNotify（模块级单例，全局只挂一次），并行拉取未读数与最新 10 条，同时建立 /ws/realtime?token=JWT 长连接。</div></div>
+      <div class="step"><div class="s-title">收到推送</div><div class="s-desc">只消费 type='NOTIFY' 的报文；level ≥ popupMinLevel（系统参数 notify.popup.min_level，默认 3）时右下角 ElNotification 弹 5 秒。</div></div>
+      <div class="step"><div class="s-title">声音 / 系统通知</div><div class="s-desc">soundEnabled（默认 true）时用 Web Audio 合成 880Hz beep，无任何音频文件；level=2 且浏览器 Notification 已授权时额外发系统通知。</div></div>
+      <div class="step"><div class="s-title">点击处理</div><div class="s-desc">点击弹窗（或系统通知）对 WORK_ORDER 消息直接跳转 /risk/orders?openOrder=&lt;bizId&gt;。</div></div>
+    </div>
+
+    <h3 id="s3-2">3.2 消息中心列表</h3>
+    <ul>
+      <li>入口：顶级菜单"消息中心"（MessageCenter.vue）。顶部 el-radio-group 切换<strong>全部 / 未读</strong>，右侧显示未读条数与"全部已读"按钮。</li>
+      <li>表格列：级别 tag（高 / 中 / 低配色）、类型（eventTypeName 映射：ORDER_CREATE 新建工单 / ORDER_ASSIGN 工单分派 / ORDER_ESCALATE 升级督办 / ORDER_CLOSE 工单闭环，未知类型显示原值）、标题、内容（超长 tooltip 悬浮看全文）、时间、状态（已读 / 未读）、删除操作。</li>
+      <li>分页：固定 size=15，layout 为 total/prev/pager/next；服务端对入参 size 做 <code>Math.min(size,100)</code> 钳制，防止恶意大页。</li>
+    </ul>
+
+    <h3 id="s3-3">3.3 已读、全部已读与删除</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">点行自动已读</div><div class="s-desc">点击列表行时若消息未读，先调 POST /messages/{id}/read，成功后本地未读数 −1 并更新行状态；非本人消息后端返回 404。</div></div>
+      <div class="step"><div class="s-title">全部已读</div><div class="s-desc">点"全部已读"调 POST /messages/read-all，后端按 currentUserId 批量置 is_read=1 / read_date=now，返回 {updated}；前端未读数清零。</div></div>
+      <div class="step"><div class="s-title">删除</div><div class="s-desc">DELETE /messages/{id} 仅删除本人消息；若删掉的是未读消息，前端刷新未读数。删除为物理删除（消息行从 sys_message 移除，发送日志 notify_send_log 保留）。</div></div>
+    </div>
+
+    <h3 id="s3-4">3.4 一键跳转到工单</h3>
+    <p>列表行点击在"自动已读"之后判断 <code>bizType === 'WORK_ORDER'</code>，携带 bizId 跳转 <code>/risk/orders?openOrder=&lt;bizId&gt;</code>，工单中心据此自动打开对应工单详情（与画像 Top5 工单同一深链约定）。bizId 在后端为 Long、在前端 NotifyMessage 类型中为 string（与 id 一样字符串化，避免 JS 精度问题）。</p>
+
+    <h3 id="s3-5">3.5 事件与界面对照</h3>
+    <table>
+      <thead><tr><th>eventType</th><th>列表"类型"列</th><th>典型标题来源</th><th>点击去向</th></tr></thead>
+      <tbody>
+        <tr><td>ORDER_CREATE</td><td>新建工单</td><td>"新工单：&lt;事件名 / 等级&gt;"，正文带车牌</td><td>工单详情 openOrder</td></tr>
+        <tr><td>ORDER_ASSIGN</td><td>工单分派</td><td>"工单已分派给您"，带工单号</td><td>工单详情 openOrder</td></tr>
+        <tr><td>ORDER_ESCALATE</td><td>升级督办</td><td>"工单超时升级"（level=3 高级样式）</td><td>工单详情 openOrder</td></tr>
+        <tr><td>ORDER_CLOSE</td><td>工单闭环</td><td>"工单已闭环"，闭环结果由工单正文承载</td><td>工单详情 openOrder</td></tr>
+        <tr><td>未知 / 新事件码</td><td>显示原始 eventType 值</td><td>title 原文</td><td>非 WORK_ORDER 不跳转</td></tr>
+      </tbody>
+    </table>
+    <p>级别 tag 固定按 level 显示"高 / 中 / 低"三色；是否弹右下窗只看 level 与 popupMinLevel，与事件类型无关——例如把 popupMinLevel 设为 1，则所有未过滤的在线消息都会弹窗。</p>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块 1 个路由页面 + 2 类全局浮层（铃铛 / 弹窗）。截图占位只描述真实界面，不引用外部图片或图片 URL。</p>
+    <div class="shot">
+      <div class="sh-icon">🔔</div>
+      <div class="sh-t">截图 4-1：顶栏铃铛与未读数（MainLayout 全局）</div>
+      <div class="sh-p">应截：顶栏铃铛图标上的未读数角标；铃铛下拉（如有）展示最新 10 条消息；消息中心顶级菜单入口（不在系统管理折叠组内）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📨</div>
+      <div class="sh-t">截图 4-2：消息中心列表（/system/messages）</div>
+      <div class="sh-p">应截：全部 / 未读 radio、未读条数、全部已读按钮；表格的级别 tag、类型中文名、标题、内容 tooltip、时间、已读状态、删除按钮；底部分页器（15 条 / 页）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🪟</div>
+      <div class="sh-t">截图 4-3：右下角实时弹窗（ElNotification）</div>
+      <div class="sh-p">应截：高风险工单生成时右下角 5 秒弹窗（标题 / 内容 / 级别配色 / 工单号与车牌）；点击跳转工单中心的效果。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🔕</div>
+      <div class="sh-t">截图 4-4：浏览器系统通知与权限态</div>
+      <div class="sh-p">应截：level=2 消息触发的浏览器原生 Notification（需授权）；未授权时仅页面内弹窗的降级效果。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🧾</div>
+      <div class="sh-t">截图 4-5：发送结果排障（DBA / 运维视角）</div>
+      <div class="sh-p">应截：按 biz_id + event_type 查询 traj.notify_send_log 的结果，展示每个接收人的 INBOX / WEBSOCKET / SMS / VOICE / PUSH 通道 SENT、SKIPPED、FAILED 状态与 detail（在线会话数、渠道未启用、未对接异常信息）。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">0 配置</div><div class="l">登录即自动订阅，无需坐席做任何设置</div></div>
+      <div class="stat"><div class="v">5 类事件</div><div class="l">生成 / 分派 / 升级 / 闭环 / 系统，覆盖工单全生命周期</div></div>
+      <div class="stat"><div class="v">11 字段</div><div class="l">推送报文自带工单号、车牌等跳转与展示信息</div></div>
+      <div class="stat"><div class="v">≤100</div><div class="l">列表 size 服务端钳制，最新 10 条供铃铛、分页 15 条</div></div>
+    </div>
+    <ul>
+      <li><strong>处置不遗漏</strong>：新单、升级按菜单权限精准推送给"有权处理的人"，而不是全员轰炸；在线弹窗 + 不在线站内信双通道兜底。</li>
+      <li><strong>零点击直达现场</strong>：报文携带 orderNo / plateNo / bizId，弹窗或列表点一下就打开工单，减少跨页查找。</li>
+      <li><strong>隔离安全</strong>：所有读写强制 currentUserId 本人范围，越权统一 404，避免消息 ID 枚举泄露业务信息。</li>
+      <li><strong>可审计可排障</strong>：每次投递（含跳过与失败原因）在 notify_send_log 留痕，"为什么我没收到"可以直接按事件 + 接收人查日志。</li>
+      <li><strong>外部渠道演进不返工</strong>：渠道接口、开关、日志、接收人圈定已就位，将来对接短信厂商只需替换 send 实现，不影响业务触发点。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>通知域是独立模块，<strong>被工单域调用、反向可选依赖监控域</strong>：工单域只构造 NotifyEvent 调 NotifyService；WebSocket 发送能力通过 Spring 的 ObjectProvider 可选获取 module-monitor 中的 bean，monitor 不在时通知模块也能独立启动（降级为只有站内信）。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">触发方<br>工单域</div>
+        <div class="al-body">
+          <span class="node"><b>RiskOrderScheduler</b> ORDER_CREATE / ORDER_ESCALATE</span>
+          <span class="node"><b>RiskOrderService</b> assign / transfer → ORDER_ASSIGN；他人闭环 → ORDER_CLOSE</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">通知域<br>module-notify</div>
+        <div class="al-body">
+          <span class="node"><b>NotifyController</b> /api/notify（登录即可，全部 currentUserId 隔离）</span>
+          <span class="node"><b>NotifyService</b> 接收人圈定 + @Async 派发 + 站内信 + 日志</span>
+          <span class="node"><b>NotifyEvent / NotifyMessage / NotifySendLog</b> 事件与实体</span>
+          <span class="node"><b>SmsChannel / VoiceChannel / PushChannel</b> 预留实现（send 抛异常）</span>
+          <span class="node"><b>NotifyAsyncConfig</b> notifyExecutor 线程池</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">实时推送<br>module-monitor</div>
+        <div class="al-body">
+          <span class="node"><b>RealtimePusher</b>（接口在通知侧可见）</span>
+          <span class="node"><b>SessionRegistry</b> 单机 ConcurrentHashMap：uid → 多个 sessionId（多标签页）</span>
+          <span class="node"><b>/ws/realtime?token=JWT</b> 独立 WS 端点</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">前端 / 数据</div>
+        <div class="al-body">
+          <span class="node"><b>useNotify.ts</b> 模块级单例：退避重连 / 弹窗 / beep / 系统通知</span>
+          <span class="node"><b>MessageCenter.vue / api/notify.ts</b> 收件箱页面与 8 个接口函数</span>
+          <span class="node"><b>traj.sys_message</b> 站内信（09 建基础列、11 ALTER 扩展）</span>
+          <span class="node"><b>traj.notify_send_log</b> 发送意图日志</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>职责</th><th>关键约束</th></tr></thead>
+      <tbody>
+        <tr><td><code>NotifyController</code></td><td>收件箱 REST</td><td>无类级 @RequiresPerm；所有接口强制 currentUserId；越权 404</td></tr>
+        <tr><td><code>NotifyService</code></td><td>接收人计算 + 派发</td><td>MENU_OPERATOR=915L / MENU_SUPERVISOR=916L；@Async("notifyExecutor")；全程吞异常不外溢</td></tr>
+        <tr><td><code>NotifyMessageMapper</code></td><td>接收人与消息 SQL</td><td>selectUserIdsByMenu：启用用户 ∩ 启用角色 ∩ 菜单 / role1</td></tr>
+        <tr><td><code>RealtimePusher</code>（ObjectProvider）</td><td>WS 投递</td><td>可选 bean；缺失时推送步骤整体跳过，不影响站内信</td></tr>
+        <tr><td><code>SessionRegistry</code></td><td>在线会话表</td><td>单机内存；支持 uid 多 sessionId；sendToUsers 返回在线送达数</td></tr>
+        <tr><td><code>SmsChannel/VoiceChannel/PushChannel</code></td><td>外部渠道占位</td><td>enabled 开关 + send 无条件抛 UnsupportedOperationException</td></tr>
+        <tr><td><code>NotifyAsyncConfig</code></td><td>异步线程池</td><td>@EnableAsync；notifyExecutor 核心 2 / 最大 2 / 队列 1000 / CallerRunsPolicy / 优雅关闭 10s</td></tr>
+        <tr><td><code>useNotify.ts</code></td><td>前端实时中心</td><td>模块级单例；独立 WS；指数退避上限 30s；880Hz Web Audio beep</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><code>api/notify.ts</code> 共 8 个函数：listMessages、latestMessages、unreadCount、markRead、readAll、deleteMessage、getNotifySettings（类型定义中 NotifyMessage.id / bizId 均为 string）。</li>
+      <li><code>useNotify.ts</code> 状态在模块作用域（单例）：MainLayout 只调用一次注册，任何页面均可读其 unread / latest(10)；refresh() 并行请求未读数与最新列表。</li>
+      <li>WS 与实时监控页的 useRealtime <strong>各自建连、互不影响</strong>：监控页断开不影响通知弹窗，反之亦然。</li>
+      <li>重连退避：失败后等待时间指数增长，封顶 30 秒；重连成功立即 refresh 补拉断线期间的未读变化。</li>
+      <li>提示音用 Web Audio API 现场合成 880Hz 短音，不依赖任何 mp3 / wav 资源（全站无外部资源约束）。</li>
+      <li>系统通知需浏览器 Notification 授权，仅 level=2 走该路径且做能力检测；未授权静默降级为页面内弹窗。</li>
+      <li>MessageCenter 点行顺序：未读先 markRead（本地减未读）→ 再按 bizType 决定跳工单；删除未读消息后重新拉未读数。</li>
+    </ul>
+
+    <h3 id="s6-2">6.2 后端类与文件清单</h3>
+    <table>
+      <thead><tr><th>类型</th><th>类 / 文件</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>Web</td><td>NotifyController</td><td>/api/notify 7 个 REST 端点，登录可用，currentUserId 隔离</td></tr>
+        <tr><td>服务</td><td>NotifyService</td><td>receiversByMenu、dispatchAsync、dispatch、pushWebsocket、dispatchExternalChannels、settings 读取</td></tr>
+        <tr><td>事件</td><td>NotifyEvent（record）</td><td>8 字段事件载体 + 5 个 eventType 常量 + BIZ_WORK_ORDER</td></tr>
+        <tr><td>实体</td><td>NotifyMessage / NotifySendLog</td><td>@TableName traj.sys_message / traj.notify_send_log</td></tr>
+        <tr><td>VO</td><td>MessageVO / NotifySettingsVO</td><td>id、bizId 字符串化；popupMinLevel、soundEnabled</td></tr>
+        <tr><td>Mapper</td><td>NotifyMessageMapper</td><td>消息 CRUD 与 selectUserIdsByMenu 接收人查询</td></tr>
+        <tr><td>渠道</td><td>NotifyChannel / SmsChannel / VoiceChannel / PushChannel</td><td>统一契约；三个外部实现 send 均抛 UnsupportedOperationException</td></tr>
+        <tr><td>配置</td><td>NotifyAsyncConfig</td><td>@EnableAsync + notifyExecutor 线程池</td></tr>
+        <tr><td>推送</td><td>RealtimePusher（接口使用方）→ SessionRegistry（monitor 实现）</td><td>经 ObjectProvider 可选注入</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 接收人圈定</h3>
+    <ul>
+      <li>常量：<code>MENU_OPERATOR=915L</code>（处置工单菜单 / 按钮）、<code>MENU_SUPERVISOR=916L</code>（督办分派菜单）。</li>
+      <li>receiversByMenu(menuId) 调 NotifyMessageMapper.selectUserIdsByMenu，交集条件：<strong>用户启用</strong> ∩ <strong>角色启用</strong> ∩（角色为 role1 超管 <strong>或</strong> 角色被授予该 menu）。</li>
+      <li>各事件接收人：ORDER_CREATE → 菜单 915 全员；ORDER_ESCALATE → 工单当前负责人 + 菜单 916 全员（level=3 高）；ORDER_ASSIGN / ORDER_CLOSE → 被分派 / 负责该工单的具体人。</li>
+      <li>接收人集合用 LinkedHashSet 去重（同一人不会因多角色重复收信）。</li>
+    </ul>
+
+    <h3 id="s7-2">7.2 异步派发主流程</h3>
+    <div class="flow vertical">
+      <div class="step"><div class="s-title">入口 dispatchAsync</div><div class="s-desc">业务方调用后立即返回；方法标注 @Async("notifyExecutor")，整个方法体外层 try/catch 吞掉所有异常——通知失败绝不允许反向打断工单主流程（如分派事务）。</div></div>
+      <div class="step"><div class="s-title">圈定接收人</div><div class="s-desc">按事件类型算出接收人集合；为空则直接结束（无受众不产生任何日志噪声）。</div></div>
+      <div class="step"><div class="s-title">逐接收人 dispatch</div><div class="s-desc">每人：①insert 一条 sys_message 站内信；②pushWebsocket 在线实时推送并按送达数记账；③dispatchExternalChannels 遍历短信 / 语音 / 推送三个预留渠道。</div></div>
+    </div>
+    <blockquote class="tip">
+      <p>异步化的意义：RiskOrderService 的分派 / 闭环是同步业务事务，通知若同步发 WS、查接收人、写多行日志会拉长接口 RT 且可能被外部 IO 拖累；@Async + CallerRunsPolicy（队列满时由调用线程兜底执行）兼顾了隔离与不丢任务。</p>
+    </blockquote>
+
+    <h3 id="s7-3">7.3 站内信落库</h3>
+    <ul>
+      <li>实体 <code>NotifyMessage @TableName("traj.sys_message")</code>：id、userId、title、content、msgType、isRead、bizType、bizId(Long)、level、eventType、creator、createDate、readDate。</li>
+      <li>派发写入固定值：<code>msgType='INBOX'</code>、<code>is_read=0</code>、<code>creator='system'</code>，create_date 走默认时间；biz_id 存工单 ID，level / event_type 随事件带入。</li>
+      <li>已读：单条更新校验 user_id = currentUserId，写入 read_date；全部已读按 user_id 批量更新。</li>
+      <li>查询：列表索引 (user_id,is_read,id DESC) 支撑"未读 + 最新在前"；(biz_type,biz_id) 支撑按业务对象反查消息。</li>
+    </ul>
+
+    <h3 id="s7-4">7.4 WebSocket 实时推送</h3>
+    <ul>
+      <li><strong>解耦方式</strong>：NotifyService 注入 <code>ObjectProvider&lt;RealtimePusher&gt;</code>。RealtimePusher 的实现 bean 由 module-monitor 提供（SessionRegistry）；监控模块不在部署中时 ObjectProvider 取不到 bean，推送安全跳过，通知模块照常发站内信，无启动依赖失败。</li>
+      <li><strong>会话模型</strong>：SessionRegistry 为单机内存 ConcurrentHashMap，键为 uid，值为该用户的多个 sessionId——同一账号多标签页、多设备同时在线时每个会话都送。</li>
+      <li><strong>报文</strong>：sendToUsers(uid, "NOTIFY", payload)，type 固定 NOTIFY，payload <strong>11 个字段</strong>：id（字符串）、title、content、level、eventType、bizType、bizId（字符串）、orderNo、plateNo、createDate——即前端弹窗与跳转所需的全部信息，无需收到后再回查接口。</li>
+      <li><strong>送达记账</strong>：按返回的在线会话数记 WEBSOCKET 通道日志：在线 SENT 且 detail="在线会话 n"；该用户当前无会话则 SKIPPED"接收人不在线"（不算失败）。</li>
+      <li><strong>鉴权</strong>：连接 URL /ws/realtime?token=JWT，握手期校验令牌并绑定 uid，不靠查询参数传用户身份之外的任何内容。</li>
+    </ul>
+
+    <h3 id="s7-5">7.5 发送日志记账</h3>
+    <p>实体 <code>NotifySendLog @TableName("traj.notify_send_log")</code>：eventType、bizType、bizId、channel、receiverId、title、level、status、detail、createDate。</p>
+    <table>
+      <thead><tr><th>channel</th><th>status 取值与 detail</th></tr></thead>
+      <tbody>
+        <tr><td>WEBSOCKET</td><td>在线：SENT，detail="在线会话 n"（n=会话数）；不在线：SKIPPED，detail="接收人不在线"</td></tr>
+        <tr><td>SMS / VOICE / PUSH</td><td>开关关：SKIPPED，detail="渠道未启用"；开关开但发送抛异常：FAILED，detail=异常信息（截断 500 字符）</td></tr>
+        <tr><td>（INBOX）</td><td>站内信以 sys_message 行本身为凭证，不另外写发送日志</td></tr>
+      </tbody>
+    </table>
+    <p>索引 (biz_id,event_type) 支撑按业务事件回溯"发给了谁、各通道结果"；(create_date DESC) 支撑按时间排障。日志只增不改，删除消息不影响日志。</p>
+
+    <h3 id="s7-6">7.6 外部渠道预留实现</h3>
+    <p>三个渠道均实现统一 NotifyChannel 接口（javadoc：<em>"本期仅接口 + 开关 + 发送意图日志"</em>），结构完全对称：</p>
+    <table>
+      <thead><tr><th>渠道</th><th>开关配置（默认）</th><th>send 实现</th></tr></thead>
+      <tbody>
+        <tr><td>SmsChannel</td><td>notify.sms.enabled = false</td><td>throw new UnsupportedOperationException("短信渠道未对接厂商，暂不可用")</td></tr>
+        <tr><td>VoiceChannel</td><td>notify.voice.enabled = false</td><td>throw new UnsupportedOperationException("语音外呼渠道未对接网关")</td></tr>
+        <tr><td>PushChannel</td><td>notify.push.enabled = false</td><td>throw new UnsupportedOperationException("App 推送渠道未对接推送服务")</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>dispatchExternalChannels 对每个渠道：未启用 → SKIPPED"渠道未启用"；启用且 send 正常 → SENT（当前实现不可达）；send 抛异常 → FAILED（detail 截 500）。</li>
+      <li>因此在<strong>任何配置组合下都不会产生真实外部通讯</strong>；配置项存在的意义是固化参数键、让未来对接时无需改表结构，并提前打通"开关→日志"链路。</li>
+    </ul>
+
+    <h3 id="s7-7">7.7 通知设置读取</h3>
+    <ul>
+      <li>GET /api/notify/settings 返回 NotifySettingsVO：<code>popupMinLevel</code>（int）与 <code>soundEnabled</code>（boolean）。</li>
+      <li>popupMinLevel 读系统参数 <code>notify.popup.min_level</code>，默认 3；值不在 1~3 范围内时回落 3，防止参数配错导致全部弹或全不弹。</li>
+      <li>soundEnabled 读 <code>notify.sound.enabled</code>，默认 true；经 ConfigService.getBool 解析（Boolean.parseBoolean，非法值按 false 处理）。</li>
+      <li>本模块不提供设置写入接口；两个参数在"系统参数"中心维护（见 MOD-DBD-012），且 11 脚本种子中这 5 个通知参数 <code>is_system=0</code>（非内置锁定项，可在页面编辑 / 删除）。</li>
+    </ul>
+
+    <h3 id="s7-8">7.8 业务触发点</h3>
+    <table>
+      <thead><tr><th>触发位置</th><th>eventType / level</th><th>接收人</th></tr></thead>
+      <tbody>
+        <tr><td>RiskOrderScheduler 定时扫描生成新工单</td><td>ORDER_CREATE</td><td>菜单 915（处置）关联的全部启用用户</td></tr>
+        <tr><td>RiskOrderScheduler SLA 超时升级</td><td>ORDER_ESCALATE，level=3</td><td>工单当前负责人 + 菜单 916（督办）全员</td></tr>
+        <tr><td>RiskOrderService.assign / transfer 分派 / 转派</td><td>ORDER_ASSIGN</td><td>新负责人（具体到人）</td></tr>
+        <tr><td>RiskOrderService 非负责人本人闭环工单</td><td>ORDER_CLOSE</td><td>工单原负责人</td></tr>
+        <tr><td>（预留）系统类公告</td><td>SYSTEM</td><td>当前代码路径无业务触发，供后续系统事件使用</td></tr>
+      </tbody>
+    </table>
+    <p>NotifyEvent 为不可变 record（eventType,bizType,bizId,title,content,level,orderNo,plateNo），常量 ORDER_CREATE / ORDER_ASSIGN / ORDER_ESCALATE / ORDER_CLOSE / SYSTEM 与 BIZ_WORK_ORDER 统一定义，业务方只填内容不感知通道。</p>
+
+    <h3 id="s7-9">7.9 前端实时单例 useNotify</h3>
+    <ul>
+      <li><strong>模块级单例</strong>：状态与连接定义在 composable 模块作用域，MainLayout 初始化一次；铃铛、消息中心共用同一份 unread / latest。</li>
+      <li><strong>独立连接</strong>：直连 /ws/realtime?token=JWT，与监控页 useRealtime 的连接相互独立；只处理 type='NOTIFY' 报文，其他类型忽略。</li>
+      <li><strong>指数退避重连</strong>：断线后等待 1s、2s、4s… 重试，封顶 30 秒；页面可见性恢复时也会触发检查，减少长时间挂起。</li>
+      <li><strong>三道提醒</strong>：①满足级别门槛 → ElNotification 右下角弹 5 秒；②soundEnabled → 880Hz Web Audio beep（无音频资源文件）；③level=2 且 Notification 已授权 → 浏览器系统通知。</li>
+      <li><strong>点击动作</strong>：弹窗 / 系统通知点击后关闭并对 WORK_ORDER 执行工单深链跳转。</li>
+      <li><strong>状态维护</strong>：unread 计数与 latest(10) 随推送增量更新；refresh() 并行调 unread-count 与 latest 两接口做对账，重连后必刷。</li>
+    </ul>
+
+    <h3 id="s7-10">7.10 派发时序与一致性边界</h3>
+    <ul>
+      <li><strong>提交后派发</strong>：业务侧在工单落库事务成功路径上调用 dispatchAsync；@Async 使写消息发生在独立线程 / 独立事务，<strong>不存在"消息发了但工单回滚"</strong>的回滚连带问题，但也意味着极端情况下"工单提交成功、派发线程执行前进程被杀"会丢这一条通知（站内信也没有），靠工单调度 / 列表查询兜底被发现。</li>
+      <li><strong>先落库后推送</strong>：每人 dispatch 内先 insert sys_message 再 pushWebsocket，保证在线弹窗点出的 bizId 一定查得到工单消息；推送失败不回滚已落库消息。</li>
+      <li><strong>失败隔离粒度</strong>：逐接收人处理，某人某通道异常不影响其他人；异常被 catch 后记 FAILED 或仅服务端日志，循环继续。</li>
+      <li><strong>顺序保证</strong>：同一工单的生成 → 分派 → 升级 → 闭环在不同业务时刻产生，经同一线程池最多 2 线程并发，<strong>不保证严格按事件时间顺序送达</strong>；消息带 createDate，列表按 id DESC 展示，排障以时间为准。</li>
+      <li><strong>无重试</strong>：站内信 insert 失败、WS 发送失败均不做自动重试（WS 本就是在线即时语义；失败已记账），需要补偿时按业务重放（如再次分派）。</li>
+      <li><strong>权限快照</strong>：接收人集合在派发当下计算一次并固化为逐人消息；事后回收某人菜单权限不会删除已入库消息，只会让后续事件不再发给他。</li>
+    </ul>
+
+    <h3 id="s7-11">7.11 安全与隐私设计要点</h3>
+    <ul>
+      <li><strong>无水平越权面</strong>：接口不接收 userId / receiverId 入参，收件人恒等于登录态 currentUserId，从参数层面消除改 ID 看他人数据的可能。</li>
+      <li><strong>存在性不泄露</strong>：访问他人消息一律 404"消息不存在"，而不是 403，攻击者无法据此分辨消息 ID 是否存在。</li>
+      <li><strong>写操作只来自后端</strong>：sys_message 没有面向前端的创建接口，标题 / 内容 / 级别全部由服务端事件对象决定，用户不能伪造"系统通知"钓鱼。</li>
+      <li><strong>WS 令牌鉴权</strong>：握手期校验 JWT 绑定 uid，会话注册表不接受自报身份；登出 / 令牌失效后旧连接无法继续收信（结合网关心跳清理）。</li>
+      <li><strong>最小内容原则</strong>：消息正文只带处置必需信息（工单号、车牌、事件名），不带司机身份证号 / 电话等敏感字段。</li>
+      <li><strong>大页防护</strong>：size 钳 100、latest.limit 钳 50，防止用大结果量做拖库式探测。</li>
+      <li><strong>日志最小化</strong>：send_log 记 title / level / 接收人用于排障，不记录 WebSocket 报文头或 token。</li>
+    </ul>
+
+    <h2 id="s8">8 数据流程</h2>
+    <div class="flow">
+      <div class="step"><div class="s-title">业务动作</div><div class="s-desc">工单生成 / 分派 / 升级 / 闭环在各自事务中构造 NotifyEvent 调 dispatchAsync（调用立即返回）。</div></div>
+      <div class="step"><div class="s-title">异步排队</div><div class="s-desc">任务进入 notifyExecutor（2 核心线程 / 1000 队列 / CallerRuns）；查启用接收人集合。</div></div>
+      <div class="step"><div class="s-title">逐人双通道</div><div class="s-desc">写 sys_message 站内信；ObjectProvider 取 RealtimePusher，对在线会话发 NOTIFY 并按送达数记 WEBSOCKET 日志。</div></div>
+      <div class="step"><div class="s-title">外部渠道记账</div><div class="s-desc">遍历 SMS/VOICE/PUSH：未启用记 SKIPPED；当前实现启用也必 FAILED；不产生真实外发。</div></div>
+      <div class="step"><div class="s-title">前端触达</div><div class="s-desc">在线：弹窗 + 声音 + 可选系统通知；离线：下次登录 / 重连后未读数与最新列表对账补看。</div></div>
+    </div>
+
+    <h3 id="s8-1">8.1 异常与降级路径</h3>
+    <table>
+      <thead><tr><th>异常情形</th><th>系统行为</th></tr></thead>
+      <tbody>
+        <tr><td>派发任意环节异常（DB 抖动 / 推送报错）</td><td>dispatchAsync 外层 try/catch 全吞，记日志或 FAILED；工单主事务与接口不受影响</td></tr>
+        <tr><td>monitor 模块 / RealtimePusher bean 缺失</td><td>ObjectProvider 取不到 → 跳过 WS 步骤；站内信正常，无启动失败</td></tr>
+        <tr><td>用户不在线</td><td>WEBSOCKET 记 SKIPPED"接收人不在线"；站内信已落库待查</td></tr>
+        <tr><td>notifyExecutor 队列满（&gt;1000 待发）</td><td>CallerRunsPolicy 由调用线程同步兜底执行，任务不丢（可能轻微拖慢触发方）</td></tr>
+        <tr><td>popupMinLevel 配成非法值</td><td>回落 3；soundEnabled 非法布尔按 false</td></tr>
+        <tr><td>WS 断线 / Token 过期</td><td>指数退避重连（≤30s）；重连后 refresh 对账；期间消息由站内信兜底</td></tr>
+        <tr><td>浏览器拒绝通知权限</td><td>系统通知静默跳过，页面内 ElNotification 与声音不受影响</td></tr>
+        <tr><td>访问他人消息 ID</td><td>已读 / 删除均返回 404"消息不存在"，不暴露存在性</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段 / 约束 / 索引</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.sys_message</code></td>
+          <td>站内信个人消息</td>
+          <td>基础列（09-system-config.sql "预留：站内消息"）：id bigserial、user_id、title varchar255、content text、msg_type varchar32、is_read smallint default0、creator、create_date；11-notify.sql ALTER 追加 biz_type、biz_id、level smallint default1、event_type、read_date。索引 (user_id,is_read,id DESC)、(biz_type,biz_id)</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_message">DDL · tbl-traj_sys_message</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.notify_send_log</code></td>
+          <td>发送意图日志（11-notify.sql 新建）</td>
+          <td>event_type、biz_type、biz_id、channel(INBOX/WEBSOCKET/SMS/VOICE/PUSH)、receiver_id、title、level、status(SENT/SKIPPED/FAILED)、detail、create_date；索引 (biz_id,event_type)、(create_date DESC)</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_notify_send_log">DDL · tbl-traj_notify_send_log</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_config</code>（参数行）</td>
+          <td>5 个通知配置项</td>
+          <td>notify.popup.min_level=3(INT)、notify.sound.enabled=true(BOOL)、notify.sms/voice/push.enabled=false(BOOL)；<strong>is_system=0</strong></td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_config">DDL · tbl-traj_sys_config</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>建表 / 改表分两个脚本，排查"列不存在"时先看执行顺序：</strong>sys_message 的基础列定义在 <code>09-system-config.sql</code>（预留站内消息），通知专用列 biz_type/biz_id/level/event_type/read_date 由 <code>11-notify.sql</code> ALTER 添加；notify_send_log 也在 11 脚本创建。漏跑 11 脚本会导致模块启动后写入报列缺失。</p>
+    </blockquote>
+
+    <h3 id="s9-1">9.1 字段与枚举速查</h3>
+    <table>
+      <thead><tr><th>枚举</th><th>取值</th></tr></thead>
+      <tbody>
+        <tr><td>event_type（字典 notify_event_type）</td><td>ORDER_CREATE 工单生成 / ORDER_ASSIGN 工单分派 / ORDER_ESCALATE 超时升级 / ORDER_CLOSE 工单闭环 / SYSTEM 系统通知</td></tr>
+        <tr><td>biz_type</td><td>WORK_ORDER（本期唯一业务类型，常量 BIZ_WORK_ORDER）</td></tr>
+        <tr><td>msg_type</td><td>INBOX（派发固定值）</td></tr>
+        <tr><td>channel</td><td>INBOX / WEBSOCKET / SMS / VOICE / PUSH</td></tr>
+        <tr><td>send_log.status</td><td>SENT（成功 / 在线送达）/ SKIPPED（渠道未启用、接收人不在线）/ FAILED（发送异常，detail 截 500）</td></tr>
+        <tr><td>level</td><td>1 低 / 2 中 / 3 高；popupMinLevel 默认 3，合法域 1~3，越界回落 3</td></tr>
+        <tr><td>is_read</td><td>0 未读（默认）/ 1 已读；read_date 在置已读时写入</td></tr>
+        <tr><td>菜单接收口径</td><td>915 处置（MENU_OPERATOR）/ 916 督办（MENU_SUPERVISOR）；role1 恒在接收集</td></tr>
+        <tr><td>VO 字段</td><td>MessageVO.id / bizId 序列化为字符串；NotifySettingsVO.popupMinLevel:int、soundEnabled:boolean</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>关键规则</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/notify/messages</code></td><td>收件箱分页</td><td>page/size；size 服务端 Math.min(size,100)；unreadOnly 过滤；强制本人</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-notify">grp-notify</a></td></tr>
+        <tr><td>GET <code>/api/notify/latest</code></td><td>最新消息（铃铛）</td><td>limit 1~50，默认 10</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-notify">grp-notify</a></td></tr>
+        <tr><td>GET <code>/api/notify/unread-count</code></td><td>未读数</td><td>返回 {count}</td></tr>
+        <tr><td>POST <code>/api/notify/messages/{id}/read</code></td><td>单条已读</td><td>非本人 → 404"消息不存在"</td></tr>
+        <tr><td>POST <code>/api/notify/messages/read-all</code></td><td>全部已读</td><td>返回 {updated}</td></tr>
+        <tr><td>DELETE <code>/api/notify/messages/{id}</code></td><td>删除本人消息</td><td>物理删除；非本人 404</td></tr>
+        <tr><td>GET <code>/api/notify/settings</code></td><td>弹窗级别 / 声音开关</td><td>读 sys_config，带默认值与非法回落</td></tr>
+        <tr><td>WS <code>/ws/realtime?token=JWT</code></td><td>实时推送通道</td><td>仅消费 type=NOTIFY；与监控 WS 相互独立</td><td>实时通道章节</td></tr>
+      </tbody>
+    </table>
+    <p>统一鉴权特点：除 WS 握手用 token 外，REST 接口<strong>无类级权限码</strong>（登录即可），隔离完全靠每个方法内 currentUserId 强约束；因此接口不能传 userId 操作他人收件箱。</p>
+
+    <h3 id="s10-1">10.1 推送报文（11 字段）</h3>
+    <pre><code>{
+  "type": "NOTIFY",                 // 前端只认这个类型
+  "payload": {
+    "id": "100203",                 // 消息 ID，字符串
+    "title": "新工单：严重超速",
+    "content": "车牌 京A12345 触发严重超速，请及时处置",
+    "level": 3,                     // 1 低 / 2 中 / 3 高
+    "eventType": "ORDER_CREATE",
+    "bizType": "WORK_ORDER",
+    "bizId": "88012",               // 工单 ID，字符串（防 JS 精度丢失）
+    "orderNo": "WO20261005001",
+    "plateNo": "京A12345",
+    "createDate": "2026-10-05 09:12:30"
+  }
+}</code></pre>
+    <p>派发方无对外写接口：NotifyEvent 全部由后端工单模块内部构造，外部系统不能伪造消息入库（11 个字段中无一个接受前端传入）。</p>
+
+    <h2 id="s11">11 异步执行器与后台行为</h2>
+    <table>
+      <thead><tr><th>项</th><th>配置 / 行为</th></tr></thead>
+      <tbody>
+        <tr><td>@EnableAsync</td><td>NotifyAsyncConfig 开启 Spring 异步；通知模块自建专用线程池，不复用默认池</td></tr>
+        <tr><td>bean 名</td><td>notifyExecutor</td></tr>
+        <tr><td>核心 / 最大线程</td><td>2 / 2（并发派发上限 2，避免通知风暴压垮数据库连接）</td></tr>
+        <tr><td>队列容量</td><td>1000；溢出策略 CallerRunsPolicy（由调用线程兜底跑，不丢任务）</td></tr>
+        <tr><td>关闭策略</td><td>优雅关闭等待 10 秒，停机时尽量把队列内通知发完</td></tr>
+        <tr><td>定时任务</td><td>本模块<strong>没有 @Scheduled</strong>；定时性触发（新单 / 升级扫描）来自工单 RiskOrderScheduler</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s11-1">11.1 SQL 种子清单（11-notify.sql）</h3>
+    <table>
+      <thead><tr><th>类别</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td>ALTER TABLE sys_message</td><td>追加 biz_type、biz_id、level smallint default 1、event_type、read_date（基础列在 09 脚本）</td></tr>
+        <tr><td>索引</td><td>sys_message(user_id,is_read,id DESC)、sys_message(biz_type,biz_id)；notify_send_log(biz_id,event_type)、notify_send_log(create_date DESC)</td></tr>
+        <tr><td>新建表</td><td>traj.notify_send_log（发送意图日志）</td></tr>
+        <tr><td>字典</td><td>notify_event_type 五项：ORDER_CREATE 工单生成 / ORDER_ASSIGN 工单分派 / ORDER_ESCALATE 超时升级 / ORDER_CLOSE 工单闭环 / SYSTEM 系统通知</td></tr>
+        <tr><td>系统参数 5 项</td><td>notify.popup.min_level=3（INT）、notify.sound.enabled=true（BOOL）、notify.sms.enabled=false、notify.voice.enabled=false、notify.push.enabled=false（BOOL）；五项 <code>is_system=0</code></td></tr>
+        <tr><td>菜单 / 授权</td><td>菜单 924"消息中心"（parent=0 顶级、ChatDotRound、system:message:view）授予 role1、role2、role3、role4</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip">
+      <p>幂等性：字典与参数种子按固定键插入（重复执行不产生重复行）；ALTER / CREATE INDEX 使用 IF NOT EXISTS 类保护，11 脚本可在已初始化库重复执行。</p>
+    </blockquote>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>通知与业务事务解耦</strong>：@Async 专用线程池让派发改动、WS IO、日志写入都不进工单事务，通知子系统故障不外溢为处置流程故障。</li>
+      <li><strong>ObjectProvider 可选注入消除反向依赖</strong>：WS 实现属于监控模块，通知模块若直接 @Autowired 会造成 notify→monitor 硬依赖与潜在循环；ObjectProvider 让 bean 缺失成为可运行的降级路径。</li>
+      <li><strong>单机内存会话表满足当前部署</strong>：平台为单节点 / 主备部署，ConcurrentHashMap 比引入 STOMP / Redis Pub/Sub 简单且零外部依赖；多标签页按多 sessionId 支持；横向扩展时再升级（见风险）。</li>
+      <li><strong>站内信作为唯一持久真相</strong>：实时推送是"锦上添花"，可丢可跳；消息必须落 sys_message，在线 / 离线、弹窗 / 不弹窗都不影响信息可追溯。</li>
+      <li><strong>外部渠道先立契约再接厂商</strong>：统一 NotifyChannel 接口 + 配置开关 + send_log 记账，使运营侧先在日志里看到"本该发给谁"，厂商对接只是替换三个 send，调用方零改动。</li>
+      <li><strong>前端单例 + 独立 WS</strong>：通知是全局能力，单例避免多页面重复建连；与监控 WS 分连接避免高频轨迹报文挤占通知消息、也避免生命周期互相牵连。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>影响</th><th>对策（代码现状）</th></tr></thead>
+      <tbody>
+        <tr><td>多实例部署时 WS 会话不在本机</td><td>用户连在 A 节点、事件在 B 节点派发，实时弹窗收不到（站内信仍正常）</td><td>当前按单节点设计；横向扩展前需引入 Redis Pub/Sub 或粘性会话，已在本文登记</td></tr>
+        <tr><td>通知风暴压库</td><td>大批工单同时生成，逐人 insert 会刷爆连接池</td><td>独立 notifyExecutor 2/2/1000 限流 + CallerRuns 背压；接收人按菜单圈定而非全员</td></tr>
+        <tr><td>外部渠道被误认已开通</td><td>交付 / 验收方误以为短信能收到</td><td>send 无条件抛异常 + 本文与接口 javadoc 双重声明"本期不真实外发"；日志状态可现场演示 SKIPPED/FAILED</td></tr>
+        <tr><td>开关打开后大量 FAILED 日志</td><td>误操作把 notify.sms.enabled 置 true</td><td>FAILED detail 截 500；不产生外部费用；应配合系统参数编辑权限管控（is_system=0 但菜单仅管理员可见）</td></tr>
+        <tr><td>消息越权读取</td><td>枚举消息 ID 看他人工单标题 / 车牌</td><td>所有读写带 currentUserId 条件，越权统一 404；无任何接口接受 userId 参数</td></tr>
+        <tr><td>前端长连泄漏 / 重复弹窗</td><td>多次注册 useNotify 导致多连接、一条消息弹多次</td><td>模块级单例 + MainLayout 只初始化一次；重连复用同一套状态</td></tr>
+        <tr><td>JS 大整数精度</td><td>bizId / id 超过 2^53 后跳转错误工单</td><td>VO 与前端类型均把 id / bizId 字符串化</td></tr>
+        <tr><td>系统通知被浏览器拦截</td><td>level=2 无系统提醒</td><td>能力检测 + 页面内 ElNotification 兜底，不依赖系统通知授权</td></tr>
+        <tr><td>sys_message 无限增长</td><td>收件箱表膨胀影响查询</td><td>(user_id,is_read,id DESC) 索引保证查询稳定；本期无自动清理 / 归档任务，需运维关注（见待核实）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>MOD-DBD-009 处置工单与坐席干预</td><td>唯一业务触发方</td><td>RiskOrderScheduler / RiskOrderService 四个触发点；消息点击回跳工单深链 openOrder；通知不回写工单</td></tr>
+        <tr><td>实时监控（module-monitor）</td><td>被可选依赖</td><td>经 ObjectProvider&lt;RealtimePusher&gt; 使用 SessionRegistry 与 /ws/realtime；bean 缺失可降级</td></tr>
+        <tr><td>MOD-DBD-012 系统配置与数据字典</td><td>参数 / 字典来源</td><td>popupMinLevel / soundEnabled / 三个渠道开关读 sys_config；eventType 中文名读字典 notify_event_type</td></tr>
+        <tr><td>IAM / 菜单授权</td><td>接收人数据源</td><td>selectUserIdsByMenu 依赖用户 / 角色 / 角色菜单关系与菜单 915、916、924 的授权种子</td></tr>
+        <tr><td>MOD-010 驾驶评分与风险画像</td><td>无关系</td><td>评分重算、画像查询均不发通知</td></tr>
+        <tr><td>MOD-DBD-007 / 008 围栏与规则引擎</td><td>间接关系</td><td>风险事件本身不直接通知；只有事件升级为工单后才进入通知链路</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">为什么开了 notify.sms.enabled=true 还是收不到短信？</div><div class="v">这是预留开关。SmsChannel.send 无条件抛 UnsupportedOperationException，系统只记一条 FAILED 日志，任何情况下都不真实外发；需要短信能力必须先对接厂商实现。</div></div>
+      <div class="kv"><div class="k">为什么收不到新工单弹窗？</div><div class="v">依次排查：①账号是否启用且角色拥有菜单 915（role1 默认有）；②WS 是否在线（顶栏连接态 / 重连日志）；③消息级别是否达到 popupMinLevel（默认 3，只有高级弹窗）；④浏览器是否屏蔽了页面内通知。站内信列表可作为消息是否生成的最终依据。</div></div>
+      <div class="kv"><div class="k">不在线期间的消息会丢吗？</div><div class="v">不会。实时推送只对在线会话发送（不在线记 SKIPPED），但站内信在派发时已落库；下次登录 / 重连 refresh 后未读数与最新列表都会补出来。</div></div>
+      <div class="kv"><div class="k">多个标签页会收到多条吗？</div><div class="v">后端会向每个 sessionId 都投递（多标签都在线），但 useNotify 是模块级单例，同一标签内只维护一份状态；不同标签各自弹一次属于预期（每个窗口都是独立页面环境）。</div></div>
+      <div class="kv"><div class="k">点别人转发的消息链接会怎样？</div><div class="v">已读 / 删除接口都校验消息 user_id = 当前登录人，不匹配返回 404"消息不存在"，看不到标题内容，也无法替别人已读。</div></div>
+      <div class="kv"><div class="k">删除消息后发送日志还在吗？</div><div class="v">在。删除只物理移除 sys_message 行；notify_send_log 只增不改，仍可按 biz_id + event_type 审计当时各通道结果。</div></div>
+      <div class="kv"><div class="k">全部已读返回的 updated 为什么有时是 0？</div><div class="v">当前没有未读消息时更新 0 行；前端无论返回数字是几都会把本地未读数清零对齐。</div></div>
+      <div class="kv"><div class="k">提示音可以关吗？</div><div class="v">可以，把系统参数 notify.sound.enabled 置为 false（GET /settings 生效）；本模块不提供个人偏好页，参数为全局口径。</div></div>
+      <div class="kv"><div class="k">分派工单为什么当事人没收到 ORDER_ASSIGN？</div><div class="v">只有"分派 / 转派导致负责人变更"才发；若账号停用、角色停用，或接收人查询时该用户不在启用集内则不会入库。可用 notify_send_log 按工单 biz_id 反查。</div></div>
+      <div class="kv"><div class="k">消息中心菜单在哪？</div><div class="v">侧栏<strong>顶级单菜单</strong>"消息中心"（id=924，ChatDotRound 图标），不在"系统管理"折叠目录里；role1~role4 默认可见。</div></div>
+      <div class="kv"><div class="k">通知为什么没有把司机电话 / 身份证号推给我？</div><div class="v">消息正文按最小内容原则只带工单号、车牌与事件信息；司机明细请点进工单详情按权限查看，通知渠道不承载敏感个人信息。</div></div>
+      <div class="kv"><div class="k">怎么确认一条通知到底有没有"尝试发送"？</div><div class="v">查 traj.notify_send_log：按 biz_id（工单 ID）+ event_type 可看到每个接收人在 WEBSOCKET / SMS / VOICE / PUSH 各通道的 SENT、SKIPPED 或 FAILED 与 detail；INBOX 以 sys_message 行本身为准。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>脚本与菜单</td><td>09 + 11 脚本均执行；924 菜单对 role1~4 可见；sys_message 扩展列与 notify_send_log 存在</td><td>查表结构与 sys_menu / 角色授权</td></tr>
+        <tr><td>2</td><td>新工单通知</td><td>触发生成工单后，菜单 915 用户在线收到弹窗 + beep，sys_message 有 INBOX 行，send_log WEBSOCKET SENT/SKIPPED 正确</td><td>两个账号（在线 / 离线）对照验证</td></tr>
+        <tr><td>3</td><td>分派 / 闭环</td><td>ORDER_ASSIGN 到新人；非本人闭环给原负责人发 ORDER_CLOSE</td><td>工单页操作后查收件箱与日志</td></tr>
+        <tr><td>4</td><td>升级通知</td><td>超时升级 level=3 到负责人 + 菜单 916 全员</td><td>构造 SLA 超时数据触发调度</td></tr>
+        <tr><td>5</td><td>本人隔离</td><td>A 读 / 标记 / 删除 B 的消息一律 404</td><td>抓包替换消息 ID 复测</td></tr>
+        <tr><td>6</td><td>分页钳制</td><td>size=99999 实际按 100 返回，不拖垮库</td><td>调 /messages 检查 pageSize</td></tr>
+        <tr><td>7</td><td>已读链路</td><td>点行自动已读、未读减 1；全部已读返回 updated 并清零；read_date 写入</td><td>界面对照 + 查表</td></tr>
+        <tr><td>8</td><td>深链跳转</td><td>点消息 / 弹窗打开 /risk/orders?openOrder=&lt;bizId&gt; 并定位工单</td><td>端到端点击</td></tr>
+        <tr><td>9</td><td>外部渠道零外发</td><td>默认三个 SKIPPED"渠道未启用"；开关置 true 后 FAILED 且异常信息为渠道未对接，无任何外部请求产生</td><td>改参数重触发 + 查 send_log</td></tr>
+        <tr><td>10</td><td>设置降级</td><td>popupMinLevel 配 9 回落 3；soundEnabled 配非法值按 false</td><td>改 sys_config 后调 /settings</td></tr>
+        <tr><td>11</td><td>断线重连</td><td>断网后重连按退避进行（≤30s），恢复后未读 / 最新自动对账</td><td>浏览器网络面板断连模拟</td></tr>
+        <tr><td>12</td><td>监控 WS 互不影响</td><td>关闭实时监控页后通知 WS 仍在线，反之亦然</td><td>两页同时操作观察连接数</td></tr>
+        <tr><td>13</td><td>线程池背压</td><td>高并发触发时不 OOM；队列满走调用线程兜底，任务不丢</td><td>压测 + 日志确认</td></tr>
+        <tr><td>14</td><td>多标签页</td><td>同账号两标签均能收 NOTIFY；铃铛未读数一致</td><td>双窗口对照</td></tr>
+        <tr><td>15</td><td>类型 / 文案映射</td><td>四类工单事件在列表显示规定中文名；未知 eventType 原样显示不报错</td><td>构造事件核对类型列</td></tr>
+        <tr><td>16</td><td>敏感信息最小化</td><td>报文与站内信不含司机电话 / 身份证号；send_log 不记录 token</td><td>抓 WS 帧与查表核对</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>下列条目在本期代码 / 脚本中未能闭环确认：</p>
+    </blockquote>
+    <ul>
+      <li><strong>多节点部署路线</strong>：SessionRegistry 单机内存，横向扩容时实时消息如何路由（Redis Pub/Sub、MQ 还是网关粘性会话）未定方案。</li>
+      <li><strong>站内信保留策略</strong>：sys_message / notify_send_log 无清理 / 归档任务与保留周期配置，数据增长后的容量与清理责任方待明确。</li>
+      <li><strong>个人通知偏好</strong>：popupMinLevel / soundEnabled 当前是全局参数；是否需要用户级覆盖（免打扰时间段、按事件类型订阅）待产品确认。</li>
+      <li><strong>SYSTEM 事件使用方</strong>：NotifyEvent.SYSTEM 常量与字典项已备，但当前没有任何业务代码构造系统通知，触发场景待定义。</li>
+      <li><strong>外部渠道排期</strong>：短信 / 语音 / 推送三家厂商选型、签名 / 模板报备、频控与退订合规均未启动；对接时还需明确 send_log 与厂商回执的对账方式。</li>
+      <li><strong>WS 心跳与令牌续签</strong>：指数退避重连已实现，但长连接心跳间隔、JWT 有效期内续签是否会强制断连，需结合统一认证配置复核。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>修订内容</th><th>编写 / 审核</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>首版：基于 module-notify / module-monitor 源码与 11-notify.sql、09-system-config.sql 编写；明确站内信 + WebSocket 为真实通道、短信 / 语音 / App 推送仅预留且任何配置下不真实外发</td><td>平台文档组</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <p>北斗导航数据业务平台 · 功能模块文档 MOD-DBD-011｜本文技术结论均绑定类名 / 表名 / 菜单 ID / 配置键，可直接回溯源代码与 SQL 种子脚本。</p>
+      <p><a href="../index.html">← 返回文档中心</a></p>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

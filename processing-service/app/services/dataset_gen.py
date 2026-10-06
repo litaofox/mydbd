@@ -291,6 +291,38 @@ def clear_business_data() -> dict:
     return {"cleared": True}
 
 
+def clear_runtime_data() -> dict:
+    """清除模拟运行数据，保留基础数据（2026-10-06 需求）。
+
+    清除：GPS 轨迹/照片、终端报警+附件、风险事件、工单+日志+干预、
+          日评分、视频分析、围栏穿越状态、死信/消费统计/未登记隔离区、
+          站内信与通知发送日志。
+    保留：公司/车队/车辆/终端/司机及绑定、风控规则、地理围栏配置、
+          报警类型映射、账号/角色/菜单/字典/系统参数、工单 SLA 配置。
+    注意：不用 RESTART IDENTITY——Java WS 推送按事件 ID 游标增量拉取，
+    序列继续增长才不会丢推；同步清空 mock 在途报警避免结束包补建事件。
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                TRUNCATE TABLE mon.risk_intervention, mon.risk_order_log,
+                    mon.risk_work_order, mon.driver_score, mon.risk_event,
+                    mon.video_analysis, mon.risk_fence_state
+            """)
+            cur.execute("""
+                TRUNCATE TABLE traj.traj_warn_info, traj.traj_warn_media,
+                    traj.traj_gps_photo, traj.traj_gps_point
+            """)
+            cur.execute("""
+                TRUNCATE TABLE traj.gateway_dlq, traj.gateway_ingest_stat,
+                    traj.gateway_unknown_terminal
+            """)
+            cur.execute("TRUNCATE TABLE traj.notify_send_log, traj.sys_message")
+    from app.gateway import mock_producer
+    mock_producer.reset_mock_state()
+    return {"cleared": True}
+
+
 # =====================================================================
 # 2. 主数据建档
 # =====================================================================

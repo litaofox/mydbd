@@ -22,6 +22,7 @@ export interface AlarmVO {
   handler: string | null
   updateDate: string | null
   relatedRisks?: RelatedRisk[]
+  attachments?: AlarmAttachment[]
 }
 
 export interface RelatedRisk {
@@ -30,6 +31,16 @@ export interface RelatedRisk {
   title: string | null
   riskLevel: number | null
   eventTime: string | null
+}
+
+/** 报警证据附件（GATEWAY-PLAN-001；fileType: 0图 1音 2视） */
+export interface AlarmAttachment {
+  id: number
+  fileName: string | null
+  fileType: number
+  fileSize: number | null
+  fileStatus: number | null
+  hasLocal: boolean | null
 }
 
 export interface AlarmType {

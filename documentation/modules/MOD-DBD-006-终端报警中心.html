@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-006 终端报警中心 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">MOD-DBD-006 终端报警中心 · 报警列表 / 统计 / 详情 / 确认·解除闭环（F17）</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 列表查询与筛选</a></li>
+            <li><a href="#s3-2">3.2 报警详情与位置地图</a></li>
+            <li><a href="#s3-3">3.3 确认与解除闭环</a></li>
+            <li><a href="#s3-4">3.4 钻取联动与实时增量</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 处置状态机与并发控制（45001）</a></li>
+            <li><a href="#s7-2">7.2 数据范围裁剪与存在性保护</a></li>
+            <li><a href="#s7-3">7.3 分页 / 滚动 / 统计 / 类型下拉</a></li>
+            <li><a href="#s7-4">7.4 详情与关联风险（±30 分钟）</a></li>
+            <li><a href="#s7-5">7.5 前端页面与实时增量</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 种子数据与初始化</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-006 终端报警中心</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-006<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F17
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码（backend-java module-monitor）与初始化 SQL（<code>02-traj-tables.sql</code>、<code>13-alarm-center.sql</code>）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>AlarmController</code> / <code>AlarmService</code> / <code>WarnInfoMapper</code> / <code>RiskEventMapper.relatedRisks</code>；<code>AlarmQuery</code> / <code>ResolveRequest</code> / <code>AlarmVO</code> / <code>WarnInfo</code>（module-monitor）；前端 <code>views/alarm/AlarmCenter.vue</code>（543 行）、<code>api/alarm.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>终端报警中心（F17）是 <code>traj.traj_warn_info</code> 的<strong>全量查询与处置闭环</strong>工作台：坐席在这里按车牌/类型/状态/时间窗检索终端上报的报警（超速、疲劳驾驶、围栏越界、紧急求助、设备故障等），查看报警起止位置与关联风险事件，并执行"确认 → 解除"两级处置，解除时强制填写结论（属实/误报/未知）。</p>
+    <ul>
+      <li><strong>列表与统计</strong>：分页列表（车牌模糊、类型、处置状态、时间段四条件）+ 顶部四张 KPI 卡（今日总数/待处理/已确认/已解除）+ 待处理滚动接口（供大屏与监控页消费）。</li>
+      <li><strong>详情</strong>：报警全字段 + 起止坐标小地图（高德瓦片）+ 同车牌 ±30 分钟关联风险事件前 5 条（跨 schema 直查 <code>mon.risk_event</code>）。</li>
+      <li><strong>处置闭环</strong>：状态机 0 待处理 → 1 已确认 → 2 已解除（允许 0 直接到 2）；条件更新并发冲突返回业务码 45001；处置人自动落当前用户姓名；全程审计留痕。</li>
+      <li><strong>数据权限</strong>：全部端点按当前用户 deptScope 换算的车牌集过滤；详情与处置对"不存在"与"越权"同一口径返回 40401，不泄露存在性。</li>
+      <li><strong>实时联动</strong>：复用 F14 的 WebSocket 通道（P07），新报警 1 秒内弹提示并按条件置顶列表。</li>
+    </ul>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>本模块只管"终端报警"（traj_warn_info）的看与处。规则引擎产出的"风险事件"（mon.risk_event）在风控模块研判与工单流转；报警的实时推送在 MOD-DBD-005；报警数据的产生（模拟器/数据集/未来 808 网关）在 MOD-DBD-004 与终端接入域。本模块与监控域（/api/monitor/warnings）同读一张表，但职责不同：那里是"最近 100 条速览"，这里是全量分页与闭环。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>报警分页列表</td><td>车牌模糊/类型/处置状态/时间窗 [begin,end)；size 钳制 1~100；排序 start_warn_time DESC, id DESC</td><td><code>AlarmController.page</code> + <code>WarnInfoMapper.pageAlarms</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>待处理滚动</td><td>仅 handle_status=0，limit 钳制 1~50（默认 10，越界不报错）；大屏 AlarmTicker 与面板消费</td><td><code>AlarmController.latest</code> + <code>selectLatestPending</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>报警统计</td><td>total + byType（带名称/等级）+ byStatus；时间窗缺省"今日 00:00 至当前"</td><td><code>AlarmController.stats</code> + 三条聚合 SQL</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>报警类型下拉</td><td>base_warn_type 有效行（id/名称/等级），供筛选与前端着色</td><td><code>AlarmController.types</code> + <code>selectAlarmTypes</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>报警详情</td><td>全字段 + 关联风险（同车牌 ±30min 前 5 条）；不存在/越权同口径 40401</td><td><code>AlarmController.detail</code> + <code>RiskEventMapper.relatedRisks</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>报警确认</td><td>0→1 条件更新；冲突 45001；handler=当前用户；审计 MONITOR/HANDLE</td><td><code>AlarmController.confirm</code> + <code>markConfirmed</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>报警解除</td><td>0/1→2 条件更新；resultCode 必填（00 属实/01 误报/02 未知），resultMsg ≤200 字；冲突 45001</td><td><code>AlarmController.resolve</code> + <code>markResolved</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>数据范围过滤</td><td>deptScope → 车牌集（null 不限/空集 fail-closed）；详情与处置不泄露存在性</td><td><code>AlarmService.currentPlates/canSee</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>实时增量提示</td><td>WS ALARM 消息去重后 ElMessage 提示；无筛选或正在看待处理时行置顶、计数 +1</td><td><code>AlarmCenter.vue</code> + <code>useRealtime</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>808 报警位解析入库</td><td>真实 JT/T 808 报警附件/标志位解析属终端接入域（F01~F07），当前报警由模拟器/数据集写入</td><td>—（见 MOD-DBD-004 与功能清单）</td><td><span class="badge gray">待建设</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>handle_status 状态机</td><td>0 待处理 / 1 已确认 / 2 已解除；合法流转 0→1、0→2、1→2；历史 NULL 读取侧 COALESCE 归一为 0（13 号脚本已把存量置 0 并加列默认值 0）。</td></tr>
+        <tr><td>resultCode 解除结论</td><td>解除时必填：00 属实 / 01 误报 / 02 未知；resultMsg 可选 ≤200 字。</td></tr>
+        <tr><td>45001</td><td>本模块专用的状态冲突业务码（不复用通用 40901）：条件更新影响 0 行即"状态已被他人变更"，文案"报警状态已变更，请刷新后重试"。</td></tr>
+        <tr><td>grade_level 报警等级</td><td>base_warn_type 上的着色字段：报警中心与 AlarmVO 注释按 1=红 / 2=橙 / 3=灰 使用；大屏右列图例的口径与之存在差异（见 17 节待核实）。</td></tr>
+        <tr><td>warn_continue_mark</td><td>持续标志：0=停止（一次性报警）1=持续（报警仍在发生中）。</td></tr>
+        <tr><td>关联风险</td><td>详情附带：同车牌、报警开始时间 ±30 分钟窗口内 mon.risk_event 的前 5 条（事件码/标题/等级/时间），用于判断"这条终端报警是否已被规则引擎升级为风险事件"。</td></tr>
+        <tr><td>存在性保护</td><td>详情/确认/解除对"记录不存在"与"不在数据范围内"返回同一个 40401，避免借接口探测范围外报警是否存在。</td></tr>
+        <tr><td>handler 处置人</td><td>当前用户 realName（空回退 username，再空回退 "system"），varchar(30) 截断防御；同时写入 updater。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">班前清理待处理报警</div>
+        <div class="sc-desc">打开报警中心，处置状态选"待处理"：列表按开始时间倒序列出全部未处置报警；逐条点"详情"看起止位置与关联风险，属实的先"确认"再"解除"，误报的直接"解除"选误报。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">新报警即时响应</div>
+        <div class="sc-desc">值守中 WS 弹"新报警：沪Axxxxx · 超速报警"；因当前未设筛选，该条自动置顶列表第一行，今日总数与待处理数同步 +1，无需手动刷新。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">按类型复盘</div>
+        <div class="sc-desc">筛选"疲劳驾驶"+ 自定义时间段，结合 KPI 卡的类型分布看哪类报警最集中；点行内"轨迹"跳回放页锁定报警当天，核实驾驶行为。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">企业车队长</div>
+        <div class="sc-name">核查本队某车报警</div>
+        <div class="sc-desc">车牌框输入本队车牌模糊查询；详情抽屉里看报警起点/终点小地图与 ±30 分钟关联风险；点"监控"直接跳实时监控页定位该车当前位置。车队长只有查看权，看不到确认/解除按钮。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">值班长</div>
+        <div class="sc-name">大屏钻取待处理</div>
+        <div class="sc-desc">大屏"今日报警态势"卡点"待处理 N"：自动带今日时间窗 + handleStatus=0 跳到报警中心，列表即是要清理的队列；处理完回大屏看数字下降。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">省份受限用户</div>
+        <div class="sc-name">只处置本范围报警</div>
+        <div class="sc-desc">山东账号的列表、统计、滚动、类型分布全部只含本省车辆；直填他省报警 id 调详情或处置，一律返回 40401，与"记录不存在"无法区分。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>菜单路径：<strong>实时监控</strong>一级目录（<code>sys_menu</code> id=10）→ 终端报警中心（菜单 id=16，<code>/alarms</code>，权限点 <code>alarm:view</code>，图标 Bell，sort 9）。处置按钮为按钮级权限点 id=926（<code>alarm:handle</code>）。角色授权（<code>13-alarm-center.sql</code>）：管理员全量；安全管理员与调度监控员 查看+处置；企业车队长 仅查看。前端路由 meta.perm=alarm:view，操作列按钮 <code>v-perm="'alarm:handle'"</code>。</p>
+
+    <h3 id="s3-1">3.1 列表查询与筛选</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入页面</div>
+        <div class="s-desc">顶部四张 KPI 卡（今日总数/待处理/已确认/已解除）来自统计接口（缺省今日窗口）；列表默认带"今日 00:00~23:59"时间窗（前端默认值，非后端强制）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">组合筛选</div>
+        <div class="s-desc">车牌模糊 / 报警类型（下拉来自 types 接口）/ 处置状态（待处理/已确认/已解除）/ 起止时间（datetimerange，格式 yyyy-MM-dd'T'HH:mm:ss）；查询回第一页，重置恢复今日窗。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">浏览列表</div>
+        <div class="s-desc">列：车牌、类型（按等级着色标签）、报警开始/结束、速度、持续标志、状态、处置人、更新时间、操作；分页 20/50/100（默认 20，后端钳制上限 100）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">URL 恢复筛选</div>
+        <div class="s-desc">支持从路由 query 恢复 plateNo/typeId/handleStatus/beginTime/endTime——大屏与面板的钻取链接即借此预置条件。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 报警详情与位置地图</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">打开抽屉</div>
+        <div class="s-desc">行内"详情"调 /api/alarm/{id}（640px 抽屉）；接口失败时回退用行数据展示，不打断操作。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">字段速览</div>
+        <div class="s-desc">两列描述列表：车牌/终端标识/类型/状态/起止时间/起止速度/持续标志/处置人/解除结论/更新时间/处置说明。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">位置地图</div>
+        <div class="s-desc">起/终点任一有效即渲染 Leaflet 小地图（高德瓦片）：起点绿圆点、终点红圆点、两点间连线并自适应视野；坐标为 varchar 防御解析（非法或 0 视为缺失），全缺时显示"坐标缺失"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">关联风险</div>
+        <div class="s-desc">同车牌 ±30 分钟的 mon.risk_event 前 5 条（标题/等级标签/时间）；无数据显示提示；底部链接前往风险预警分析页人工研判。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 确认与解除闭环</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">确认（0→1）</div>
+        <div class="s-desc">待处理行点"确认"（需 alarm:handle）：服务端条件更新成功返回最新记录替换行数据，KPI 重新拉取；若他人已抢先处置，返回 45001 并自动刷新列表。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">解除（0/1→2）</div>
+        <div class="s-desc">点"解除"弹 440px 对话框：结论单选（属实 00/误报 01/未知 02，默认属实）+ 说明（可选，≤200 字带字数统计）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">提交与结果</div>
+        <div class="s-desc">成功后行内状态变"已解除"、显示处置人与结论；冲突同样 45001 关窗刷新；resultCode 非法或说明超长由后端 40001 拦截（前端单选与 maxlength 已先行约束）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">留痕</div>
+        <div class="s-desc">确认/解除均写操作审计（模块 MONITOR、动作 HANDLE、对象 ALARM+id）；handler 落当前用户姓名并同步 updater/update_date。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 钻取联动与实时增量</h3>
+    <ul>
+      <li><strong>行内"监控"</strong>：跳 /monitor?plate={车牌}，在实时监控页定位该车当前位置。</li>
+      <li><strong>行内"轨迹"</strong>：跳 /playback 带 plateNo + identityCode + date（报警开始当天），回放页自动锁定当天 0~24 点。</li>
+      <li><strong>大屏钻取</strong>：态势卡"待处理"带今日窗 + handleStatus=0；滚动条条目带 plateNo——均由本页 route.query 恢复。</li>
+      <li><strong>WS 增量</strong>：收到 ALARM 消息按 id 去重（缓存 200）后弹提示；当前"未设筛选"或"正在筛待处理"时，新行置顶、total 与今日总数 +1；其余筛选态只提示不插行（避免破坏当前结果集）。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块前端为 1 个页面（挂实时监控目录）。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">🚨</div>
+      <div class="sh-t">截图 4-1：报警中心列表（/alarms）</div>
+      <div class="sh-p">应截：顶部四张 KPI 卡（待处理红色数字）；筛选栏（车牌/类型/状态/时间范围）；列表含类型着色标签、状态标签（待处理红/已确认橙/已解除绿）、操作列 详情/监控/轨迹/确认/解除。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🗺️</div>
+      <div class="sh-t">截图 4-2：报警详情抽屉</div>
+      <div class="sh-p">应截：两列描述列表、起止点小地图（绿起点/红终点/连线）、"关联风险事件（同车牌 ±30 分钟）"表格与"前往风险预警分析页人工研判"链接。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">✅</div>
+      <div class="sh-t">截图 4-3：解除报警对话框</div>
+      <div class="sh-p">应截：结论单选（属实/误报/未知）与说明文本域（200 字字数统计），底部"确定解除"带 loading。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">2 级闭环</div><div class="l">确认→解除两级处置，解除强制结论（属实/误报/未知）</div></div>
+      <div class="stat"><div class="v">45001</div><div class="l">条件更新并发冲突专用码，两人同时处置必有一方收到明确提示</div></div>
+      <div class="stat"><div class="v">±30min</div><div class="l">详情自动关联同车牌风险事件，研判不用二次检索</div></div>
+      <div class="stat"><div class="v">1 秒</div><div class="l">新报警 WS 推送节拍，列表按条件自动置顶</div></div>
+    </div>
+    <ul>
+      <li><strong>处置有据</strong>：handler 自动落姓名、结论三选一强制填写、审计留痕——每条已解除报警都能回答"谁、何时、以什么结论关掉的"。</li>
+      <li><strong>并发不打架</strong>：条件更新（WHERE 状态=原值）+ 影响行数判零，两个坐席同时处置同一条时后者收到 45001 并自动刷新，不产生重复结论。</li>
+      <li><strong>权限到行</strong>：受限角色从列表、统计到详情、处置全链路只见本范围车牌；探测范围外 id 与探测不存在 id 得到同一响应。</li>
+      <li><strong>钻取顺手</strong>：监控定位、轨迹回放、风险研判三个相邻工作台全部一键带参跳转，处置动线不中断。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>报警中心为单 Controller 内聚实现（module-monitor）：<code>AlarmController</code> 暴露 7 个端点，<code>AlarmService</code> 承载全部业务规则，<code>WarnInfoMapper</code>（含 2 条条件 UPDATE）与 <code>RiskEventMapper.relatedRisks</code> 访问 traj/mon 两 schema；前端 1 页 + 1 个 api 封装，实时增量复用 F14 的 useRealtime。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>AlarmCenter.vue</b> KPI 卡 + 筛选 + 列表 + 详情抽屉（含小地图）+ 解除对话框（543 行）</span>
+          <span class="node"><b>api/alarm.ts</b> 7 个端点封装与类型（id 全 string）</span>
+          <span class="node"><b>useRealtime.ts</b> WS ALARM 增量（去重/提示/置顶）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Controller<br>@RestController</div>
+        <div class="al-body">
+          <span class="node"><b>AlarmController</b> /api/alarm（类级 alarm:view；confirm/resolve 方法级 alarm:handle + @AuditLog）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Service<br>业务规则</div>
+        <div class="al-body">
+          <span class="node"><b>AlarmService</b> 状态机/45001 冲突/范围裁剪/参数校验/handler 落名</span>
+          <span class="node"><b>DashboardMapper</b> selectVehicleNosByDeptScope（范围换算复用）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">PostgreSQL<br>traj / mon</div>
+        <div class="al-body">
+          <span class="node"><b>traj_warn_info</b> 报警主表（idx_traj_warn_status_time）</span>
+          <span class="node"><b>traj.base_warn_type</b> 类型字典（名称/等级）</span>
+          <span class="node"><b>mon.risk_event</b> 详情关联风险（跨 schema 只读）</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>AlarmController</code></td><td>web</td><td>7 个 REST 端点</td><td>类级 @RequiresPerm("alarm:view") 覆盖全部 GET；confirm/resolve 方法级 alarm:handle + @AuditLog(module=MONITOR, action=HANDLE, objectType=ALARM, objectId="#id")</td></tr>
+        <tr><td><code>AlarmService</code></td><td>service</td><td>查询/统计/处置</td><td>size/limit 钳制（100/50）；parseTime 手写解析（非法 40001 带字段名）；confirm/resolve @Transactional + 条件更新判 0 行抛 45001；requireExists 不存在与越权同口径 40401</td></tr>
+        <tr><td><code>WarnInfoMapper</code></td><td>mapper</td><td>报警 SQL</td><td>pageAlarms 动态条件 + LEFT JOIN 类型表；selectLatestPending 仅待处理；三条窗口聚合；selectAlarmTypes；markConfirmed/markResolved 条件 UPDATE 返回影响行数</td></tr>
+        <tr><td><code>RiskEventMapper.relatedRisks</code></td><td>mapper</td><td>详情关联风险</td><td>同车牌 + event_time ∈ [center±30min]，按时间倒序 LIMIT 5（同库跨 schema 只读）</td></tr>
+        <tr><td><code>AlarmQuery / ResolveRequest</code></td><td>dto</td><td>入参</td><td>AlarmQuery 默认 page=1/size=20，时间为 ISO 字符串（Service 解析）；ResolveRequest 为 record，校验在 Service 手写（不用 jakarta 注解，注释注明）</td></tr>
+        <tr><td><code>AlarmVO</code></td><td>vo</td><td>出参视图</td><td>id 用 ToStringSerializer 输出字符串；typeName 缺失兜底"类型 {id}"；handleStatus 已 COALESCE 归一；relatedRisks 仅详情接口填充</td></tr>
+        <tr><td><code>AlarmCenter.vue</code></td><td>前端</td><td>报警中心页</td><td>KPI（byStatus 匹配）；route.query 恢复筛选；详情小地图 varchar 坐标防御解析；WS ALARM seenIds(200) 去重 + 条件置顶；stats 30s 轮询</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 处置状态机与并发控制（45001）</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">状态机</div>
+        <div class="s-desc">0 待处理 → 1 已确认 → 2 已解除；允许 0 直接到 2（确认是可选项）。非法流转（如对已解除再操作）被条件更新天然拦截。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">条件更新</div>
+        <div class="s-desc">markConfirmed：UPDATE ... WHERE id=#{id} AND COALESCE(handle_status,0)=0；markResolved：... AND COALESCE(handle_status,0) IN (0,1)。WHERE 子句自带"当前状态=期望原值"谓词。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">冲突判定</div>
+        <div class="s-desc">UPDATE 返回影响行数：0 行即"他人已变更状态"（或记录刚被处理），抛 BizException(45001, "报警状态已变更，请刷新后重试")；本模块专用码，不复用通用 40901（代码注释注明 RES-DBD-001 §3.2）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">落名与留痕</div>
+        <div class="s-desc">handler=realName（空回退 username，再空 "system"，截 30 字符）；同步 updater + update_date=now()；成功后 selectDetail 返回最新记录给前端替换行。</div>
+      </div>
+    </div>
+    <p>解除参数校验在 Service 手写：resultCode ∉ {00,01,02} → 40001"resultCode 仅支持 00/01/02"；resultMsg 超 200 字 → 40001。先校验参数再 requireExists，避免无效请求触达数据库。</p>
+
+    <h3 id="s7-2">7.2 数据范围裁剪与存在性保护</h3>
+    <table>
+      <thead><tr><th>环节</th><th>实现</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr><td>范围换算</td><td>currentPlates()</td><td>UserContext.get()：allData → null（不限）；deptScope 空 → 空列表（fail-closed）；非空经 DashboardMapper.selectVehicleNosByDeptScope 换算车牌集（与大屏/监控同一换算 SQL）</td></tr>
+        <tr><td>查询过滤</td><td>page/latest/stats</td><td>plates 为空列表时直接返回空页/空列表/全零，不进 SQL；非空则 plate_no IN (...) 拼入各 @Select</td></tr>
+        <tr><td>单条校验</td><td>canSee(plateNo)</td><td>受限用户对 null 车牌记录同样不可见（!plates.isEmpty() && plateNo != null && contains）</td></tr>
+        <tr><td>存在性保护</td><td>detail / requireExists</td><td>"查不到"与"看不见"合并为一个 40401"报警不存在"，处置接口同样口径——不借响应差异泄露范围外记录的存在性（与 MonitorService.handleRisk 对齐）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-3">7.3 分页 / 滚动 / 统计 / 类型下拉</h3>
+    <table>
+      <thead><tr><th>端点</th><th>SQL / 逻辑</th><th>口径要点</th></tr></thead>
+      <tbody>
+        <tr><td>page</td><td>pageAlarms：动态 where（车牌 LIKE '%..%'、typeId=、COALESCE(handle_status,0)=、start_warn_time &gt;= / &lt;）</td><td>时间窗左闭右开 [begin,end)；排序 start_warn_time DESC NULLS LAST, id DESC；size 钳制 1~100；MyBatis-Plus Page 物理分页</td></tr>
+        <tr><td>latest</td><td>selectLatestPending</td><td>仅 COALESCE(handle_status,0)=0；同排序；limit 钳制 1~50（越界钳制不报错，默认 10）</td></tr>
+        <tr><td>stats</td><td>countInRange + countByType + countByStatus</td><td>缺省窗口=今日 00:00 至当前；byType JOIN 类型表带 typeName/gradeLevel 按数量降序；byStatus 按状态码升序；空范围返回 total=0 与两个空数组（结构完整，前端不空指针）</td></tr>
+        <tr><td>types</td><td>selectAlarmTypes</td><td>base_warn_type valid_mark=1 全量（id/typeName/gradeLevel 按 id 排序）；不做范围过滤（字典级共享）</td></tr>
+      </tbody>
+    </table>
+    <p>handle_status 的历史 NULL 统一在读取侧 <code>COALESCE(...,0)</code> 归一（筛选、统计、条件更新三处一致）；<code>13-alarm-center.sql</code> 已把存量 NULL 置 0 并为列加 DEFAULT 0，双保险。</p>
+
+    <h3 id="s7-4">7.4 详情与关联风险（±30 分钟）</h3>
+    <p>detail(id) 的执行顺序：selectDetail（LEFT JOIN 类型表单条）→ 不存在或 !canSee → 40401 → 有车牌且有 startWarnTime 时调 relatedRisks(plateNo, startWarnTime) 填充关联风险，否则置空列表。relatedRisks 直查 <code>mon.risk_event</code>：同车牌、event_time ∈ [报警开始 −30min, +30min]，event_time 倒序取前 5，返回 id/eventCode/title/riskLevel/eventTime 五列。该设计让坐席在一个抽屉里回答"这条终端报警是否已被 CEP 升级、升级成了什么等级"，而不必切换到风险页手工对时间。</p>
+
+    <h3 id="s7-5">7.5 前端页面与实时增量</h3>
+    <ul>
+      <li><strong>时间与默认值</strong>：timeRange 默认今日 00:00~23:59（前端 todayDefaultRange，墙钟）；value-format=YYYY-MM-DDTHH:mm:ss 与后端 LocalDateTime.parse 对齐；数据时基滞后墙钟时默认窗内可能无数据，改时间窗即可（项目避坑经验）。</li>
+      <li><strong>KPI 口径</strong>：四卡数字 = stats.byStatus 按 handleStatus 匹配（总数取 stats.total），与列表筛选互不影响；处置成功后 loadStats 重拉，另有 30s 轮询兜底。</li>
+      <li><strong>详情地图</strong>：parseCoord 对 varchar 坐标做防御解析（空/非数字/0 均视为缺失）；单点 setView 13 级，两点连线并 fitBounds(pad 0.3)；抽屉关闭时销毁地图实例防泄漏。</li>
+      <li><strong>WS 增量</strong>：seenIds 缓存 200 个 id 防重复插入；filtersInactive()（无车牌、无类型、无时间窗）或正在筛"待处理"时才 unshift 新行并 total+1、stats.total+1；其余筛选态只 ElMessage 提示。新行的 typeName/gradeLevel 从已加载的类型下拉映射补齐。</li>
+      <li><strong>冲突自恢复</strong>：confirm/resolve 捕获消息含"状态已变更"时自动关窗并 loadRows()，坐席看到的就是最新状态。</li>
+      <li><strong>权限双闸</strong>：菜单路由 meta.perm=alarm:view；确认/解除按钮 v-perm="'alarm:handle'"——车队长（role4）页面可用但看不到处置按钮，直调接口也会被后端 40301 拒绝。</li>
+    </ul>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>以"终端报警从产生到闭环"为例的端到端链路：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">报警写入</div>
+        <div class="s-desc">当前由 processing-service 模拟器/数据集写 traj_warn_info（MOD-DBD-004）；未来由 808 网关解析报警附件写入（F01~F07 待建设）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">实时触达</div>
+        <div class="s-desc">RealtimePushScheduler 按 id 游标把新增报警以 ALARM 消息推送到各会话（按范围过滤）；报警中心页面按条件置顶并提示。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">检索研判</div>
+        <div class="s-desc">GET /api/alarm/page（四条件 + 范围过滤）→ 详情 /{id}（关联风险 ±30min）→ 行内跳监控/轨迹核实。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">处置闭环</div>
+        <div class="s-desc">POST /{id}/confirm（0→1）与 /{id}/resolve（0/1→2，带结论）；条件更新 + 45001 并发控制；审计留痕。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">口径收敛</div>
+        <div class="s-desc">处置返回最新 AlarmVO 替换行数据；KPI 重拉；大屏滚动条（latest 仅取待处理）下一拍自然剔除该条。</div>
+      </div>
+    </div>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/约束</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.traj_warn_info</code></td>
+          <td>终端报警主表</td>
+          <td>handle_status（0/1/2，存量已归一 + DEFAULT 0）；handle_result_code（00/01/02）；warn_continue_mark（0 停/1 持续）；起止时间/坐标（varchar）/速度；idx_traj_warn_status_time(handle_status, start_warn_time DESC)</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_warn_info">DDL · tbl-traj_traj_warn_info</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.base_warn_type</code></td>
+          <td>报警类型字典</td>
+          <td>id 主键（int）；pid 默认 -1（预留层级）；name、grade_level（默认 2）；valid_mark；种子 5 类：超速1/疲劳1/围栏2/紧急1/设备故障3</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_base_warn_type">DDL · tbl-traj_base_warn_type</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_event</code></td>
+          <td>风险事件（跨 schema 只读）</td>
+          <td>详情关联：plate_no + event_time ±30min；取 id/event_code/title/risk_level/event_time</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_event">DDL · tbl-mon_risk_event</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_dict_type / sys_dict_item</code></td>
+          <td>处置状态字典</td>
+          <td>alarm_handle_status：待处理 0 / 已确认 1 / 已解除 2（13 号脚本种子，ON CONFLICT (dict_type_id,item_value) 幂等）</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_dict_item">DDL · tbl-traj_sys_dict_item</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块端点与权限点。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限点</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/alarm/page</code></td><td>分页列表（plateNo 模糊/typeId/handleStatus/beginTime/endTime；size≤100）</td><td>alarm:view（类级）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>GET <code>/api/alarm/latest</code></td><td>待处理滚动（limit 1~50，默认 10）</td><td>alarm:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>GET <code>/api/alarm/stats</code></td><td>统计 total/byType/byStatus（start/end 缺省今日）</td><td>alarm:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>GET <code>/api/alarm/types</code></td><td>报警类型下拉（id/名称/等级）</td><td>alarm:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>GET <code>/api/alarm/{id}</code></td><td>详情（含 relatedRisks ±30min 前 5 条）</td><td>alarm:view + 范围校验（40401）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>POST <code>/api/alarm/{id}/confirm</code></td><td>确认 0→1；审计"报警确认"</td><td>alarm:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+        <tr><td>POST <code>/api/alarm/{id}/resolve</code></td><td>解除 0/1→2（resultCode 00/01/02，resultMsg≤200）；审计"报警解除"</td><td>alarm:handle</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-alarm">grp-alarm</a></td></tr>
+      </tbody>
+    </table>
+    <p>错误码补充：时间格式非法 40001（文案带字段名与合法格式）；resultCode/resultMsg 非法 40001；并发冲突 <strong>45001</strong>（本模块专用）；详情/处置的不存在与越权 40401；无 alarm:handle 直调写接口 40301。</p>
+
+    <h2 id="s11">11 种子数据与初始化</h2>
+    <table>
+      <thead><tr><th>来源</th><th>内容</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>02-traj-tables.sql</code></td><td>base_warn_type 建表 + 5 条类型种子（1 超速报警/2 疲劳驾驶/3 围栏越界/4 紧急求助/5 设备故障，grade_level 1/1/2/1/3）</td><td>ON CONFLICT (id) DO NOTHING，可重复执行</td></tr>
+        <tr><td><code>13-alarm-center.sql</code></td><td>① idx_traj_warn_status_time 复合索引；② handle_status 存量 NULL→0 + 列 DEFAULT 0；③ 字典 alarm_handle_status 三项；④ 菜单 16（/alarms，alarm:view）+ 按钮 926（alarm:handle）；⑤ 授权：role2/3 查看+处置，role4 仅查看，role1 全量补齐；setval 校准菜单序列</td><td>全幂等（IF NOT EXISTS / ON CONFLICT DO NOTHING）</td></tr>
+        <tr><td>processing-service（模拟器/数据集）</td><td>演示报警数据：模拟器按 12~20 秒节律成对写 risk_event + traj_warn_info；standard 数据集 96 条 / dense 192 条（MOD-DBD-004）</td><td>真实 808 报警解析上线前唯一的报警数据来源</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>条件更新判影响行数做并发控制，而非乐观锁版本列或悲观锁</strong>：处置是"状态前进一格"的单字段变更，WHERE 自带原状态谓词即可把"读-改-写"合并成一条原子 UPDATE；0 行即冲突，无需给表加 version 列，也无需 SELECT ... FOR UPDATE 拉长事务。</li>
+      <li><strong>专用冲突码 45001，而非复用 40901</strong>：40901 的语义是"唯一性/占用冲突"，前端按它做通用提示；45001 让报警页能精确匹配"状态已变更"并自动刷新列表（前端按消息内容匹配），语义与处理动作都更清晰。</li>
+      <li><strong>不存在与越权同口径 40401</strong>：详情/处置若区分 40401 与 40301，攻击者可枚举 id 探测范围外记录是否存在；合并口径牺牲少量排错便利，换存在性保密（与监控域 handleRisk 对齐，SYS-DBD-001 §8 fail-closed）。</li>
+      <li><strong>读取侧 COALESCE 归一 + 存量迁移双管齐下</strong>：历史 handle_status 允许 NULL，单纯改默认值管不住存量；13 号脚本 UPDATE 归一 + DEFAULT 0，SQL 里 COALESCE 兜底任何漏网与旧备份恢复场景。</li>
+      <li><strong>解除校验在 Service 手写，而非 jakarta 注解</strong>：ResolveRequest 为极简 record，非法值文案需中文字段级定制（"resultCode 仅支持 00/01/02"）；手写校验顺序（先参数后存在性）也避免无效请求触库（代码注释注明该取舍）。</li>
+      <li><strong>关联风险用 ±30min 窗口前 5 条，而非外键关联</strong>：终端报警与 CEP 风险事件是两条独立生产链路，无稳定外键；时间窗口 + 同车牌是业务上最可靠的关联口径，LIMIT 5 控制详情载荷。</li>
+      <li><strong>统计三查询分离（total/byType/byStatus），而非一个大 GROUP BY</strong>：三组聚合维度不同，分开写各自走 idx_traj_warn_status_time，SQL 简单可读；窗口数据量下成本可忽略。</li>
+      <li><strong>范围换算复用 DashboardMapper.selectVehicleNosByDeptScope</strong>：监控域已确立"deptScope→车牌集"的换算 SQL 与跨 schema 直查先例，报警中心复用同一方法，权限口径全模块一致（与 MonitorService 同款 currentPlates 实现）。</li>
+      <li><strong>WS 增量按筛选态条件置顶</strong>：用户已设筛选时强行插行会破坏其结果集语义；只在"无筛选"或"看待处理"时置顶，其余只提示——新数据可见性与列表稳定性兼顾。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>grade_level 着色口径跨页不一致</td>
+          <td>AlarmVO 注释"1=红 2=橙 3=灰"、AlarmCenter.gradeTag 同口径；而大屏 Dashboard.vue 右列图例按 3=高/2=中/1=低 统计（gradeCount(3) 标"高"）；种子超速=1、设备故障=3</td>
+          <td>同一条"超速报警"在报警中心是红色（重）标签，在大屏图例计入"低"；坐席可能误判严重程度</td>
+          <td>已列入 17 节待核实：需产品确认 grade_level 标准语义后统一两端（改图例或改标签映射，一处改动即可）</td>
+        </tr>
+        <tr>
+          <td>报警来源单一（模拟器/数据集）</td>
+          <td>生产链路（808 报警附件解析）属 F01~F07 待建设；当前写方仅 processing-service</td>
+          <td>演示环境之外的报警字段完整性（source_id/rule_id/end_* 等）未经真实终端验证</td>
+          <td>终端接入域上线时按 808 协议补全写方；本模块读取/处置链路无需改动</td>
+        </tr>
+        <tr>
+          <td>车牌模糊 LIKE 前置通配</td>
+          <td>pageAlarms 使用 '%' || #{plateNo} || '%'</td>
+          <td>无法走索引，报警量大时筛选退化为扫描</td>
+          <td>当前数据量无感；规模化后可改前缀匹配或引入全文/三方检索</td>
+        </tr>
+        <tr>
+          <td>时间窗缺省"今日"与数据时基错位</td>
+          <td>stats 缺省今日（后端墙钟）；列表默认今日窗（前端墙钟）</td>
+          <td>历史数据集演示时默认视图可能为空，被误读为"没数据"</td>
+          <td>属预期行为（项目避坑经验已登记）；演示引导统一带 beginTime/endTime 钻取</td>
+        </tr>
+        <tr>
+          <td>45001 前端按消息文本匹配</td>
+          <td>AlarmCenter 用 e.message.includes('状态已变更') 触发自恢复</td>
+          <td>文案调整会破坏该匹配（匹配不上时仅剩全局错误提示，行为仍正确但不再自动刷新）</td>
+          <td>演进方向：http 拦截层把业务码透出到 error 对象，前端改按 code===45001 匹配</td>
+        </tr>
+        <tr>
+          <td>类型字典不做范围过滤</td>
+          <td>selectAlarmTypes 全量返回 base_warn_type 有效行</td>
+          <td>受限用户能看到全量类型名（字典级信息，不含任何车辆数据）</td>
+          <td>现行口径：字典共享；如需收敛可按"范围内出现过的类型"过滤，待评审</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-005-实时监控与可视化.html">MOD-DBD-005 实时监控</a></td><td>同读 traj_warn_info：监控域取"最近 100 条"（/api/monitor/warnings）与本模块分页/滚动互补；ALARM 推送与本页增量同源（RealtimePushScheduler）；大屏滚动条/态势卡钻取 /alarms</td><td>WarnInfoMapper；Dashboard.AlarmTicker/todayAlarmQuery</td></tr>
+        <tr><td><a href="MOD-DBD-004-轨迹数据接入查询与回放.html">MOD-DBD-004 轨迹接入与回放</a></td><td>报警数据的生产侧（模拟器/数据集写入）；行内"轨迹"跳回放页带 plateNo/identityCode/date</td><td>processing-service insert_warn_info；AlarmCenter.goPlayback</td></tr>
+        <tr><td>风控模块（规则引擎）</td><td>mon.risk_event 是详情"关联风险"的数据源；终端报警与风险事件是"原始信号 → CEP 升级"的上下游</td><td>RiskEventMapper.relatedRisks</td></tr>
+        <tr><td><a href="MOD-DBD-003-主数据管理.html">MOD-DBD-003 主数据</a></td><td>范围换算的最终锚点（车辆 dept_id）；车牌在列表/筛选中的可辨识度依赖车辆档案</td><td>selectVehicleNosByDeptScope → traj_vehicle</td></tr>
+        <tr><td><a href="MOD-DBD-002-用户与权限IAM.html">MOD-DBD-002 IAM</a></td><td>菜单 16/按钮 926 与四角色授权由 IAM 菜单体系承载；deptScope 由 IAM 计算；处置写审计日志（module-audit）</td><td>13-alarm-center.sql；@AuditLog</td></tr>
+        <tr><td>终端接入域（F01~F07，待建设）</td><td>808 报警附件/标志位解析是 traj_warn_info 的正式生产链路，上线后本模块直接消费，无需改造</td><td>功能清单 F01~F07；WarnInfo.sourceId/ruleId 预留列</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">列表为什么有时打开是空的？</div><div class="vv">前端默认带"今日 00:00~23:59"时间窗（墙钟）。演示数据时基滞后墙钟时今日无数据属正常；把时间窗改到数据所在日期，或用大屏钻取链接（自带时间窗）即可。</div></div>
+      <div class="kv"><div class="k">确认和解除有什么区别？必须两步都走吗？</div><div class="vv">确认=“我已看到并开始处理”（0→1），解除=“已办结”（→2）且必须填结论。可以不确认直接解除（0→2），确认是可选项。</div></div>
+      <div class="kv"><div class="k">两人同时处置同一条会怎样？</div><div class="vv">条件更新保证只有一人成功；另一人收到 45001"报警状态已变更，请刷新后重试"，前端自动刷新列表显示最新状态与处置人，不会产生重复结论。</div></div>
+      <div class="kv"><div class="k">已解除的报警还能再操作吗？</div><div class="vv">不能。操作列按钮按状态渲染（确认仅 0、解除仅 0/1）；直调接口也会被条件更新拦截返回 45001。</div></div>
+      <div class="kv"><div class="k">处置人字段显示谁？</div><div class="vv">当前登录人的真实姓名（realName），未填姓名时回退登录名 username，都没有时记 "system"；超长截 30 字符（varchar(30) 防御）。</div></div>
+      <div class="kv"><div class="k">为什么直填 id 查他省报警返回"报警不存在"？</div><div class="vv">存在性保护：范围外记录与不存在记录返回同一 40401，防止借响应差异探测他范围数据（fail-closed 口径）。</div></div>
+      <div class="kv"><div class="k">新报警为什么不总是插入列表第一行？</div><div class="vv">只有"未设任何筛选"或"正在筛待处理"时才置顶（此时新行一定属于当前结果集）；其余筛选态只弹提示，避免插入不满足当前条件的行。</div></div>
+      <div class="kv"><div class="k">详情里"坐标缺失"是什么原因？</div><div class="vv">起止坐标为 varchar 存储，前端防御解析：空、非数字或 0 均视为缺失（页面上也标注"坐标为终端上报原始值"）。两点都存在时小地图会连线并自适应视野。</div></div>
+      <div class="kv"><div class="k">关联风险为什么是空的？</div><div class="vv">三种情况：该车牌在报警开始 ±30 分钟内没有 CEP 事件；报警缺 startWarnTime（不查直接置空）；纯终端报警未被规则引擎升级——第三种正是"关联"要回答的问题。</div></div>
+      <div class="kv"><div class="k">类型下拉里的等级颜色和大屏图例为什么不一致？</div><div class="vv">已知口径差异：报警中心按 1=红/2=橙/3=灰，大屏右列按 3=高/2=中/1=低。已列待核实（17 节），统一前以报警中心口径为准。</div></div>
+      <div class="kv"><div class="k">limit/size 传超界值会怎样？</div><div class="vv">钳制而非报错：latest 的 limit 钳到 1~50，page 的 size 钳到 1~100、page 下限 1——调用方不需要先校验。</div></div>
+      <div class="kv"><div class="k">企业车队长为什么看不到确认/解除按钮？</div><div class="vv">role4 只有菜单 16（alarm:view）没有按钮 926（alarm:handle）；按钮 v-perm 隐藏，直调接口返回 40301。处置权在调度监控员与安全管理员。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>分页与筛选</td><td>四条件组合查询结果正确；时间窗左闭右开；排序按开始时间倒序；size&gt;100 被钳为 100</td><td>界面 + 接口直调</td></tr>
+        <tr><td>2</td><td>统计口径</td><td>KPI 四卡与 byStatus 一致；total=窗口内总数；byType 带名称/等级且按数量降序；传非法时间 40001 带字段名</td><td>接口 + 界面</td></tr>
+        <tr><td>3</td><td>待处理滚动</td><td>latest 仅含 handle_status=0；limit=0/999 被钳到 1/50；大屏滚动条数据同源</td><td>接口 + 大屏对照</td></tr>
+        <tr><td>4</td><td>类型下拉</td><td>5 类种子齐全（超速/疲劳/围栏/紧急/设备故障），按 id 排序</td><td>界面</td></tr>
+        <tr><td>5</td><td>详情与关联风险</td><td>详情全字段 + relatedRisks（同车牌 ±30min 前 5 条）；无关联时显示提示</td><td>界面 + 数据库对时</td></tr>
+        <tr><td>6</td><td>详情小地图</td><td>起点绿/终点红/两点连线自适应；坐标缺失显示提示不报错</td><td>界面</td></tr>
+        <tr><td>7</td><td>确认流转</td><td>待处理→已确认；行内状态/处置人/更新时间即时刷新；审计表新增"报警确认"</td><td>界面 + 审计页</td></tr>
+        <tr><td>8</td><td>解除流转</td><td>0 或 1 状态可解除，结论三选一必填、说明≤200 字；非法 resultCode 40001；审计"报警解除"</td><td>界面 + 接口直调</td></tr>
+        <tr><td>9</td><td>并发冲突</td><td>两会话同时处置同一条：一个成功，另一个 45001 并自动刷新列表</td><td>双浏览器对照</td></tr>
+        <tr><td>10</td><td>数据范围</td><td>山东账号列表/统计/滚动只见本省；直填他省报警 id 详情与处置均 40401（与不存在同口径）</td><td>双账号对照</td></tr>
+        <tr><td>11</td><td>角色权限</td><td>车队长（role4）无确认/解除按钮，直调写接口 40301；调度监控员与安全管理員可处置</td><td>三账号对照</td></tr        ></tr>
+        <tr><td>12</td><td>实时增量</td><td>新报警 1~2s 内弹提示；无筛选/看待处理时置顶且 KPI +1；重复消息不重复插行</td><td>模拟器造数观察</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>表现为现状但产品口径未定</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>grade_level 语义不统一</strong>：报警中心与 AlarmVO 注释按 1=红/2=橙/3=灰，大屏右列图例按 3=高/2=中/1=低（Dashboard.vue gradeCount）；种子数据（超速=1、设备故障=3）在两种口径下严重程度相反。需产品确认标准语义后统一两端展示。</li>
+      <li><strong>报警来源字段的完整口径</strong>：source_id（来源流水）、rule_id（关联规则）、end_warn_time/end_lng/end_lat/end_speed 在模拟器/数据集写线下的填充规则，待 808 接入上线时一并核实。</li>
+      <li><strong>warn_continue_mark=1（持续中）的终态</strong>：持续报警由谁、何时补写结束时间/结束坐标（终端解除包还是平台超时任务），当前代码无该链路，待终端接入域明确。</li>
+      <li><strong>45001 的前端匹配方式</strong>：现按消息文本匹配（includes"状态已变更"），是否升级为按业务码匹配取决于 http 拦截层是否透出 code，待平台基础模块评审。</li>
+      <li><strong>处置是否回写终端</strong>：JT/T 808 存在报警确认/解除相关的下行交互约定，当前闭环仅在平台侧落库，是否需经网关下发回执待接入域设计时确认。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>首次发布。以 2026-10-05 源代码与初始化 SQL 为准编写：固化 7 端点与类级 alarm:view/方法级 alarm:handle 授权、0→1→2 与 0→2 状态机、条件更新 + 45001 并发控制、解除结论 00/01/02 与 200 字上限、handler 落名规则、deptScope 范围过滤与 40401 存在性保护、详情 ±30min 关联风险、13-alarm-center.sql（索引/存量归一/字典/菜单 16+926/角色授权）、前端默认今日窗/WS 条件置顶/小地图防御解析/45001 自恢复等实现事实；如实登记 grade_level 跨页口径不一致（报警中心 1=红 vs 大屏 3=高）待核实。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-006 终端报警中心 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

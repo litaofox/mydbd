@@ -157,6 +157,24 @@
           <el-descriptions-item label="处置说明" :span="2">{{ detail.handleResultMsg || '-' }}</el-descriptions-item>
         </el-descriptions>
 
+        <template v-if="detail.attachments && detail.attachments.length">
+          <h4>证据附件</h4>
+          <div class="attach-list">
+            <template v-for="att in detail.attachments" :key="att.id">
+              <div v-if="att.fileType === 0" class="attach-item">
+                <AuthImage :url="alarmMediaUrl(att.id)" :title="att.fileName || ''" />
+                <div class="attach-name">{{ att.fileName || '图片' }}</div>
+              </div>
+              <div v-else class="attach-item attach-file">
+                <el-link type="primary" :underline="false" @click="onDownloadAttachment(att)">
+                  {{ att.fileType === 1 ? '音频' : '视频' }}：{{ att.fileName || `附件 ${att.id}` }}
+                </el-link>
+                <div class="attach-name">{{ fmtSize(att.fileSize) }}</div>
+              </div>
+            </template>
+          </div>
+        </template>
+
         <h4>报警位置（坐标为终端上报原始值）</h4>
         <div v-if="hasCoord" ref="mapRef" class="mini-map"></div>
         <p v-else class="hint">坐标缺失</p>
@@ -219,6 +237,8 @@ import dayjs from 'dayjs'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRealtime, type AlarmBrief } from '@/composables/useRealtime'
+import { alarmMediaUrl, downloadMediaFile } from '@/composables/useAuthMedia'
+import AuthImage from '@/components/AuthImage.vue'
 import {
   getAlarmPage,
   getAlarmTypes,
@@ -227,6 +247,7 @@ import {
   confirmAlarm,
   resolveAlarm,
   type AlarmVO,
+  type AlarmAttachment,
   type AlarmType,
   type AlarmStats
 } from '@/api/alarm'
@@ -286,6 +307,21 @@ function resultCodeLabel(c: string | null) {
 }
 function fmt(v: string | null) {
   return v ? v.replace('T', ' ').slice(0, 19) : '-'
+}
+function fmtSize(size: number | null) {
+  if (!size || size <= 0) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ===== 证据附件（blob 带 JWT 加载） =====
+async function onDownloadAttachment(att: AlarmAttachment) {
+  try {
+    await downloadMediaFile(att.id, att.fileName)
+  } catch {
+    /* 拦截器已提示 */
+  }
 }
 function statusCount(s: number) {
   return stats.value.byStatus.find((x) => x.handleStatus === s)?.count ?? 0
@@ -575,5 +611,25 @@ h4 {
   margin-top: 10px;
   font-size: 13px;
   color: #1f5fbf;
+}
+.attach-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.attach-item {
+  width: 96px;
+}
+.attach-file {
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attach-name {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  word-break: break-all;
 }
 </style>

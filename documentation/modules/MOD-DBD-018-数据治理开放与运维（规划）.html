@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-018 数据治理开放与运维（规划） · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-018 数据治理开放与运维（规划）｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#part-product">产品篇</a>
+        <ul>
+          <li><a href="#p-scope">1. 模块定位与功能范围</a></li>
+          <li><a href="#p-term">2. 术语</a></li>
+          <li><a href="#p-scenes">3. 业务场景</a></li>
+          <li><a href="#p-flow">4. 目标流程</a></li>
+          <li><a href="#p-current">5. 部署与运维现状</a></li>
+          <li><a href="#p-value">6. 业务价值</a></li>
+        </ul>
+      </li>
+      <li><a href="#part-tech">技术篇</a>
+        <ul>
+          <li><a href="#t-current">7. 现状架构（代码实证）</a></li>
+          <li><a href="#f36">8. F36 数据质量管理</a></li>
+          <li><a href="#f37">9. F37 数据安全与合规</a></li>
+          <li><a href="#f38">10. F38 开放 API 与监管上报</a></li>
+          <li><a href="#f39">11. F39 可观测与高可用</a></li>
+          <li><a href="#f40">12. F40 测试与交付体系</a></li>
+          <li><a href="#t-join">13. 与现有系统衔接点</a></li>
+          <li><a href="#t-roadmap">14. 分期路线</a></li>
+          <li><a href="#t-risk">15. 风险与对策</a></li>
+          <li><a href="#t-accept">16. 验收标准</a></li>
+        </ul>
+      </li>
+      <li><a href="#deps">规划依赖关系</a></li>
+      <li><a href="#todo">待核实项</a></li>
+      <li><a href="#revisions">修订记录</a></li>
+    </ul>
+  </div></aside>
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-018 数据治理开放与运维（规划）</h1>
+    <div class="cover-meta">
+      编号：MOD-DBD-018<span class="sep">｜</span>版本：v1.0.0<span class="sep">｜</span>日期：2026-10-05<span class="sep">｜</span>
+      状态：<span class="badge red">规划中</span><span class="sep">｜</span>覆盖功能项：F36～F40<span class="sep">｜</span>
+      代码锚点：docker-compose.yml（postgres/platform-app/processing-app/portal-nginx）、AuditFilter、ingest X-Service-Token
+    </div>
+
+    <span class="part-tag product" id="part-product">产品篇</span>
+
+    <h2 id="p-scope">1. 模块定位与功能范围</h2>
+    <p>本模块是平台<strong>面向规模化与合规运营的保障体系</strong>，包含五块相互独立又彼此支撑的能力：</p>
+    <table>
+      <tr><th style="width:80px">功能项</th><th>名称</th><th>范围</th></tr>
+      <tr><td>F36</td><td>数据质量管理</td><td>完整性/准确性/一致性/及时性/唯一性五维指标、质量大盘、企业/终端下钻、脏数据隔离区、问题工单、终端合格率画像</td></tr>
+      <tr><td>F37</td><td>数据安全与合规</td><td>敏感字段加密（SM4 方向）、动态脱敏、分类分级、留存销毁与销毁日志、授权审批、等保 2.0 三级方向、KMS/HSM、日志 ≥6 个月</td></tr>
+      <tr><td>F38</td><td>开放 API 与监管上报</td><td>统一 API 网关（鉴权/限流/计量/审计/脱敏）、AppKey/OAuth2、按 JT/T 809 向属地监管平台转发</td></tr>
+      <tr><td>F39</td><td>可观测与高可用</td><td>Prometheus/Grafana、日志聚合、链路追踪、PostgreSQL 主从、多副本、K8s 演进、容灾（RPO/RTO）、按 Kafka Lag 扩缩</td></tr>
+      <tr><td>F40</td><td>测试与交付</td><td>CI/CD、接口自动化回归、808/1078 协议一致性双轨、海量连接压测、流媒体测试、数据迁移双人复核、环境分层、静态扫描</td></tr>
+    </table>
+    <blockquote class="warn">F36～F40 均为设计规划。2026-10-05 平台为四容器单机部署，无主从、无多副本、无 K8s、无监控系统、无链路追踪、无 CI；第 5/7 节如实陈述现状边界。</blockquote>
+
+    <h2 id="p-term">2. 术语</h2>
+    <table>
+      <tr><th style="width:180px">术语</th><th>含义</th></tr>
+      <tr><td>五维质量指标</td><td>完整性、准确性、一致性、及时性、唯一性（蓝图 §5.3）。</td></tr>
+      <tr><td>隔离区</td><td>可疑数据不删除而打标/入隔离表，经人工复核后回流或丢弃（与 F08 共用机制）。</td></tr>
+      <tr><td>分类分级</td><td>按《汽车数据安全管理若干规定》区分敏感个人信息与重要数据并施加不同保护策略。</td></tr>
+      <tr><td>KMS / HSM</td><td>密钥管理系统 / 硬件安全模块；密钥与数据分离托管。</td></tr>
+      <tr><td>JT/T 809</td><td>道路运输车辆卫星定位平台间数据交换标准（2011/2019 版）；企业平台向政府监管平台转发的协议。</td></tr>
+      <tr><td>RPO / RTO</td><td>恢复点目标（最多丢多少数据）/ 恢复时间目标（多久恢复服务）。</td></tr>
+      <tr><td>三驾马车（可观测）</td><td>Metrics（指标）、Logs（日志）、Traces（链路追踪）。</td></tr>
+      <tr><td>两地三中心</td><td>生产中心 + 同城灾备中心 + 异地灾备中心的高可用拓扑（蓝图终态）。</td></tr>
+    </table>
+
+    <h2 id="p-scenes">3. 业务场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">数据质量管理员</div>
+        <div class="sc-name">每天看质量大盘</div>
+        <div class="sc-desc">五维指标按企业/终端下钻，定位丢点率高、异常点多的终端设备，生成问题工单跟踪整改。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">合规管理员</div>
+        <div class="sc-name">数据分级与留痕</div>
+        <div class="sc-desc">人脸/身份证/连续行踪按敏感个人信息管控；视频调阅必须有审批单；日志按 ≥6 个月留存备查。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">平台对接方</div>
+        <div class="sc-name">第三方系统取数</div>
+        <div class="sc-desc">客户 ERP/BI 通过 AppKey/OAuth2 调开放 API，有配额、有限流、调用可计量、出问题可审计。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">监管报送岗</div>
+        <div class="sc-name">属地监管平台联网</div>
+        <div class="sc-desc">按 JT/T 809 通过专线/VPN + 前置机向监管平台转发定位/报警数据，报送状态可监控。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">运维值班</div>
+        <div class="sc-name">故障分钟级发现</div>
+        <div class="sc-desc">Grafana 看板 + 告警，链路追踪一次请求跨 Java/Python/Kafka，日志集中检索不用登机器。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">测试/发布经理</div>
+        <div class="sc-name">自动化回归与协议双轨</div>
+        <div class="sc-desc">CI 跑接口回归与静态扫描；808/1078 用测试工具 + 真实终端双轨验证；压测报告决定能否上线。</div>
+      </div>
+    </div>
+
+    <h2 id="p-flow">4. 目标流程</h2>
+    <h3>4.1 质量治理闭环（F36）</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">采集</div><div class="s-desc">F08 清洗计数 + 接入统计（gateway_ingest_stat）+ 业务对账任务汇总五维指标</div></div>
+      <div class="step"><div class="s-title">大盘</div><div class="s-desc">整体/企业/终端三级下钻；阈值红黄绿；异常自动生成问题工单</div></div>
+      <div class="step"><div class="s-title">处置</div><div class="s-desc">隔离区数据人工复核：回流重算或确认丢弃；设备问题派单整改</div></div>
+      <div class="step"><div class="s-title">复核</div><div class="s-desc">整改后合格率回升，工单闭环；终端画像反哺采购选型</div></div>
+    </div>
+    <h3>4.2 变更交付主线（F40）</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">提交</div><div class="s-desc">代码合入 → CI：静态扫描 + 单测 + 接口自动化回归</div></div>
+      <div class="step"><div class="s-title">部署分层</div><div class="s-desc">dev → 联调 → 预生产（协议/压测）→ 生产，镜像与配置受控</div></div>
+      <div class="step"><div class="s-title">验证</div><div class="s-desc">808/1078 双轨、报文回放压测、数据迁移双人复核</div></div>
+      <div class="step"><div class="s-title">观测</div><div class="s-desc">发布后 Grafana 指标/错误率自动对比，异常触发回滚</div></div>
+    </div>
+    <h3>4.3 开放接入与监管报送流程（F38）</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">应用申请</div><div class="s-desc">第三方登记应用、申请 scopes 与配额，密钥加密发放</div></div>
+      <div class="step"><div class="s-title">签名调用</div><div class="s-desc">网关验签/限流/计量，按应用绑定企业做 deptScope 裁剪，出参脱敏</div></div>
+      <div class="step"><div class="s-title">监管转发</div><div class="s-desc">809-forwarder 按属地字典向监管平台持续上报定位/报警</div></div>
+      <div class="step"><div class="s-title">对账审计</div><div class="s-desc">调用计量与 809 报文留存对账，异常可追溯到应用与报文</div></div>
+    </div>
+
+    <h2 id="p-current">5. 部署与运维现状（2026-10-05）</h2>
+    <p>当前为<strong>单机 docker-compose 四容器</strong>演示/小规模形态，是全部规划的起点：</p>
+    <table>
+      <tr><th>容器</th><th>技术栈/资源</th><th>暴露</th><th>存储</th></tr>
+      <tr><td>postgres</td><td>postgis/postgis:16-3.4，1G 内存 / 1 CPU</td><td>仅绑 127.0.0.1:5432</td><td>pg-data 卷</td></tr>
+      <tr><td>platform-app</td><td>Spring Boot，768M</td><td>:8080 本地；actuator/health</td><td>—</td></tr>
+      <tr><td>processing-app</td><td>FastAPI，384M</td><td>:8000 本地；/health</td><td>mydbd-data 卷 + samples 只读挂载</td></tr>
+      <tr><td>portal-nginx</td><td>nginx:1.27-alpine，64M</td><td><strong>:8090 对外</strong>（唯一入口）</td><td>—</td></tr>
+    </table>
+    <p>明确<strong>不存在</strong>：主从复制、读写分离、多副本、负载均衡、K8s、Prometheus/Grafana、日志聚合、链路追踪、CI/CD 流水线、Redis、Kafka（仅在 MOD-014 规划中引入）。</p>
+    <h3>5.1 存储卷与数据现状</h3>
+    <table>
+      <tr><th>卷 / 路径</th><th>挂载</th><th>现状（2026-10-05）</th></tr>
+      <tr><td>pg-data</td><td>postgres 数据目录</td><td>业务库 mydbd：500 车 / 约 888.9 万 GPS 点 / 311 风险事件；<strong>无定期备份任务</strong></td></tr>
+      <tr><td>mydbd-data + samples（只读）</td><td>processing-app</td><td>仿真样例数据，GATEWAY_MODE=simulator 演示使用</td></tr>
+      <tr><td>门户静态资源</td><td>portal-nginx</td><td>前端 dist 与 documentation 静态站点；index.html 已配 no-cache</td></tr>
+    </table>
+    <h3>5.2 已知单点与缺口清单</h3>
+    <table>
+      <tr><th>单点 / 缺口</th><th>影响</th><th>归属规划</th></tr>
+      <tr><td>PostgreSQL 单实例无复制</td><td>实例故障即全站不可用、数据可能丢失</td><td>F39 阶段 1/2</td></tr>
+      <tr><td>无数据库备份策略</td><td>误删/损坏无法恢复，RPO/RTO 无定义</td><td>F39 阶段 1（G0）</td></tr>
+      <tr><td>无监控告警</td><td>容器挂掉只能靠人工发现</td><td>F39 G0/G1</td></tr>
+      <tr><td>无对象存储</td><td>图片/证据/导出文件无落点</td><td>F26 MinIO（MOD-016）</td></tr>
+      <tr><td>X-Service-Token 单共享令牌</td><td>不可吊销、不分权限、无法计量</td><td>F38 网关</td></tr>
+      <tr><td>无 CI/CD</td><td>手工 mvn + docker cp 发版，无质量门</td><td>F40</td></tr>
+    </table>
+    <h3>5.3 配置与密钥现状</h3>
+    <ul>
+      <li>数据库口令、ingest X-Service-Token、高德 key 位于 application*.yml / 环境变量；高德 key 当前为空，逆地理返回 503。</li>
+      <li>镜像 tag 与 docker-compose 手工维护；无配置中心，环境差异靠不同文件维护。</li>
+      <li>规划：F38 开放平台密钥加密存储；F37 KMS 托管高密密钥；GATEWAY_MODE 等模式开关纳入环境保护，simulator/mock 禁入生产。</li>
+    </ul>
+
+    <h2 id="p-value">6. 业务价值</h2>
+    <ul>
+      <li><strong>敢接真车、敢上规模</strong>：质量、可观测、压测体系是 500 车→十万车演进的前提。</li>
+      <li><strong>合规可过审</strong>：等保方向、分类分级、留存销毁、调阅审批满足政企客户与监管入网要求。</li>
+      <li><strong>平台可开放</strong>：统一网关让 API 可对外而不裸奔，809 联网具备监管准入条件。</li>
+      <li><strong>故障可恢复</strong>：备份、主从、容灾把"演示系统"与"生产系统"区分开。</li>
+    </ul>
+
+    <span class="part-tag" id="part-tech">技术篇</span>
+
+    <h2 id="t-current">7. 现状架构（代码/配置实证）</h2>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">接入</div>
+        <div class="al-body">
+          <span class="node">portal-nginx :8090 唯一对外，反代前后端</span>
+          <span class="node">服务间：X-Service-Token 单共享令牌（/api/ingest/*、/api/analysis/video）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">应用</div>
+        <div class="al-body">
+          <span class="node">platform-app（Spring Boot 单体：IAM/MDM/RISK/MONITOR/AUDIT/ANALYSIS）</span>
+          <span class="node">processing-app（FastAPI：ingest/simulator/cep/geocode）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据</div>
+        <div class="al-body">
+          <span class="node">PostgreSQL 16 + PostGIS 3.4 单实例，pg-data 卷</span>
+          <span class="node">无缓存/无 MQ/无对象存储</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">安全/审计（现有）</div>
+        <div class="al-body">
+          <span class="node">JWT + RBAC + 数据范围 deptScope</span>
+          <span class="node">AuditFilter 请求体脱敏（仅审计落库前）</span>
+          <span class="node">traj.sys_audit_log 只追加（无留存策略、无哈希链，详见 MOD-013）</span>
+        </div>
+      </div>
+    </div>
+    <h3>7.1 现有对外暴露面</h3>
+    <table>
+      <tr><th>入口</th><th>鉴权现状</th><th>治理要求</th></tr>
+      <tr><td>http://主机:8090（portal-nginx）</td><td>唯一对外端口，反代前端与 /api</td><td>增加 HTTPS 终结、限流与安全响应头（F37/F38）</td></tr>
+      <tr><td>:8080 platform-app（仅本地）</td><td>业务接口 JWT</td><td>保持不直接对外；服务间调用收口到网关凭据</td></tr>
+      <tr><td>:8000 processing-app（仅本地）</td><td>/api/ingest/*、/api/analysis/video 用 X-Service-Token</td><td>F38 后改 AppKey + 签名并限频</td></tr>
+      <tr><td>127.0.0.1:5432 PostgreSQL</td><td>数据库账号口令（change_me_in_prod）</td><td>生产换密、最小权限账号、禁止绑公网</td></tr>
+    </table>
+    <h3>7.2 备份与恢复现状</h3>
+    <ul>
+      <li>无自动 pg_dump / WAL 归档；pg-data 仅靠 Docker 卷存活在单机磁盘。</li>
+      <li>无恢复演练记录；当前最坏情况为全量丢失。</li>
+      <li>配置（docker-compose.yml、portal.conf、application*.yml）随 Git 库版本管理，但环境内手工改动未纳入配置漂移检查。</li>
+    </ul>
+
+    <h2 id="f36">8. F36 数据质量管理（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>8.1 五维指标体系（蓝图 §5.3）</h3>
+    <table>
+      <tr><th>维度</th><th>指标与目标值</th><th>数据来源</th></tr>
+      <tr><td>完整性</td><td>丢点率 &lt;0.5%；报警抓拍图片缺失率（附件应到未到）</td><td>F01 心跳/期望频率推算期望点数 vs 实际；F07 媒体到达回执</td></tr>
+      <tr><td>准确性</td><td>异常点率 &lt;0.1%；CAN 信号越界率</td><td>F08 qc 计数（SPEED_IMPOSSIBLE/TELEPORT/DRIFT 等）；F05 信号范围校验</td></tr>
+      <tr><td>一致性</td><td>VIN/车牌纳管率 100%（终端上报标识与平台档案一致）</td><td>F02 双标识映射结果、gateway_unknown_terminal</td></tr>
+      <tr><td>及时性</td><td>事件端到端 ≤3 秒；终端时钟偏差 ≤1 秒（统计/告警阈值 30 秒）</td><td>gpsTime→入库时间戳差；Kafka 消费 Lag</td></tr>
+      <tr><td>唯一性</td><td>重复报文率 &lt;0.01%</td><td>(车,gpsTime) 幂等冲突计数；source_id 去重计数</td></tr>
+    </table>
+    <h3>8.2 拟新增组件与流程</h3>
+    <ul>
+      <li>质量聚合表：按终端×小时、企业×天汇总（traj_qc_stat / gateway_ingest_stat 扩展）。</li>
+      <li>质量大盘：整体五维 → 企业下钻 → 终端下钻三级；红黄绿阈值配置化。</li>
+      <li>隔离区与复核：复用 F08 qc_status=REJECT/SUSPECT 数据；复核操作"回流（触发 F12 回补）/丢弃"，操作留痕。</li>
+      <li>问题工单：质量指标越阈自动建工单（复用 risk_order 或新建质量工单类型），指派运维/设备商处理。</li>
+      <li>终端画像：按终端型号/批次聚合合格率，反哺采购与淘汰。</li>
+    </ul>
+    <h3>8.5 质量聚合表草案（traj_qc_stat）</h3>
+    <pre><code>CREATE TABLE traj.traj_qc_stat (
+  stat_time       TIMESTAMP NOT NULL,   -- 小时/日刻度
+  stat_grain      VARCHAR(8) NOT NULL,  -- HOUR / DAY
+  terminal_no     VARCHAR(32),          -- NULL = 全局汇总行
+  dept_id         BIGINT,               -- 企业下钻行
+  expected_points BIGINT, actual_points BIGINT, missing_points BIGINT,
+  invalid_points  BIGINT, duplicate_points BIGINT, backfill_points BIGINT,
+  event_delay_p95_ms  BIGINT,
+  clock_skew_p95_ms   BIGINT,
+  media_missing   BIGINT,
+  score_json      JSONB,                -- 五维得分与红黄绿
+  UNIQUE (stat_time, stat_grain, terminal_no, dept_id)
+);</code></pre>
+    <h3>8.6 五维指标计算口径</h3>
+    <table>
+      <tr><th>维度</th><th>公式</th><th>红黄绿阈值（规划）</th></tr>
+      <tr><td>完整性</td><td>丢点率 = missing ÷ expected</td><td>绿 &lt;0.5%；黄 0.5～2%；红 &gt;2%</td></tr>
+      <tr><td>准确性</td><td>异常点率 = qc REJECT 点数 ÷ actual</td><td>绿 &lt;0.1%；黄 0.1～0.5%；红 &gt;0.5%</td></tr>
+      <tr><td>一致性</td><td>纳管率 = 已匹配档案终端 ÷ 上报终端</td><td>绿 = 100%；黄 99～100%；红 &lt;99%</td></tr>
+      <tr><td>及时性</td><td>事件延迟 P95 = 入库 − gpsTime；时钟偏差 P95</td><td>绿 ≤3s/≤1s；红 &gt;10s/&gt;30s</td></tr>
+      <tr><td>唯一性</td><td>重复率 = 幂等冲突计数 ÷ 入库报文</td><td>绿 &lt;0.01%；红 &gt;0.1%</td></tr>
+    </table>
+    <h3>8.7 隔离区处置设计</h3>
+    <p>F08 清洗标记 qc_status=SUSPECT/REJECT 的点不删除：SUSPECT 留主表打标，REJECT 入隔离表 traj_gps_point_quarantine（结构与主表一致，另加 reject_reason、quarantine_time、review_by、review_result）。</p>
+    <table>
+      <tr><th>处置动作</th><th>效果</th><th>后续</th></tr>
+      <tr><td>确认回流</td><td>改标 qc_status=OK 回主表</td><td>触发 F12 受影响分片回补</td></tr>
+      <tr><td>确认丢弃</td><td>隔离表保留 N 天后物理清理</td><td>计入准确性/唯一性指标</td></tr>
+      <tr><td>批量误判申诉</td><td>按规则 + 终端批量复核</td><td>反向修订 F08 规则阈值</td></tr>
+    </table>
+    <h3>8.8 终端合格率画像</h3>
+    <ul>
+      <li>按终端型号/固件版本/批次聚合：五维得分均值、丢点率分布、故障率、在网时长加权。</li>
+      <li>输出合格率排名与红黑榜，供采购选型与存量淘汰；画像结果支持月报导出。</li>
+      <li>与 F24 联动：同型号终端视觉误报率进入终端质量画像，作为终端选型输入。</li>
+    </ul>
+    <h3>8.9 质量大盘拟新增接口（规划）</h3>
+    <table>
+      <tr><th>接口</th><th>方法</th><th>说明</th></tr>
+      <tr><td>/api/qc/overview</td><td>GET</td><td>全局五维得分与红黄绿（按 deptScope 裁剪）</td></tr>
+      <tr><td>/api/qc/by-dept</td><td>GET</td><td>企业维度下钻（先裁剪后聚合，对齐 MOD-017 口径④）</td></tr>
+      <tr><td>/api/qc/by-terminal</td><td>GET</td><td>终端维度明细，支持型号/固件版本/批次筛选</td></tr>
+      <tr><td>/api/qc/quarantine/page</td><td>GET</td><td>隔离区分页（原因/时间/终端），默认仅查近 30 天</td></tr>
+      <tr><td>/api/qc/quarantine/{id}/review</td><td>POST</td><td>回流/丢弃判定，@AuditLog 留痕并触发 F12 分片回补</td></tr>
+    </table>
+    <p>全部接口遵守 fail-closed：deptScope 为空集合直接返回空页；质量问题工单复用现有 risk_order 派单链路（新增工单类型即可），不另建独立工单系统。</p>
+    <h3>8.3 联动</h3>
+    <p>与 F08 清洗（指标源头）、F59 轨迹完整率（同一套错误/漂移判定与合格率口径，MOD-017）双向联动：F59 是面向业务的单车完整率报告，F36 是面向治理的全域质量大盘，共用底层函数不复制规则。</p>
+    <h3>8.4 风险与验收</h3>
+    <div class="kvlist">
+      <div class="kv"><div class="k">主要风险</div><div class="vv">期望点数估算误差（补传、频率动态变化）→ 期望模型按终端实际上报频率滚动学习；隔离区膨胀 → 保留期与批量处理</div></div>
+    </div>
+    <ol>
+      <li>注入已知缺陷数据集（丢点/越界/重复/时钟错），五维指标值与人工核算一致。</li>
+      <li>质量大盘企业/终端下钻合计与全局一致（无漏算重算）。</li>
+      <li>隔离点回流后 F12 对应分片里程/时长正确变化。</li>
+      <li>指标越阈自动生成工单并可闭环；处理全程留痕。</li>
+      <li>终端型号合格率排名可导出，支撑采购评审。</li>
+    </ol>
+
+    <h2 id="f37">9. F37 数据安全与合规（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。现有脱敏仅存在于审计过滤器（AuditFilter 对请求体打码），数据库静态加密/动态脱敏/分级留存均未建设。</blockquote>
+    <h3>9.1 分类分级</h3>
+    <table>
+      <tr><th>级别</th><th>数据（示例）</th><th>策略方向</th></tr>
+      <tr><td>敏感个人信息</td><td>驾驶员人脸（DSM 画面）、身份证号、连续行踪轨迹、健康/生理信息</td><td>加密存储、最小可见、调阅审批（F25）、导出严控、明示授权</td></tr>
+      <tr><td>个人信息</td><td>手机号、车牌、驾驶证/从业资格证号</td><td>动态脱敏展示（前 3 后 4 等）、按角色明文授权</td></tr>
+      <tr><td>重要数据</td><td>车辆规模运行数据、重点区域（政府/敏感设施周边）轨迹、危化品运输数据</td><td>出境/外发评估、聚合分析、访问审计、监管口径管理</td></tr>
+      <tr><td>一般业务数据</td><td>车辆档案、字典、工单（非敏感部分）</td><td>常规 RBAC + 审计</td></tr>
+    </table>
+    <h3>9.2 加密与脱敏</h3>
+    <ul>
+      <li>存储加密方向：国密 <strong>SM4</strong> 字段级加密（身份证、人脸样本地址等）；密钥经 KMS 托管，规划 HSM 保护根密钥；数据库透明加密（TDE）作为基础设施层补充。</li>
+      <li>动态脱敏：在序列化/视图层按角色对手机号、身份证、驾驶证号脱敏；现状 AuditFilter 的打码规则（password/token/secret/phone/idcard 等）是审计专用，不替代业务展示脱敏，需新建统一脱敏组件。</li>
+      <li>传输：全站 HTTPS（nginx 终结）；服务间令牌升级为可吊销、分权限的凭据（随 F38 网关一并改造）。</li>
+    </ul>
+    <h3>9.3 留存与销毁</h3>
+    <ul>
+      <li>审计日志（traj.sys_audit_log）<strong>≥6 个月</strong>留存（蓝图合规基线 §10.2），配合分区/归档；现状只追加但无任何留存策略（见 MOD-013 第 20 节）。</li>
+      <li>视频证据普通片段 30～90 天到期销毁并写销毁日志（F26）；轨迹数据按合规年限分区归档/销毁，销毁动作本身长期留痕。</li>
+    </ul>
+    <h3>9.4 授权审批与等保方向</h3>
+    <ul>
+      <li>视频无单不调阅（F25）、高危终端指令二次审批（F03）、导出审批与范围快照（MOD-017）。</li>
+      <li>对标 <strong>等保 2.0 三级</strong>方向：身份鉴别（现有 JWT+MFA 基础）、访问控制、安全审计、入侵防范、数据完整性/保密性、备份恢复。</li>
+      <li>法规依据：《数据安全法》《个人信息保护法》《汽车数据安全管理若干规定（试行）》。</li>
+    </ul>
+    <h3>9.5 验收标准</h3>
+    <ol>
+      <li>敏感字段在库中为密文，应用层按角色解密；KMS 不可用时明文不落地、有降级告警。</li>
+      <li>无权限角色通过界面与 API 均只能看到脱敏值；越权尝试有审计记录。</li>
+      <li>分级目录覆盖全部个人信息与重要数据表，变更有评审记录。</li>
+      <li>审计日志可查询 6 个月以上；到期销毁任务与销毁日志完整可查。</li>
+      <li>视频无审批单无法播放（联动 F25 验收）；高危指令无审批不下发。</li>
+    </ol>
+    <h3>9.6 字段级加密与脱敏清单（规划）</h3>
+    <table>
+      <tr><th>字段</th><th>分级</th><th>存储</th><th>展示脱敏</th></tr>
+      <tr><td>身份证号</td><td>敏感个人信息</td><td>SM4 字段加密 + 哈希辅助列（精确查询）</td><td>前 1 后 1，中间 *</td></tr>
+      <tr><td>手机号</td><td>个人信息</td><td>明文或加密 + 脱敏视图</td><td>前 3 后 4（与 AuditFilter 口径一致）</td></tr>
+      <tr><td>驾驶证/从业资格证号</td><td>个人信息</td><td>加密或脱敏视图</td><td>前 4 后 4</td></tr>
+      <tr><td>DSM 人脸图片/样本</td><td>敏感个人信息</td><td>独立样本桶 + KMS 加密</td><td>默认不展示，授权调阅（F25）</td></tr>
+      <tr><td>连续行踪轨迹</td><td>敏感个人信息</td><td>库内常规存储 + 访问审计</td><td>低权限地图粗化降精度（规划）</td></tr>
+    </table>
+    <h3>9.7 数据留存期限矩阵（规划基线）</h3>
+    <table>
+      <tr><th>数据</th><th>留存期</th><th>到期处理</th></tr>
+      <tr><td>traj.sys_audit_log</td><td>≥6 个月（合规基线）</td><td>按月分区，超期归档冷存</td></tr>
+      <tr><td>GPS 明细点</td><td>≥6 个月在线热数据（合同可延长）</td><td>转冷存/汇总后销毁并留销毁清单</td></tr>
+      <tr><td>风险事件/工单</td><td>≥3 年</td><td>到期评审后归档</td></tr>
+      <tr><td>普通视频证据</td><td>30～90 天</td><td>F26 自动销毁 + 销毁日志</td></tr>
+      <tr><td>WORM 事故证据</td><td>≥3 年（按案件年限）</td><td>到期经审批解除保留</td></tr>
+    </table>
+    <h3>9.8 等保 2.0 三级差距对照（抽样）</h3>
+    <table>
+      <tr><th>控制域</th><th>现状</th><th>规划补强</th></tr>
+      <tr><td>身份鉴别</td><td>JWT + RBAC；无 MFA</td><td>管理通道 MFA、密码复杂度、登录失败锁定</td></tr>
+      <tr><td>访问控制</td><td>RBAC + deptScope</td><td>最小权限复核、服务间凭据受控、高危操作二次审批</td></tr>
+      <tr><td>安全审计</td><td>sys_audit_log 已覆盖 40 处挂载点</td><td>日志防篡改（哈希链/权限隔离）、≥6 月留存、异地备份</td></tr>
+      <tr><td>入侵防范</td><td>nginx 无 WAF/限连</td><td>网关限流、端口收敛、主机 HIDS（评估）</td></tr>
+      <tr><td>数据保密性/完整性</td><td>无全站 HTTPS、无静态加密</td><td>HTTPS、SM4 字段加密、KMS、证据哈希存证</td></tr>
+      <tr><td>备份恢复</td><td>无</td><td>全量 + WAL、定期演练、异地副本（F39）</td></tr>
+    </table>
+    <h3>9.9 审计日志留存改造（衔接 MOD-013）</h3>
+    <ul>
+      <li>traj.sys_audit_log 按月分区（原生声明式分区或 pg_partman），热存 6 个月，超期转冷存。</li>
+      <li>防篡改补强方向：行级哈希链或周期性摘要锚定（与 F26 SHA-256 同一工具体系）；生产账号最小权限（INSERT-only 评估，见待核实）。</li>
+      <li>审计日志随 PostgreSQL WAL 策略异机存放，运维人员不能单方删除。</li>
+    </ul>
+    <h3>9.10 数据共享、出境与评估流程</h3>
+    <ol>
+      <li>对外提供数据前完成分类分级核对：重要数据、敏感个人信息原则上不出境。</li>
+      <li>开放 API 出参最小化：按 scope 返回字段，手机号/身份证默认脱敏（F38 联动）。</li>
+      <li>共享/出境评估记录归档（数据项、接收方、用途、授权凭证、评估结论），供监管检查。</li>
+      <li>F58 外部保险/违章数据导入同样登记来源与授权，来源不明数据不入库。</li>
+    </ol>
+
+    <h2 id="f38">10. F38 开放 API 与监管上报（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。现状仅 X-Service-Token 单令牌（/api/ingest/traj、/api/ingest/load-sample、/api/analysis/video），无限流、计量与网关。</blockquote>
+    <h3>10.1 统一 API 网关</h3>
+    <ul>
+      <li>入口：在 nginx 与应用之间增加网关层（选型见 14 节），对内管服务路由，对外承载开放 API。</li>
+      <li>能力：身份认证（AppKey/Secret、OAuth2 客户端模式）、签名校验、限流（应用/接口/IP 维度）、计量计费计数、统一审计（复用 AuditFilter 语义）、出参脱敏（联动 F37）。</li>
+      <li>应用管理：开放平台表——应用、密钥（加密存储）、授权范围（scopes）、配额、IP 白名单、启停与吊销。</li>
+    </ul>
+    <h3>10.2 监管上报（JT/T 809-2011/2019）</h3>
+    <table>
+      <tr><th>项</th><th>设计</th></tr>
+      <tr><td>协议</td><td>JT/T 809-2011（存量监管平台）与 2019（新建平台）双兼容；vps 侧<strong>未实现</strong> 809，需平台自建</td></tr>
+      <tr><td>链路</td><td>专线/VPN + 前置机部署；企业平台作为下级平台连监管上级平台；主链路断开有本地缓存与补传</td></tr>
+      <tr><td>数据</td><td>定位、报警、车辆/终端基础资料按监管字典上报；坐标按监管要求（GCJ-02/属地要求，从 F09 双坐标体系取列）</td></tr>
+      <tr><td>运维</td><td>链路状态、上报成功率、积压量监控（F39）；报文留存用于对账</td></tr>
+    </table>
+    <h3>10.3 验收标准</h3>
+    <ol>
+      <li>无凭证/签名错误/超配额请求在网关被拒并产生计量与审计记录。</li>
+      <li>限流阈值触发后返回标准 429 类响应，应用不被打垮。</li>
+      <li>809 链路与（测试用）上级平台完成注册、鉴权、定位/报警上报联调，报文通过一致性核对。</li>
+      <li>断链 30 分钟内数据本地缓存，恢复后自动补传无丢失。</li>
+      <li>出参中的手机号/身份证按调用方 scope 脱敏。</li>
+    </ol>
+    <h3>10.4 开放 API 端点规划（首批）</h3>
+    <table>
+      <tr><th>端点</th><th>方法</th><th>scope</th></tr>
+      <tr><td>/open/v1/vehicles</td><td>GET</td><td>vehicle:read（按应用授权范围）</td></tr>
+      <tr><td>/open/v1/vehicles/{id}/latest-point</td><td>GET</td><td>location:read</td></tr>
+      <tr><td>/open/v1/vehicles/{id}/track</td><td>GET</td><td>location:read（时间窗受限流约束）</td></tr>
+      <tr><td>/open/v1/events</td><td>GET</td><td>event:read</td></tr>
+      <tr><td>/open/v1/events/subscribe</td><td>POST（webhook 登记）</td><td>event:subscribe</td></tr>
+      <tr><td>/open/v1/scores/daily</td><td>GET</td><td>score:read</td></tr>
+    </table>
+    <p>所有 /open/* 经网关独立过滤器：AppKey 认证 → scope 校验 → deptScope（应用绑定企业）裁剪 → 限流 → 计量 → 出参脱敏 → 审计，与 MOD-017 七条数据范围口径保持一致。</p>
+    <h3>10.5 签名与报文规范（规划）</h3>
+    <pre><code>请求头：
+  X-Access-Key: 应用 AppKey
+  X-Timestamp:  毫秒时间戳（与服务端偏差 &gt;5 分钟拒绝，防重放）
+  X-Nonce:      随机串（10 分钟内不可重复）
+  X-Sign: HMAC-SHA256(AppSecret,
+            METHOD + "\n" + PATH + "\n"
+            + 排序后的 query 串 + "\n"
+            + X-Timestamp + X-Nonce)
+响应信封：{code, message, data, requestId}
+错误码：40101 未认证 / 40301 越权 / 42901 触发限流 / 50000 服务异常
+限流：默认 60 次/分钟/应用，批量/轨迹类接口单独配额</code></pre>
+    <h3>10.6 809 链路部署拓扑（规划）</h3>
+    <pre><code>企业平台（mydbd）
+  └─ 809-forwarder（前置机：专线/VPN 内网区，独立主机、最小权限账号）
+       ├─ 主链路 → 属地监管上级平台（JT/T 809-2011 或 2019）
+       ├─ 备链路 → 备份接入点（按属地要求）
+       └─ 本地缓存：断链时报文落盘，恢复后按序补传
+  数据来源：F01 定位/报警事件流（只读消费，不影响主业务链路）
+  坐标：从 F09 双坐标体系取监管要求列（GCJ-02 或属地特殊要求）</code></pre>
+    <h3>10.7 开放平台表草案</h3>
+    <pre><code>open_app(id, app_key UNIQUE, app_name, owner, status,
+         ip_whitelist, quota_per_minute, scopes, bound_dept_ids,
+         create_time, expire_time)
+open_app_secret(id, app_id, secret_ciphertext, hash_index,
+                rotated_from, create_time)      -- 密钥仅存密文，支持轮转
+open_api_meter(id, app_id, api, day, call_count, err_count,
+               resp_total_ms)                    -- 按天计量
+open_app_audit(...)                               -- 授权/密钥变更留痕</code></pre>
+    <h3>10.8 OAuth2 客户端模式与令牌生命周期（规划）</h3>
+    <pre><code>客户端模式（机器对机器）：
+  POST /open/oauth/token?grant_type=client_credentials
+  Header: Authorization: Basic base64(AppKey:AppSecret)
+  → { access_token, expires_in: 7200, scope: "vehicle:read ..." }
+
+调用：Authorization: Bearer &lt;access_token&gt;
+      X-Sign 仍须携带（签名 + 令牌双重校验；令牌可过期、可吊销）
+吊销：管理端停用应用或密钥轮转 → 令牌加入黑名单（短过期兜底）
+计量：以 AppKey 为准（与令牌解耦），按天写 open_api_meter</code></pre>
+    <ul>
+      <li>AppSecret 仅在发放时明文展示一次，库存密文；轮转期支持新旧密钥并行（open_app_secret.rotated_from 链）。</li>
+      <li>客户端模式不签发 refresh_token（凭密钥自取新令牌）；如未来出现人对人授权场景，授权码模式另行安全评审。</li>
+    </ul>
+
+    <h2 id="f39">11. F39 可观测与高可用（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>11.1 可观测三支柱</h3>
+    <table>
+      <tr><th>支柱</th><th>选型</th><th>内容</th></tr>
+      <tr><td>指标 Metrics</td><td>Prometheus + Grafana（蓝图）</td><td>JVM/FastAPI 基础指标、业务指标（在线数、事件量）、Kafka Lag、PostgreSQL、网关连接数；MOD-015 管道指标（19.1）全部接入</td></tr>
+      <tr><td>日志 Logs</td><td>Loki 或 ELK（二选一，倾向 Loki 轻量）</td><td>四容器 + 未来网关/流媒体日志集中；审计日志独立留存不与运维日志混存</td></tr>
+      <tr><td>链路 Traces</td><td>Apache SkyWalking（蓝图）</td><td>traceId 贯通 nginx→Java→FastAPI→Kafka；与 MOD-013 审计 traceId 对齐编号体系</td></tr>
+      <tr><td>告警</td><td>Alertmanager → 短信/IM/值班</td><td>分级告警、值班轮转、静默规则</td></tr>
+    </table>
+    <h3>11.2 高可用演进路线</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">阶段 0（现状）</div><div class="s-desc">compose 单机四容器，pg-data 卷；靠定时卷备份兜底</div></div>
+      <div class="step"><div class="s-title">阶段 1：单机加固</div><div class="s-desc">PostgreSQL 定时全量+WAL 归档、备份恢复演练、应用健康检查与自动重启、基础监控</div></div>
+      <div class="step"><div class="s-title">阶段 2：3 节点小集群</div><div class="s-desc">试点 K8s（或 compose+多机）：应用多副本、PG 主从+读写分离、Redis、Kafka 三节点、nginx 双活</div></div>
+      <div class="step"><div class="s-title">阶段 3：规模化</div><div class="s-desc">支撑十万车；按 Kafka Lag 自动扩缩消费/接入副本；分库分表/分区评估</div></div>
+      <div class="step"><div class="s-title">阶段 4：两地三中心</div><div class="s-desc">同城双活 + 异地灾备，<strong>RPO≈0、RTO 分钟级</strong>（百万级连接蓝图目标）</div></div>
+    </div>
+    <h3>11.3 验收标准</h3>
+    <ol>
+      <li>Grafana 看板覆盖四类组件核心指标；关键告警端到端触达测试通过。</li>
+      <li>一次跨服务请求可通过 traceId 在 SkyWalking 看到完整调用链。</li>
+      <li>PG 主从切换演练：应用只读窗口 ≤RTO 目标（阶段 2 建议 ≤5 分钟），数据零丢失或满足 RPO。</li>
+      <li>备份恢复每季度演练一次并有记录；恢复后的库可正常启动应用。</li>
+      <li>Kafka Lag 超阈值触发消费者扩容（或告警后人工预案），积压可在时限内追平。</li>
+    </ol>
+    <h3>11.4 核心监控指标清单（Prometheus）</h3>
+    <table>
+      <tr><th>层</th><th>指标</th><th>告警阈值（规划）</th></tr>
+      <tr><td>接入</td><td>TCP 长连接数、808 注册成功率、报文解析错误率</td><td>错误率 &gt;1% 持续 5 分钟</td></tr>
+      <tr><td>Kafka</td><td>topic Lag、消费速率、ISR 收缩次数</td><td>Lag &gt;10 万或持续增长 10 分钟</td></tr>
+      <tr><td>应用</td><td>QPS、错误率、P95/P99 延迟、JVM 堆/GC、线程池队列</td><td>5xx &gt;0.5%；P99 &gt;1s</td></tr>
+      <tr><td>数据库</td><td>连接数、慢查询、TPS、复制延迟、磁盘水位</td><td>磁盘 &gt;80%；复制延迟 &gt;30s</td></tr>
+      <tr><td>业务</td><td>在线数、事件端到端延迟、F36 五维得分</td><td>事件 P95 &gt;3s；质量维度转红</td></tr>
+    </table>
+    <h3>11.5 备份策略（阶段 1 起步）</h3>
+    <table>
+      <tr><th>对象</th><th>方式</th><th>频率 / 保留</th></tr>
+      <tr><td>PostgreSQL</td><td>pg_basebackup 全量 + WAL 归档（支持 PITR）</td><td>全量每周、WAL 持续；保留 4 周，异机存放</td></tr>
+      <tr><td>MinIO（上线后）</td><td>mc mirror 异机/异地桶，WORM 桶版本锁定</td><td>每日增量</td></tr>
+      <tr><td>配置</td><td>Git 库 + 配置中心审计</td><td>每次变更留痕</td></tr>
+      <tr><td>恢复演练</td><td>恢复到隔离环境并启动应用抽检</td><td>每季度 ≥1 次，记录实测 RTO</td></tr>
+    </table>
+    <h3>11.6 容量水位与扩缩阈值</h3>
+    <table>
+      <tr><th>资源</th><th>扩容阈值</th><th>缩容 / 回收</th></tr>
+      <tr><td>Kafka 消费者</td><td>Lag 持续 10 分钟增长且消费 CPU &gt;70%</td><td>低谷 Lag 归零 30 分钟后缩容</td></tr>
+      <tr><td>应用副本</td><td>CPU &gt;70% 或 P95 超基线</td><td>负载 &lt;30% 持续 30 分钟</td></tr>
+      <tr><td>PostgreSQL</td><td>磁盘 70% 预警 / 80% 扩容</td><td>冷分区归档</td></tr>
+      <tr><td>MinIO</td><td>水位 80%</td><td>到期证据清理后复核</td></tr>
+    </table>
+    <h3>11.7 日志与 traceId 规范</h3>
+    <ul>
+      <li>统一 JSON 结构化日志：time、level、service、traceId、spanId、userId、msg；四容器 stdout 采集。</li>
+      <li>traceId 由 nginx 入口生成（或透传 X-Request-Id），经 Java → FastAPI → Kafka 消息头透传，与 traj.sys_audit_log.trace_id 同一编号体系。</li>
+      <li>审计日志（合规留存）与运维日志（故障排查）分库存放，运维人员默认不能查询审计明文。</li>
+    </ul>
+    <h3>11.8 告警分级与响应</h3>
+    <table>
+      <tr><th>级别</th><th>示例</th><th>响应要求</th></tr>
+      <tr><td>P1 致命</td><td>全站不可用、PG 主库宕、809 主备链路全断</td><td>电话 + IM 通知值班，分钟级响应</td></tr>
+      <tr><td>P2 严重</td><td>Kafka Lag 持续增长、磁盘 80%、错误率 &gt;0.5%</td><td>30 分钟内响应</td></tr>
+      <tr><td>P3 一般</td><td>单批终端掉线、慢查询增多</td><td>工作时间 2 小时内</td></tr>
+      <tr><td>P4 提示</td><td>质量维度转黄、证书 30 天内到期</td><td>日内关注</td></tr>
+    </table>
+    <h3>11.9 监控抓取与告警规则草案（规划）</h3>
+    <pre><code># prometheus.yml（规划片段）
+scrape_configs:
+  - job_name: platform-app
+    metrics_path: /actuator/prometheus
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["platform-app:8080"]
+  - job_name: processing-app
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["processing-app:8000"]
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+# 告警规则（Alertmanager 语义伪代码）
+- alert: EventDelayHigh
+  expr: histogram_quantile(0.95, event_ingest_delay_seconds) &gt; 3
+  for: 5m
+  labels: { severity: P2 }</code></pre>
+    <p>指标命名遵循 Prometheus 蛇形小写与 <code>_total/_bucket</code> 后缀约定；标签基数受控——禁止把车牌、traceId 作为指标标签，避免时间序列爆炸；抓取目标全部走容器内网，exporter 端口不对宿主机暴露。</p>
+
+    <h2 id="f40">12. F40 测试与交付体系（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。当前无 CI/CD 配置与自动化回归流水线。</blockquote>
+    <h3>12.1 测试体系</h3>
+    <table>
+      <tr><th>类别</th><th>方法/工具</th><th>关键指标</th></tr>
+      <tr><td>接口自动化回归</td><td>后端契约测试（Java JUnit/MockMvc、Python pytest）+ Postman/脚本集合纳入 CI</td><td>核心接口覆盖率目标 ≥80%；每次合入全量跑</td></tr>
+      <tr><td>808/1078 协议一致性</td><td><strong>双轨</strong>：协议测试工具（报文回放/构造）+ 真实终端抽测；以 JT/T 标准与 GATEWAY-REF 报文样本库为准</td><td>注册/鉴权/心跳/0x0200/苏标附加项/9101 全信令通过</td></tr>
+      <tr><td>接入压测</td><td>自研报文回放（mock 模式，MOD-014 GATEWAY_MODE=mock）+ JMeter</td><td>一期 <strong>500 车 ×0.2Hz</strong> 持续 30 分钟无丢失；长连接/指令响应基线</td></tr>
+      <tr><td>流媒体测试</td><td>弱网模拟（tc/NetEm）：限带宽、丢包、抖动</td><td>首屏时间、卡顿率、音画同步（与 F06 验收基线一致）</td></tr>
+      <tr><td>数据迁移校验</td><td><strong>双人复核</strong>：迁移脚本评审 + 行数/校验和/抽样业务对账 + 回滚预案</td><td>迁移前后关键表计数一致、业务抽检通过</td></tr>
+      <tr><td>安全静态扫描</td><td>依赖漏洞扫描（SCA）、容器镜像扫描、密钥泄漏扫描</td><td>高危漏洞清零方可发布</td></tr>
+    </table>
+    <h3>12.2 环境分层与流水线</h3>
+    <ul>
+      <li>环境：<strong>dev → 联调 → 预生产 → 生产</strong>；预生产接入协议工具与压测数据集，配置贴近生产。</li>
+      <li>CI：提交触发静态扫描 + 单测 + 接口回归；CD：镜像构建 → 分层环境部署 → 预生产验证 → 生产灰度/回滚。</li>
+      <li>配置与密钥：环境变量/配置中心管理，禁止入库；GATEWAY_MODE 等模式开关受环境保护（simulator/mock 禁入生产）。</li>
+    </ul>
+    <h3>12.3 验收标准</h3>
+    <ol>
+      <li>主干合入自动跑 CI，失败阻断合并；核心接口回归报告可查。</li>
+      <li>协议双轨：测试工具全信令通过 + 至少 2 款真实终端（808-2013/2019 各一）抽测通过。</li>
+      <li>500 车 ×0.2Hz 压测报告无消息丢失、消费 Lag 归零、资源水位在容量内。</li>
+      <li>弱网流媒体指标达标并有报告；迁移双人复核签字记录齐备。</li>
+      <li>环境分层与发布审批记录完整；生产镜像均来自 CI 不可手工构建。</li>
+    </ol>
+    <h3>12.4 CI 流水线阶段（规划）</h3>
+    <table>
+      <tr><th>阶段</th><th>内容</th><th>阻断条件</th></tr>
+      <tr><td>1 提交检查</td><td>格式、密钥扫描；禁止 simulator/mock 模式配置合入主干</td><td>发现密钥或模式开关违规</td></tr>
+      <tr><td>2 构建 + 单测</td><td>Java mvn test、Python pytest、前端 build</td><td>单测失败或覆盖率低于门限</td></tr>
+      <tr><td>3 接口回归</td><td>登录/档案/轨迹/风控/评分/审计核心契约集合</td><td>任一用例失败</td></tr>
+      <tr><td>4 安全扫描</td><td>SCA 依赖漏洞、容器镜像扫描、IaC 扫描</td><td>存在高危漏洞</td></tr>
+      <tr><td>5 镜像与部署</td><td>版本化镜像 → 联调 → 预生产（协议/压测）→ 生产灰度</td><td>预生产验证不通过</td></tr>
+    </table>
+    <h3>12.5 压测场景与通过基线</h3>
+    <table>
+      <tr><th>场景</th><th>模型</th><th>通过基线</th></tr>
+      <tr><td>定位接入</td><td>500 车 ×0.2Hz 持续 30 分钟（GATEWAY_MODE=mock 报文回放）</td><td>0 丢失、0 重复、Lag 归零、P95 入库延迟 &lt;2s</td></tr>
+      <tr><td>补传脉冲</td><td>5000 点/秒持续 5 分钟</td><td>队列可追平、无 OOM</td></tr>
+      <tr><td>长连接</td><td>500 终端长连 2 小时 + 30s 心跳</td><td>无异常断连；指令往返 P95 &lt;3s</td></tr>
+      <tr><td>流媒体弱网</td><td>tc/NetEm：丢包 3%、抖动 200ms、限速 2Mbps</td><td>首屏 &lt;3s、卡顿率 &lt;5%（与 F06 一致）</td></tr>
+      <tr><td>报表大查询</td><td>50 并发浏览 + F59 后台任务并行</td><td>P95 ≤2s，连接池不耗尽</td></tr>
+    </table>
+    <h3>12.6 测试数据与报文样本库</h3>
+    <ul>
+      <li>协议样本库：注册/鉴权/心跳/0x0200/苏标 0x64、0x65/9101/1210/1211 等真实脱敏报文（GATEWAY-REF 已整理），纳入回归仓库版本化管理。</li>
+      <li>缺陷数据集：与 F36/F59 共用，含丢点/越界/重复/时钟错/漂移标注，指标验收以此为标准集。</li>
+      <li>simulator/mock 仅在 dev/联调/预生产可用；生产环境启动自检发现该模式直接拒绝启动。</li>
+    </ul>
+    <h3>12.7 生产发布检查清单</h3>
+    <ol>
+      <li>镜像来自 CI 且通过 SCA；配置与密钥经环境注入，无明文入库。</li>
+      <li>数据库迁移脚本经双人评审；回滚脚本与备份在执行前就绪。</li>
+      <li>fat jar 内嵌业务模块时间戳已核对（项目教训：陈旧内嵌 jar 导致改动不生效）。</li>
+      <li>重建容器后核对 nginx upstream 解析（必要时重启 portal-nginx）；轮询 POST /api/auth/login 返回 200 为就绪。</li>
+      <li>发布后观察 30 分钟核心指标（错误率、Lag、登录成功率、入库延迟），异常按预案回滚。</li>
+    </ol>
+    <h3>12.8 自动化回归用例分层（规划）</h3>
+    <table>
+      <tr><th>层</th><th>用例内容</th><th>触发时机</th></tr>
+      <tr><td>冒烟集</td><td>登录、菜单加载、车辆分页、actuator/health（约 20 条）</td><td>每次镜像构建后，5 分钟内跑完</td></tr>
+      <tr><td>核心契约集</td><td>IAM/档案/轨迹/风控/评分/审计；每模块固定包含越权三类用例</td><td>每次主干合入</td></tr>
+      <tr><td>协议集</td><td>808 报文回放（注册/鉴权/心跳/0x0200/苏标 0x64、0x65）、1078 信令</td><td>网关/流媒体相关变更</td></tr>
+      <tr><td>数据迁移集</td><td>迁移脚本前后行数/校验和/业务抽检，回滚预案可执行</td><td>含数据库迁移的发版</td></tr>
+    </table>
+    <p>越权用例固定包含：改 URL/参数跨企业访问（期望 40401）、deptScope 空集合（期望空结果而非报错）、导出文件跨用户下载（期望拒绝并写审计）。三类用例在 MOD-017 各报表激活时同步补齐。</p>
+
+    <h2 id="t-join">13. 与现有系统衔接点</h2>
+    <table>
+      <tr><th>现有对象</th><th>衔接方式</th></tr>
+      <tr><td>docker-compose 四容器</td><td>F39 所有演进的改造对象；先加监控/备份，再逐步拆多机/K8s</td></tr>
+      <tr><td>AuditFilter / traj.sys_audit_log（MOD-013）</td><td>F37 留存策略、哈希链/SM3 增强落在该表现状之上；F38 网关审计复用同一事件模型；traceId 与 SkyWalking 对齐</td></tr>
+      <tr><td>X-Service-Token（ingest/analysis）</td><td>F38 网关上线后收敛为网关签发的受控凭据，短期保留兼容</td></tr>
+      <tr><td>F08 qc_status / gateway_ingest_stat</td><td>F36 五维指标的直接数据源</td></tr>
+      <tr><td>F59 轨迹完整率（MOD-017）</td><td>F36 业务化报告出口；规则函数共用</td></tr>
+      <tr><td>F25 调阅审批/F03 高危指令（MOD-014/016）</td><td>F37 授权审批要求的具体落点</td></tr>
+      <tr><td>actuator/health、/health</td><td>Prometheus 抓取与存活探针的起点</td></tr>
+    </table>
+
+    <h2 id="t-roadmap">14. 分期路线</h2>
+    <table>
+      <tr><th>阶段</th><th>内容</th><th>功能项</th></tr>
+      <tr><td>G0（随网关一期）</td><td>备份与恢复演练、基础主机/容器监控、静态扫描进 CI、接口回归起步</td><td>F39/F40 基础</td></tr>
+      <tr><td>G1（真实终端上量前）</td><td>五维质量大盘与隔离区、审计日志 6 个月分区、脱敏组件、500 车压测与协议双轨</td><td>F36、F37 部分、F40</td></tr>
+      <tr><td>G2（对外开放前）</td><td>API 网关 + AppKey/OAuth2 + 限流计量、809 前置机联调、Prometheus/Loki/SkyWalking 齐备、PG 主从</td><td>F38、F39 阶段 2</td></tr>
+      <tr><td>G3（规模化/合规认证）</td><td>SM4/KMS、分类分级全量落地、等保三级测评、K8s 小集群、按 Lag 扩缩</td><td>F37、F39 阶段 3</td></tr>
+      <tr><td>G4（终态）</td><td>两地三中心、RPO≈0/RTO 分钟级、百万级容量演练</td><td>F39 阶段 4</td></tr>
+    </table>
+    <h3>14.1 阶段准入门控</h3>
+    <ul>
+      <li>G0 → G1：备份恢复演练完成 ≥1 次；基础监控看板覆盖四容器；静态扫描进入 CI。</li>
+      <li>G1 → G2：F36 五维大盘可用；500 车压测报告通过；脱敏组件与审计日志 6 个月分区上线。</li>
+      <li>G2 → G3：API 网关承载全部对外调用（X-Service-Token 收敛下线）；809 试点地区联调通过；PG 主从切换演练成功。</li>
+      <li>G3 → G4：等保三级测评通过（如客户要求）；K8s 小集群稳定运行 ≥1 个月后再规划多活。</li>
+    </ul>
+
+    <h2 id="t-risk">15. 风险与对策</h2>
+    <table>
+      <tr><th>风险</th><th>对策</th></tr>
+      <tr><td>早期只做功能不做保障，上量后返工</td><td>G0/G1 与网关一期绑定交付，监控/备份/压测作为真实终端准入门槛</td></tr>
+      <tr><td>加密改造影响存量查询性能</td><td>字段级加密只对高敏字段；索引列用确定性加密/哈希辅助列；压测验证</td></tr>
+      <tr><td>809 属地平台版本差异大</td><td>按属地要求版本对接，协议适配层化；先在试点地区联调再推广</td></tr>
+      <tr><td>监控系统自身成为单点</td><td>Prometheus 本地短期保留 + 远端持久化；告警多通道；监控与业务资源隔离部署</td></tr>
+      <tr><td>K8s/多活运维能力不足</td><td>按阶段引入（compose 加固→3 节点→K8s），每阶段配培训与演练，不跳步</td></tr>
+      <tr><td>合规改造范围蔓延</td><td>以等保三级条款与三部法规建立差距清单，按客户准入要求排期，不做无依据的过度设计</td></tr>
+    </table>
+
+    <h2 id="t-accept">16. 验收标准</h2>
+    <ol>
+      <li>F36：五维指标在注入缺陷数据集上数值正确；三级下钻与隔离回流闭环可用。</li>
+      <li>F37：敏感字段密文存储、角色化脱敏、调阅/导出/高危指令审批链贯通；审计日志留存 ≥6 个月可查。</li>
+      <li>F38：开放 API 鉴权/限流/计量/审计/脱敏五件套生效；809 与测试上级平台联调通过、断链补传无丢失。</li>
+      <li>F39：监控/日志/链路三支柱上线并通过告警触达、主从切换、备份恢复演练。</li>
+      <li>F40：CI 质量门、协议双轨、500 车压测、弱网流媒体、迁移双人复核均有当期报告。</li>
+      <li>各阶段交付物（备份策略、分级目录、网关文档、容灾预案、测试报告）归档可查。</li>
+      <li>生产环境以 GATEWAY_MODE=gateway 启动自检通过；simulator/mock 配置在生产镜像中不可用。</li>
+      <li>高危操作（高危终端指令、证据保全解除、审计日志导出）全部有审批与审计成对记录。</li>
+    </ol>
+
+    <h2 id="deps">规划依赖关系</h2>
+    <table>
+      <tr><th>功能项</th><th>依赖与被依赖</th></tr>
+      <tr><td>F36 数据质量</td><td>前置：F08 清洗、F01 接入统计；与 F59 共用规则；输出到设备整改与 F24 终端选型</td></tr>
+      <tr><td>F37 安全合规</td><td>前置：F34 审计增强；下游：F25 调阅审批、F26 留存销毁、F38 出参脱敏、F03 高危指令审批</td></tr>
+      <tr><td>F38 开放/监管</td><td>前置：F37 脱敏/鉴权策略、F09 双坐标（809 取列）、F01 数据面；下游：第三方客户接入</td></tr>
+      <tr><td>F39 可观测/高可用</td><td>前置：F01 Kafka 引入（Lag 指标）；为全部模块提供监控/容灾底座</td></tr>
+      <tr><td>F40 测试交付</td><td>前置：GATEWAY_MODE=mock（MOD-014）支撑压测；保障 F01/F06 等协议型功能的准入质量</td></tr>
+    </table>
+
+    <h2 id="todo">待核实项</h2>
+    <table>
+      <tr><th style="width:260px">事项</th><th>说明</th></tr>
+      <tr><td>日志聚合选型</td><td>Loki vs ELK：倾向前者（轻资源），但需确认日志规模与运维熟悉度后定版。</td></tr>
+      <tr><td>API 网关选型</td><td>Spring Cloud Gateway / Kong / APISIX 未定；与 Java 技术栈一致性 vs 开箱插件能力需要 POC。</td></tr>
+      <tr><td>809 属地清单</td><td>首批接入地区及其 809 版本（2011/2019）、专线申请流程需商务/监管侧确认。</td></tr>
+      <tr><td>SM4 与 KMS 落地方式</td><td>应用层加密 vs TDE、商用密码产品选型、是否采购 HSM 取决于客户等保预算。</td></tr>
+      <tr><td>等保测评机构与时点</td><td>等保 2.0 三级测评需在系统定级备案后安排，G3 排期需客户侧配合。</td></tr>
+      <tr><td>容量基线</td><td>500 车指标来自 GATEWAY-PLAN；十万/百万车的资源模型需在各阶段压测后修正，本文数值为规划参考。</td></tr>
+    </table>
+
+    <h2 id="revisions">修订记录</h2>
+    <table>
+      <tr><th>版本</th><th>日期</th><th>修订人</th><th>说明</th></tr>
+      <tr><td>v1.0.0</td><td>2026-10-05</td><td>平台文档组</td><td>首次发布：F36～F40 设计级方案；如实界定"四容器单机、无监控/主从/CI"现状，给出五维质量、分类分级合规、API 网关与 809、三支柱可观测与五级高可用演进、双轨协议测试体系。</td></tr>
+    </table>
+    <div class="docfoot">
+      <span>北斗导航数据业务平台 mydbd · 功能模块文档</span>
+      <span>MOD-DBD-018 v1.0.0</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

@@ -146,6 +146,7 @@ public class TerminalService {
         t.setOemCode(req.oemCode());
         t.setTlModel(req.tlModel());
         t.setSimAccount(req.simAccount());
+        t.setGatewayTruckId(req.gatewayTruckId());
         t.setProtocolType(req.protocolType());
         t.setEquipmentType(req.equipmentType());
         t.setVideoChannel(req.videoChannel());

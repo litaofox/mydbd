@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DEP-DBD-001 部署与运维手册 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">DEP-DBD-001 部署与运维手册 · 单机四容器部署、发版、备份与排障</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 环境要求</a></li>
+        <li><a href="#s2">2 部署拓扑与组件版本</a></li>
+        <li><a href="#s3">3 配置项说明</a></li>
+        <li><a href="#s4">4 首次部署步骤</a></li>
+        <li><a href="#s5">5 数据库初始化</a></li>
+        <li><a href="#s6">6 日常运维</a></li>
+        <li><a href="#s7">7 后端发版标准流程</a></li>
+        <li><a href="#s8">8 前端发版与缓存</a></li>
+        <li><a href="#s9">9 容器重建注意</a></li>
+        <li><a href="#s10">10 备份与恢复</a></li>
+        <li><a href="#s11">11 常见问题 FAQ</a></li>
+        <li><a href="#s12">12 测试账号</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>DEP-DBD-001 部署与运维手册</h1>
+    <p class="cover-meta">文档编号 DEP-DBD-001<span class="sep">|</span>版本 v1.3.0<span class="sep">|</span>发布日期 2026-10-06<span class="sep">|</span>事实基准 2026-10-06 源代码</p>
+    <p>关联文档：<a href="ARC-DBD-001-系统架构设计.html">ARC-DBD-001 系统架构设计</a>　<a href="DDL-DBD-001-数据库设计.html">DDL-DBD-001 数据库设计</a>　<a href="SYS-DBD-001-项目总体设计.html">SYS-DBD-001 项目总体设计</a></p>
+    <blockquote class="warn">
+      <p>运行环境约定：本文命令以 Windows + Docker Desktop（PowerShell 7）为基准；<code>docker compose</code> 为 v2 子命令语法。如使用 Linux/macOS，将 PowerShell 写法替换为等价 shell 命令即可，容器内操作完全相同。</p>
+    </blockquote>
+
+    <h2 id="s1">1 环境要求</h2>
+    <h4>1.1 软件要求</h4>
+    <table>
+      <thead><tr><th>软件</th><th>版本要求</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>Docker Desktop</td><td>含 Docker Engine 与 Compose v2（支持 healthcheck condition）</td><td>四容器编排</td></tr>
+        <tr><td>JDK</td><td>17（本机发版构建用；容器构建使用 maven:3.9-eclipse-temurin-17，运行时 eclipse-temurin:17-jre-jammy）</td><td>本地 <code>mvn</code> 发版</td></tr>
+        <tr><td>Maven</td><td>3.9 左右（本地仓库已具备全部依赖，发版用 <code>-o</code> 离线模式）</td><td>后端全量构建</td></tr>
+        <tr><td>Node.js / npm</td><td>Node 18 或 20 LTS（Vite 5 要求 18+；仓库未通过 engines 锁定，建议团队统一 20 LTS）</td><td>前端构建出 dist</td></tr>
+        <tr><td>浏览器</td><td>Chromium 内核现代浏览器；现场内嵌 Electron/工控浏览器同为 Chromium</td><td>访问门户</td></tr>
+      </tbody>
+    </table>
+    <h4>1.2 资源要求（compose 实测限额）</h4>
+    <div class="stat-row">
+      <div class="stat"><div class="v">1 GB</div><div class="l">postgres 内存上限 / 1.0 CPU</div></div>
+      <div class="stat"><div class="v">768 MB</div><div class="l">platform-app 上限 / 1.0 CPU（-Xmx640m）</div></div>
+      <div class="stat"><div class="v">384 MB</div><div class="l">processing-app 上限 / 1.0 CPU</div></div>
+      <div class="stat"><div class="v">64 MB</div><div class="l">portal-nginx 上限 / 0.2 CPU</div></div>
+    </div>
+    <ul>
+      <li>四容器内存上限合计约 <strong>2.2 GB</strong>，加上宿主机与 Docker Desktop 自身开销，<strong>建议宿主机内存不低于 4 GB</strong>（8 GB 更从容）；</li>
+      <li>磁盘：镜像（JRE 运行时、PostGIS、python-slim、nginx）与镜像构建缓存建议预留 <strong>10 GB 以上</strong>，数据卷增长另计；</li>
+      <li>网络：构建阶段需访问 Maven/npm 镜像源（Dockerfile 已配置阿里云 Maven、清华 PyPI、阿里云 apt 镜像）；运行阶段除高德瓦片与高德 Web 服务外无外网依赖。</li>
+    </ul>
+    <h4>1.3 端口占用</h4>
+    <table>
+      <thead><tr><th>端口</th><th>绑定</th><th>服务</th><th>被占用时</th></tr></thead>
+      <tbody>
+        <tr><td>5432</td><td>127.0.0.1</td><td>PostgreSQL</td><td>本机若另有 PostgreSQL 服务需先停，或改 compose 端口映射</td></tr>
+        <tr><td>8080</td><td>127.0.0.1</td><td>platform-app（直连排障口）</td><td>修改 compose 与健康检查无关，仅影响宿主直连</td></tr>
+        <tr><td>8000</td><td>127.0.0.1</td><td>processing-app（直连排障口）</td><td>同上</td></tr>
+        <tr><td>8090</td><td><strong>0.0.0.0（对用户网段开放）</strong></td><td>portal-nginx 门户</td><td>用户唯一访问入口，需保证不被占用并在防火墙放行</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s2">2 部署拓扑与组件版本</h2>
+    <p>拓扑与数据流见 <a href="ARC-DBD-001-系统架构设计.html#s2">ARC-DBD-001 §2 部署拓扑</a>。版本清单：</p>
+    <table>
+      <thead><tr><th>组件</th><th>版本 / 来源</th><th>交付方式</th></tr></thead>
+      <tbody>
+        <tr><td>PostgreSQL + PostGIS</td><td>postgis/postgis:16-3.4（PG 16 / PostGIS 3.4）</td><td>远程镜像</td></tr>
+        <tr><td>门户反向代理</td><td>nginx:1.27-alpine</td><td>远程镜像</td></tr>
+        <tr><td>Java 运行时</td><td>eclipse-temurin:17-jre-jammy（构建期 maven:3.9-eclipse-temurin-17）</td><td><code>backend-java/Dockerfile</code> 本地构建</td></tr>
+        <tr><td>业务应用</td><td>Spring Boot 3.2.10 fat jar：platform-app.jar</td><td>同上，镜像内 <code>/app/platform-app.jar</code></td></tr>
+        <tr><td>Python 运行时</td><td>python:3.12-slim</td><td><code>processing-service/Dockerfile</code> 本地构建</td></tr>
+        <tr><td>Python 依赖</td><td>fastapi &gt;=0.110,&lt;1.0；uvicorn[standard] &gt;=0.29；pydantic &gt;=2.6,&lt;3.0；pydantic-settings &gt;=2.2；psycopg2-binary &gt;=2.9.9；python-multipart &gt;=0.0.9</td><td>requirements.txt 构建时装入</td></tr>
+        <tr><td>前端</td><td>Vue 3.4 / Vite 5.2 / Element Plus 2.7（详见 ARC §9）</td><td><strong>不在容器内构建</strong>：宿主 npm run build 产出 frontend/dist，由 nginx 只读挂载</td></tr>
+        <tr><td>Kafka（可选基础设施）</td><td>apache/kafka:3.9.0（KRaft 单节点，无 ZooKeeper）</td><td>远程镜像，compose <code>profiles: ["dev-infra"]</code> 条件服务；仅 GATEWAY_MODE=mock 本地仿真时需要（<code>--profile dev-infra</code> 拉起），默认部署不启动；生产 gateway 模式直连外部网关集群，不部署本服务</td></tr>
+      </tbody>
+    </table>
+    <p>两个命名卷：<code>pg-data</code>（PostgreSQL 数据目录）、<code>mydbd-data</code>（处理服务 /data 工作目录；GATEWAY-PLAN-001 一期起也承载网关报警附件转存 <code>/data/media/YYYY-MM-DD/{warnId}/</code>）；宿主目录 <code>samples/</code> 以只读方式挂到处理容器 <code>/data/samples</code>。</p>
+
+    <h2 id="s3">3 配置项说明</h2>
+    <h4>3.1 .env 变量（以 .env.example 为模板）</h4>
+    <table>
+      <thead><tr><th style="width:180px">变量</th><th style="width:210px">示例 / 缺省</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>POSTGRES_DB</code></td><td>mydbd</td><td>数据库名；同时注入 postgres 初始化、Java JDBC 与 Python DSN</td></tr>
+        <tr><td><code>DB_USER</code></td><td>mydbd</td><td>数据库用户名（POSTGRES_USER）</td></tr>
+        <tr><td><code>DB_PASSWORD</code></td><td>change_me_in_prod</td><td>数据库密码；<strong>生产环境必须修改</strong>。也是 DBeaver 等工具直连 5432 的密码</td></tr>
+        <tr><td><code>JWT_HMAC_SECRET</code></td><td>change_me_to_32_bytes_min_length_secret_value_here</td><td>JWT HMAC 签名密钥（Java 与 processing 共用）；生产用 <code>openssl rand -hex 32</code> 生成。签发算法固定 HS256（密钥长度不影响算法选择；processing 验签兼容 HS384/HS512 存量令牌）。修改后所有已签发令牌立即失效，用户需重新登录</td></tr>
+        <tr><td><code>SERVICE_TOKEN</code></td><td>change_me_service_token_for_internal_api_calls</td><td>内部服务令牌：调 /api/ingest/traj、/api/analysis/video 时以 <code>X-Service-Token</code> 头携带；Java 与 Python 两侧必须一致</td></tr>
+        <tr><td><code>JAVA_OPTS</code></td><td>-Xmx640m -XX:+UseG1GC</td><td>.env.example 提供该变量，但 docker-compose.yml 中 platform-app 的 JAVA_OPTS 当前为<strong>同值硬编码</strong>（未引用该变量）；调整 JVM 参数需改 compose 文件或使用 override 文件</td></tr>
+        <tr><td><code>AMAP_KEY</code></td><td>空</td><td>高德开放平台 Web 服务 Key（控制台申请）。用于服务端代理的逆地理编码与地点检索（/api/terminal/geocode/reverse、/search），Key 不下发前端；<strong>留空时这两个接口返回业务码 50301</strong>，不影响地图瓦片与其余功能</td></tr>
+        <tr><td><code>GATEWAY_MODE</code></td><td>simulator</td><td>vps 网关对接运行模式（GATEWAY-PLAN-001）：<code>simulator</code>=既有进程内模拟器，不启动 Kafka 消费（默认）；<code>mock</code>=内置 mock_producer 向 Kafka 投递 500 车仿真报文并走真实消费链路（开发/演示，需同时配 KAFKA_BOOTSTRAP_SERVERS 并以 <code>--profile dev-infra</code> 启动 kafka）；<code>gateway</code>=对接真实 vps 网关。<strong>切换后需重启 processing-app 生效</strong></td></tr>
+        <tr><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td>空（mock 填 <code>kafka:9092</code>）</td><td>Kafka broker 列表，逗号分隔；mock 模式指本地 dev-infra kafka 服务，gateway 模式填网关集群地址。为空时即使 GATEWAY_MODE=mock/gateway 也不启动消费（gateway_enabled 双重判定）</td></tr>
+        <tr><td><code>KAFKA_GROUP_ID</code></td><td>mydbd-ingest</td><td>网关消息消费组 ID；对接共享集群时须使用独立消费组与只读 ACL</td></tr>
+        <tr><td><code>GATEWAY_FILE_BASE_URL</code></td><td>空</td><td>网关附件服务地址（18009），用于转存图片/音视频；留空则不转存（mock 模式生成占位文件）</td></tr>
+        <tr><td><code>GATEWAY_MEDIA_STRATEGY</code></td><td>local</td><td>附件策略：<code>local</code>=流式下载转存到 mydbd-data 卷（/data/media，单文件上限 50MB，鉴权取件）；<code>proxy</code>=仅记录原始 URL 不转存</td></tr>
+      </tbody>
+    </table>
+    <h4>3.2 application.yml 关键配置</h4>
+    <table>
+      <thead><tr><th style="width:240px">配置键</th><th>缺省 / 环境变量</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>server.port</td><td>8080</td><td>服务端口</td></tr>
+        <tr><td>spring.datasource.url</td><td>${SPRING_DATASOURCE_URL}</td><td>compose 注入 jdbc:postgresql://postgres:5432/mydbd?stringtype=unspecified；本地裸跑缺省指 localhost:5432/mydbd</td></tr>
+        <tr><td>spring.datasource.username/password</td><td>${SPRING_DATASOURCE_USERNAME/PASSWORD}</td><td>本地裸跑缺省均为 mydbd</td></tr>
+        <tr><td>spring.datasource.hikari.maximum-pool-size</td><td>10</td><td>连接池上限</td></tr>
+        <tr><td>spring.jackson</td><td>yyyy-MM-dd HH:mm:ss / Asia/Shanghai</td><td>全局日期格式与时区</td></tr>
+        <tr><td>management</td><td>仅暴露 health，show-details=never</td><td>actuator 不显示组件细节</td></tr>
+        <tr><td>mybatis-plus.configuration.map-underscore-to-camel-case</td><td>true</td><td>snake_case 列 ↔ camelCase 字段</td></tr>
+        <tr><td>mydbd.jwt.secret / mydbd.service-token / mydbd.amap.key</td><td>JWT_HMAC_SECRET / SERVICE_TOKEN / AMAP_KEY</td><td>见 3.1</td></tr>
+        <tr><td>mydbd.bootstrap.admin-password</td><td>admin123（代码缺省）</td><td>首启创建 admin 的初始密码；仅当 admin 不存在时使用一次</td></tr>
+        <tr><td>mydbd.bootstrap.test-password</td><td>test123456（代码缺省）</td><td>首启创建四省测试用户的初始密码</td></tr>
+        <tr><td>mydbd.processing.base-url</td><td>${PROCESSING_BASE_URL:http://processing-app:8000}</td><td>GATEWAY-PLAN-001：Java 调 processing 网关接口（/api/gateway/status、/api/gateway/media/*）的基址，经 ProcessingClient 携带 X-Service-Token 访问；本地裸跑可指 localhost:8000</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s4">4 首次部署步骤</h2>
+    <p>在项目根目录 <code>mydbd/</code> 下按顺序执行（PowerShell）：</p>
+    <p><strong>第 1 步：准备环境配置。</strong></p>
+    <pre><code>Copy-Item .env.example .env
+# 编辑 .env：至少修改 DB_PASSWORD、JWT_HMAC_SECRET、SERVICE_TOKEN；需要逆地理时填 AMAP_KEY
+notepad .env</code></pre>
+    <p><strong>第 2 步：构建前端静态资源。</strong>（nginx 只挂载 dist，不构建）</p>
+    <pre><code>cd frontend
+npm install
+npm run build
+cd ..
+# 成功标志：生成 frontend/dist 目录（含 index.html 与 assets/）</code></pre>
+    <p><strong>第 3 步：构建镜像并启动全部容器。</strong></p>
+    <pre><code>docker compose up -d --build
+# 首次会拉取 postgis:16-3.4、nginx:1.27-alpine 并本地构建两个应用镜像
+
+# 如需 GATEWAY_MODE=mock 网关仿真链路，追加 dev-infra profile 同时拉起 Kafka：
+docker compose --profile dev-infra up -d --build
+# （.env 中 GATEWAY_MODE=mock、KAFKA_BOOTSTRAP_SERVERS=kafka:9092）</code></pre>
+    <blockquote class="tip">
+      <p>Kafka 是 compose 条件服务（<code>profiles: ["dev-infra"]</code>）：不带 profile 的常规 <code>docker compose up</code> 不启动它，既有 simulator 模式部署不受影响。注意<strong>启动顺序</strong>：kafka 晚于 processing-app 启动时，mock_producer 初始引导失败不自动重连，需 <code>docker compose restart processing-app</code>（消费侧本身带 5s 退避重连）。</p>
+    </blockquote>
+    <p><strong>第 4 步：健康检查。</strong></p>
+    <pre><code>docker compose ps
+# 常规四个容器 STATUS 最终均应为 healthy：
+# postgres(约10~30s) → processing-app/platform-app(约20~60s) → portal-nginx
+# mock 模式另有 kafka 容器（dev-infra profile，无 healthcheck，State=running 即可）
+
+# 应用直连健康端点（宿主）
+curl.exe http://127.0.0.1:8000/health
+curl.exe http://127.0.0.1:8080/actuator/health
+curl.exe http://127.0.0.1:8090/</code></pre>
+    <p><strong>第 5 步：访问与登录。</strong></p>
+    <ol>
+      <li>浏览器打开 <code>http://localhost:8090</code>；</li>
+      <li>用 <code>admin / admin123</code> 登录（登录页可点击测试账号快捷填充）；</li>
+      <li>进入"实时导航监控"页，点击「加载样例数据」，处理服务把 <code>samples/</code> 中的轨迹 CSV 与当日司机事件导入 PostGIS，地图随即出现车辆与风险事件。</li>
+    </ol>
+    <blockquote class="tip">
+      <p>需要更大体量数据时，可调用处理服务的标准数据集接口（standard / dense 两档，后台异步生成，可用 status 查询进度）：见 <a href="../api/API-DBD-001-平台接口手册.html">API-DBD-001</a> 中 <code>/api/ingest/dataset/*</code>。</p>
+    </blockquote>
+
+    <h2 id="s5">5 数据库初始化</h2>
+    <p><code>infra/postgres/init/</code> 以只读方式挂到 postgres 容器的 <code>/docker-entrypoint-initdb.d</code>。官方镜像行为：<strong>仅当数据卷为空（首次初始化）时</strong>按文件名字典序执行一次；之后重启、升级镜像都不会再次执行。需要重跑必须清空 pg-data 卷（见 §10/FAQ）。</p>
+    <table>
+      <thead><tr><th style="width:230px">脚本</th><th>内容（按文件命名与头部注释）</th></tr></thead>
+      <tbody>
+        <tr><td>01-create-schemas.sql</td><td>创建 traj / mon schema 与 PostGIS 扩展等基础对象</td></tr>
+        <tr><td>02-traj-tables.sql</td><td>轨迹域：gps_point、vehicle、terminal、driver、绑定关系、warn_info、photo、报警类型等</td></tr>
+        <tr><td>03-mon-tables.sql</td><td>监控域：risk_event、video_analysis</td></tr>
+        <tr><td>04-mdm-tables.sql</td><td>主数据：组织 dept、车辆/终端/司机档案与绑定表</td></tr>
+        <tr><td>05-audit-tables.sql</td><td>操作审计日志表</td></tr>
+        <tr><td>06-iam-tables.sql</td><td>IAM：sys_user / sys_role / sys_menu 及三张关系表；菜单权限点与 4 个内置角色种子（显式 id）</td></tr>
+        <tr><td>07-risk-tables.sql</td><td>风控规则、电子围栏、事件引用等</td></tr>
+        <tr><td>08-work-order.sql</td><td>处置工单、SLA、工单流转日志</td></tr>
+        <tr><td>09-system-config.sql</td><td>系统参数配置、数据字典类型/字典项</td></tr>
+        <tr><td>10-risk-intervention.sql</td><td>坐席干预记录</td></tr>
+        <tr><td>11-notify.sql</td><td>站内消息与发送日志</td></tr>
+        <tr><td>12-dashboard.sql</td><td>监控大屏相关查询对象</td></tr>
+        <tr><td>13-alarm-center.sql</td><td>终端报警中心相关对象</td></tr>
+        <tr><td>14-driving-score.sql</td><td>驾驶评分结果表</td></tr>
+        <tr><td>15-risk-profile.sql</td><td>风险画像相关对象</td></tr>
+        <tr><td>16-province-test-data.sql</td><td>上海/江苏/安徽/山东 4 个省级企业节点，并把演示企业挂到省节点下</td></tr>
+        <tr><td>17-analysis-menu.sql</td><td>分析/报表占位菜单挂载</td></tr>
+        <tr><td>18-gateway-integration.sql</td><td>GATEWAY-PLAN-001 网关对接（2026-10-06）：gps_point 扩 alarm_flag/ext/trackId 索引、terminal 网关双标识与在线态列、warn_media/event_map/dlq/ingest_stat/unknown_terminal 新表、risk_event.source_id、base_warn_type 扩 29 类、菜单 925；<strong>全量幂等，已手工在存量库执行</strong></td></tr>
+      </tbody>
+    </table>
+    <p>幂等性：建表普遍使用 <code>CREATE TABLE IF NOT EXISTS</code>、索引用 <code>IF NOT EXISTS</code>、种子使用 <code>ON CONFLICT DO NOTHING</code> 并以 <code>setval</code> 对齐序列；但<strong>幂等不等于"会增量补种子"</strong>——已存在的旧数据卷不会因脚本更新而自动变更。admin 与四省测试用户不写在 SQL 中，而由 Java 首启初始化器（DataInitializer、ProvinceTestUserInitializer）幂等创建。</p>
+
+    <h2 id="s6">6 日常运维</h2>
+    <h4>6.1 启停与状态</h4>
+    <pre><code>docker compose ps                 # 查看容器状态与健康状况
+docker compose stop               # 停止（保留容器与卷）
+docker compose start              # 再次启动
+docker compose restart platform-app   # 只重启 Java 服务（IP 不变，无需动 nginx）
+docker compose down               # 停止并删除容器/网络（卷保留，数据不丢）
+docker compose up -d              # down 后重新拉起</code></pre>
+    <h4>6.2 查看日志</h4>
+    <pre><code>docker compose logs -f platform-app      # Java 日志（含 WS 推送游标、工单扫描记录）
+docker compose logs -f processing-app    # Python 日志（CEP 异常只打印不阻断）
+docker compose logs -f portal-nginx      # nginx access/error，502 排查首选
+docker compose logs --tail=200 postgres  # 数据库最近日志</code></pre>
+    <h4>6.3 健康检查端点</h4>
+    <table>
+      <thead><tr><th>端点</th><th>返回</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>GET http://127.0.0.1:8080/actuator/health</td><td>{"status":"UP"}</td><td>compose 健康检查使用；actuator 不暴露细节</td></tr>
+        <tr><td>GET http://127.0.0.1:8080/health</td><td>{"status":"UP"}</td><td>应用自带轻量健康端点，不经 JWT 过滤器</td></tr>
+        <tr><td>GET http://127.0.0.1:8000/health</td><td>{"status":"UP"}</td><td>处理服务健康端点</td></tr>
+        <tr><td>GET http://127.0.0.1:8090/</td><td>index.html</td><td>门户存活判定（wget --spider）</td></tr>
+      </tbody>
+    </table>
+    <p>注意：<code>/actuator/health</code> 只证明进程存活，不能证明数据库连接完全正常；就绪判定建议以登录接口可返回为准（见 §7）。</p>
+    <h4>6.4 vps 网关模式运维（GATEWAY-PLAN-001）</h4>
+    <p>网关消费链路在 processing-app 内，模式由 .env 的 <code>GATEWAY_MODE</code> 控制，切换后重启 processing-app 生效：</p>
+    <pre><code># 模式切换示例：simulator（默认）→ mock 仿真
+# 1) .env 设置：GATEWAY_MODE=mock、KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+# 2) 拉起 kafka（条件服务）并重启处理服务
+docker compose --profile dev-infra up -d kafka
+docker compose restart processing-app
+# 3) 验证消费状态（容器内/宿主带服务令牌直连 processing）
+curl.exe -H "X-Service-Token: %SERVICE_TOKEN%" http://127.0.0.1:8000/api/gateway/status</code></pre>
+    <table>
+      <thead><tr><th>事项</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>三种模式</td><td><code>simulator</code>=进程内模拟器（/api/simulator/* 控制），不启动 Kafka；<code>mock</code>=mock_producer 500 车仿真报文（5s GPS/30s 心跳/29 类报警限频 ≤2 起/分、每起带 2 附件/上下线循环；测试模式下可在运行模式页运行时启停）灌入 Kafka，消费/CEP/工单/附件全链路真实运行；<code>gateway</code>=对接真实 vps 网关（上线前需落实 broker、只读 ACL、独立消费组并小批量真车灰度）</td></tr>
+        <tr><td>运行状态查看</td><td>平台页面「系统管理 → 运行模式」（菜单 925，/system/gateway，权限码 system:gateway:view，2026-10-06 由「网关接入状态」更名）：模式、运行态、分 topic 收发计数、DLQ 数、未登记终端数与隔离区清单；测试模式下可启停 mock 仿真投递（开关持久化、重启后保持）并一键「清除模拟数据」（清运行数据保留基础数据）；接口见 API-DBD-001 §2.27/§3.2/§3.4/§3.6</td></tr>
+        <tr><td>未登记终端</td><td>双标识（手机号 / gateway truckId）均解析不到的终端进入 <code>traj.gateway_unknown_terminal</code> 隔离区，报文仍落轨迹/报警不丢弃；补档后自动恢复关联，隔离区可在状态页核查</td></tr>
+        <tr><td>死信</td><td>解析/入库失败消息写 <code>traj.gateway_dlq</code>，状态页可见计数；正常运行应为 0</td></tr>
+        <tr><td>附件存储</td><td>local 策略转存 mydbd-data 卷 <code>/data/media/日期/warnId/</code>，单文件上限 50MB；前端经 /api/monitor/alarm/media/{id} 鉴权中转查看；备份 mydbd-data 卷即同时备份附件（见 §10）</td></tr>
+        <tr><td>Kafka 日志</td><td><code>docker compose logs -f kafka</code>；消费侧引导失败有 5s 退避自动重连；mock_producer 引导期失败不重连，需重启 processing-app（已知遗留，二期加固）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 后端发版标准流程</h2>
+    <p>热替换流程（不重建容器、IP 不变、nginx 无需操作）：</p>
+    <p><strong>第 1 步：全量离线构建。</strong>在 <code>backend-java/</code> 目录执行：</p>
+    <pre><code>mvn -o -B -ntp clean install -DskipTests</code></pre>
+    <p><strong>第 2 步：核对 fat jar 时间戳。</strong></p>
+    <pre><code"># 检查 platform-boot/target/platform-app.jar 已刷新
+Get-Item backend-java\platform-boot\target\platform-app.jar | Select-Object FullName, Length, LastWriteTime</code></pre>
+    <blockquote class="danger">
+      <p>必须做全量 <code>clean install</code>。只在某个业务模块目录执行 <code>mvn package</code> 可能只刷新该模块 jar，<strong>不会重新 repackage platform-app.jar</strong>，导致"代码改了、容器里没生效"。fat jar 内嵌的各业务模块 jar 时间戳应与本次构建一致。</p>
+    </blockquote>
+    <p><strong>第 3 步：拷入运行中容器。</strong></p>
+    <pre><code>docker cp backend-java/platform-boot/target/platform-app.jar mydbd-platform-app-1:/app/platform-app.jar</code></pre>
+    <p><strong>第 4 步：重启并轮询就绪。</strong></p>
+    <pre><code>docker restart mydbd-platform-app-1
+
+# PowerShell 轮询登录接口：返回 HTTP 200 即视为就绪（一般 20~60 秒）
+$body = '{"username":"admin","password":"admin123"}'
+while ($true) {
+  try {
+    $r = Invoke-WebRequest -Uri http://127.0.0.1:8080/api/auth/login -Method Post `
+      -ContentType 'application/json' -Body $body -UseBasicParsing -TimeoutSec 3
+    if ($r.StatusCode -eq 200) { Write-Host "platform-app ready"; break }
+  } catch { Start-Sleep -Seconds 2 }
+}</code></pre>
+    <p>该方式只 <code>restart</code> 同一容器，容器 IP 不变，portal-nginx 无需任何操作；验证门户：<code>http://localhost:8090</code>。</p>
+
+    <h2 id="s8">8 前端发版与缓存</h2>
+    <p><strong>发版：</strong></p>
+    <pre><code>cd frontend
+npm run build
+cd ..
+# dist 是直接挂载进 nginx 容器的宿主目录，覆盖即生效，无需重启容器
+# 浏览器侧刷新页面即可；若浏览器缓存顽固，Ctrl+F5 强刷</code></pre>
+    <p><strong>缓存策略（portal.conf 已固化）：</strong></p>
+    <ul>
+      <li><code>location = /index.html</code> 显式加 <code>Cache-Control: no-cache, no-store, must-revalidate</code>，保证发版后浏览器立刻拿到引用最新 hash chunk 的 index.html；</li>
+      <li><code>assets/</code> 文件名带内容 hash，可长期缓存；发版后旧 chunk 自然淘汰；</li>
+      <li>nginx 对未知路径 <code>try_files ... /index.html</code> 回退 SPA。</li>
+    </ul>
+    <p><strong>现场内嵌 Electron/工控浏览器</strong>可能缓存更顽固：旧 chunk 白屏/404 时用 <code>Ctrl+Shift+R</code> 强制刷新，或在该壳的清缓存菜单中清理站点数据后重开。</p>
+
+    <h2 id="s9">9 容器重建注意（重要）</h2>
+    <blockquote class="danger">
+      <p><strong>现象</strong>：执行 <code>docker compose up -d --build</code> 或 <code>docker compose up -d --force-recreate</code> 重建后端容器后，<code>http://localhost:8090</code> 返回 <strong>502</strong>，但直连 <code>http://127.0.0.1:8080</code> 一切正常。</p>
+      <p><strong>原因</strong>：容器重建会获得新的内部 IP；nginx 在<strong>启动时</strong>把 upstream 主机名（platform-app / processing-app）解析为固定 IP 并缓存，旧 nginx 进程仍在连旧 IP。<code>docker logs mydbd-portal-nginx-1</code> 可见 <code>connect() failed (111: Connection refused)</code> 类报错。</p>
+      <p><strong>处理</strong>：重建后端/处理容器后，必须重启门户容器刷新 upstream 解析：</p>
+    </blockquote>
+    <pre><code>docker compose restart portal-nginx
+# 或：docker restart mydbd-portal-nginx-1</code></pre>
+    <p>对比：§7 的"docker cp + restart 同一容器"不换 IP，因此不需要重启 nginx——两种发版路径的区别就在于容器是否被重建。</p>
+
+    <h2 id="s10">10 备份与恢复</h2>
+    <h4>10.1 pg-data 卷（核心数据）</h4>
+    <p>全部业务数据、IAM、审计都在 pg-data 卷（物理路径用 <code>docker volume inspect mydbd_pg-data</code> 查看，卷名以 compose 项目目录名为前缀，可用 <code>docker volume ls</code> 核对）。推荐用 pg_dump 做逻辑备份：</p>
+    <pre><code># 备份（自定义压缩格式，PowerShell 重定向）
+docker compose exec -T postgres pg_dump -U mydbd -d mydbd -Fc -v > backup-20261005.dump
+
+# 恢复（--clean 先清后建；建议在停服窗口执行）
+docker compose exec -T postgres pg_restore -U mydbd -d mydbd --clean --if-exists -v < backup-20261005.dump</code></pre>
+    <p>纯 SQL 格式备份可用 <code>pg_dump -U mydbd -d mydbd -Fp &gt; backup.sql</code>，恢复用 <code>psql -v ON_ERROR_STOP=1 -f backup.sql</code>。备份文件中不含卷内但库外的内容；恢复后如改过密码，注意 .env 与备份内角色口令的一致性问题（逻辑备份不含角色定义时不影响）。</p>
+    <h4>10.2 mydbd-data 卷与 samples</h4>
+    <ul>
+      <li><code>mydbd-data</code> 挂在处理容器 <code>/data</code>，存放处理服务运行期工作数据（当前主要是数据集生成过程产物）；按需直接用 <code>docker cp</code> 拷贝目录备份；</li>
+      <li><code>samples/</code> 是仓库内宿主目录（只读挂载），随代码仓库版本管理，无需随卷备份；</li>
+      <li><strong>清空业务数据重来</strong>可调用 <code>/api/ingest/dataset/clear</code>（保留 IAM/菜单/字典/配置/审计）；要连库结构完全重建，先 <code>docker compose down</code> 再 <code>docker volume rm mydbd_pg-data</code>，然后 <code>docker compose up -d</code> 让 17 个初始化脚本重新执行（危险操作，先备份）。</li>
+    </ul>
+
+    <h2 id="s11">11 常见问题 FAQ</h2>
+
+    <h4 id="faq1">Q1 浏览器报 502/AxiosError，怎么判断是后端挂了还是前端路径错了？</h4>
+    <p><span class="badge gray">现象</span>前端反馈"接口 502"，但后端进程看着在运行。</p>
+    <p><span class="badge blue">原因</span>必须以 <code>docker compose logs portal-nginx</code> 的 access log 为准，不能只看浏览器报错文案。nginx combined 日志中<strong>状态码后面紧跟的第二列是响应体字节数（body_bytes_sent）</strong>：</p>
+    <ul>
+      <li><code>200 40401</code>：HTTP 状态其实是 200、返回了约 40 KB 的 JSON 业务数据——这不是 502。曾出现该 4 万字节 JSON 响应被前端误报为 "AxiosError 502" 的案例，应排查前端处理逻辑而非网络；</li>
+      <li><code>200</code> 加约 <strong>500 字节 text/html</strong>：返回体是 index.html（SPA 回退页），说明请求<strong>漏了 /api 前缀</strong>，被 <code>try_files</code> 回退到前端页面；应检查请求 URL 与 baseURL；</li>
+      <li><code>502 157</code> 一类且 error.log 有 connect() failed：才是 nginx 到上游真不通，按 Q2 排查。</li>
+    </ul>
+    <p><span class="badge green">处理</span>先读日志两列数字定性，再决定查前端路径还是查容器/网络。</p>
+
+    <h4 id="faq2">Q2 门户 :8090 间歇性/重建后 502，:8080 直连正常？</h4>
+    <p><span class="badge gray">现象</span>重建后端容器后 :8090 返回 502，:8080 直连与登录正常。</p>
+    <p><span class="badge blue">原因</span>nginx 启动时把 upstream 解析成固定容器 IP；后端容器重建换了 IP，旧 nginx 仍连旧地址。</p>
+    <p><span class="badge green">处理</span><code>docker compose restart portal-nginx</code>。热替换发版（docker cp + restart 同容器，见 §7）不换 IP，可避免此问题。</p>
+
+    <h4 id="faq3">Q3 列表正常、点开详情 404，或详情 id 与列表对不上？</h4>
+    <p><span class="badge gray">现象</span>列表数据正常，点详情报"不存在/404"；新数据尤其明显。</p>
+    <p><span class="badge blue">原因</span>主键是 19 位长整型雪花 ID，超过 JS Number.MAX_SAFE_INTEGER（2^53-1，16 位）。后端若漏加 <code>@JsonSerialize(using = ToStringSerializer.class)</code>，Long 以 JSON number 返回，前端 <code>JSON.parse</code> 丢精度，拿错误 id 去查详情必然 404。</p>
+    <p><span class="badge green">处理</span>所有面向前端的 VO/DO 中的 Long id 一律加 ToStringSerializer 序列化为字符串（集合 id 用 <code>contentUsing</code>）；前端按字符串持有 id，不做数值运算。代码中 AuditLogVO、UserListVO、UserDetailVO 等均已按此处理，新增 VO 照做。</p>
+
+    <h4 id="faq4">Q4 接口偶发 InvalidDefinitionException: Java 8 date/time type LocalDateTime not supported by default？</h4>
+    <p><span class="badge gray">现象</span>新增接口序列化含 LocalDateTime 的对象时抛 InvalidDefinitionException。</p>
+    <p><span class="badge blue">原因</span>代码里 <code>new ObjectMapper()</code> 新建的裸 Mapper 不带 jsr310 模块，不认 JDK8 时间类型；Spring 容器中经 Boot 自动配置的 ObjectMapper 才注册了时间模块并套用全局格式/时区。</p>
+    <p><span class="badge green">处理</span>凡是要序列化业务对象（尤其含 LocalDateTime）的 ObjectMapper，必须<strong>注入 Spring 容器实例</strong>（如 AuditRegistrar 通过构造参数注入给 AuditFilter）。仅序列化简单固定结构（无时间类型，如 JwtAuthFilter 输出错误 Result）才可自行 new。</p>
+
+    <h4 id="faq5">Q5 定时任务突然全部不执行（推送/工单扫描/每日评分）？</h4>
+    <p><span class="badge gray">现象</span>WS 不推送、工单超时不升级、T+1 评分不产出。</p>
+    <p><span class="badge blue">原因</span><code>@EnableScheduling</code> 只允许标注在启动类 <code>PlatformApplication</code> 一处；重构包名/移动启动类或误删该注解后，全部 <code>@Scheduled</code> 方法静默停摆（不报任何错）。</p>
+    <p><span class="badge green">处理</span>确认 PlatformApplication 上三个注解完整：<code>@SpringBootApplication(scanBasePackages="com.mydbd")</code>、<code>@MapperScan("com.mydbd.**.mapper")</code>、<code>@EnableScheduling</code>。各调度类只写 @Scheduled，不重复加 @EnableScheduling。</p>
+
+    <h4 id="faq6">Q6 为什么实时推送只推新事件、且重启后不会把历史事件重推一遍？</h4>
+    <p><span class="badge gray">现象</span>重启服务后客户端收不到库里已有的历史风险/报警；偶发疑问"为什么不用时间窗口增量"。</p>
+    <p><span class="badge blue">原因</span>这是刻意设计：RealtimePushScheduler 在 @PostConstruct 把风险/报警游标初始化为<strong>当前最大 id</strong>，之后每 tick 用 <code>id &gt; 游标</code> 增量扫描（每批 50 条）。用 id 游标而非时间窗口，可避免同秒/乱序数据漏推、重复推，也避免时钟回拨问题。</p>
+    <p><span class="badge green">处理</span>历史数据走 HTTP 分页查询接口，不要指望 WS 回放；新连接首帧只补发一帧当前位置快照。</p>
+
+    <h4 id="faq7">Q7 按城市/省份码筛选车辆数据查不到，或分组统计串了？</h4>
+    <p><span class="badge gray">现象</span>以为 city_code 存行政区划码（如 370100），按码查询为空。</p>
+    <p><span class="badge blue">原因</span><code>traj_vehicle.city_code</code>（以及 traj_dept 的 province_code/city_code 等列）在标准测试数据生成器中<strong>实际写入的是中文名称</strong>（"山东省""济南市"这类值），列名虽叫 code，内容不是数字码。</p>
+    <p><span class="badge green">处理</span>按中文名称匹配，或改用 dept_id 组织口径统计；再次强调这些列只能用于展示/分组，绝不能作为数据权限条件（见 SYS §8.2）。</p>
+
+    <h4 id="faq8">Q8 报警中心/大屏 KPI 显示"今日报警 0"，但库里明明有报警数据？</h4>
+    <p><span class="badge gray">现象</span>报警列表为空或今日统计为 0，数据库里能查到 traj_warn_info 记录。</p>
+    <p><span class="badge blue">原因</span>默认查询窗口是<strong>服务器墙钟"今日"</strong>：后端 /api/alarm/stats 缺省 today 00:00~当前；报警中心前端打开即默认今日时间范围。样例 CSV 与标准数据集的时基是历史日期（如 2026-09-01/02），模拟器不跑时没有"今日"新报警，自然查 0。</p>
+    <p><span class="badge green">处理</span>在页面时间选择器改选数据实际发生日期（大屏钻取会自动带 beginTime/endTime 跳转）；接口调用显式传 beginTime/endTime（ISO LocalDateTime，如 <code>2026-09-01T00:00:00</code>）；要看实时数据则启动模拟器或推送实时点。</p>
+
+    <h4 id="faq9">Q9 用 DBeaver/Navicat 直连数据库的参数是什么？</h4>
+    <p><span class="badge gray">现象</span>想在宿主上直接查表。</p>
+    <p><span class="badge blue">处理</span>PostgreSQL 连接参数：主机 <code>127.0.0.1</code>、端口 <code>5432</code>、数据库 <code>mydbd</code>、用户名 <code>mydbd</code>、密码 <code>change_me_in_prod</code>（若 .env 改过则用新密码）。端口仅绑回环地址，远程主机连不上是正常的，需走 SSH 隧道或临时调整映射。</p>
+
+    <h4 id="faq10">Q10 PowerShell 调接口做中文断言，响应里中文变成乱码？</h4>
+    <p><span class="badge gray">现象</span>Invoke-RestMethod 拿到的中文字段乱码，断言中文消息失败。</p>
+    <p><span class="badge blue">原因</span>Windows PowerShell 默认按响应头/系统编码解码，对无 charset 头的 UTF-8 JSON 可能误判。</p>
+    <p><span class="badge green">处理</span>用 <code>Invoke-WebRequest -UseBasicParsing</code> 取原始字节，再显式 UTF-8 解码后断言：</p>
+    <pre><code>$r = Invoke-WebRequest -Uri http://127.0.0.1:8080/api/alarm/types -UseBasicParsing
+[System.Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())</code></pre>
+    <p>发 JSON 请求体含中文时同样先把 body 按 UTF-8 字节发送，避免服务端按 ISO 误读。</p>
+
+    <h4 id="faq11">Q11 修改了 init 目录里的 SQL，重启容器后为什么不生效？</h4>
+    <p><span class="badge gray">现象</span>改了 infra/postgres/init 下脚本并重启，库里没有变化。</p>
+    <p><span class="badge blue">原因</span>/docker-entrypoint-initdb.d 只在数据卷首次初始化（空卷）时执行一次。</p>
+    <p><span class="badge green">处理</span>已有环境走增量迁移 SQL（手工 psql 执行，写成幂等）；只有开发库允许 down + 删 pg-data 卷 + up 全量重建（§10.2，先备份）。</p>
+
+    <h4 id="faq12">Q12 逆地理/地点检索接口报 50301"高德地图 Key 未配置"？</h4>
+    <p><span class="badge gray">现象</span>车辆详情取地址、监控页地点搜索返回业务码 50301。</p>
+    <p><span class="badge blue">原因</span>AMAP_KEY 为空时 GeocodeController 直接拒绝（这是预期行为，不是故障）；Key 由服务端代理使用，不下发前端。</p>
+    <p><span class="badge green">处理</span>在高德开放平台申请 Web 服务 Key 填入 .env 的 <code>AMAP_KEY</code>，<code>docker compose up -d</code> 重建/重启 platform-app 生效（仅 restart 同容器也可读到新环境变量需重建容器，建议改后 <code>docker compose up -d platform-app</code>，随后按 Q2 重启 nginx）。无外网/无 Key 环境下地图瓦片与核心业务不受影响。</p>
+
+    <h4 id="faq13">Q13 改完 Java 代码重新发版，行为完全没变？</h4>
+    <p><span class="badge gray">现象</span>mvn package、docker cp、restart 全套做了，旧逻辑依旧。</p>
+    <p><span class="badge blue">原因</span>常见两个：① 只在子模块执行 package，fat jar 没重新 repackage（内嵌业务模块 jar 仍是旧时间戳）；② docker cp 的源路径不是 <code>platform-boot/target/platform-app.jar</code>。</p>
+    <p><span class="badge green">处理</span>严格按 §7 在 backend-java 根做 <code>mvn -o -B -ntp clean install -DskipTests</code>，先核对 fat jar 与内嵌模块 jar 时间戳再 cp；重启后看启动日志确认启动时间已刷新。</p>
+
+    <h4 id="faq14">Q14 改了 JWT 密钥或服务令牌后出现大面积 401 / ingest 401？</h4>
+    <p><span class="badge gray">现象</span>用户登录态集体失效；终端/第三方推轨迹返回 401"服务令牌无效"。</p>
+    <p><span class="badge blue">原因</span>JWT_HMAC_SECRET 变更后旧令牌签名验不过（预期，重新登录即可）；SERVICE_TOKEN 必须 Java 与 Python 两侧（及所有调用方）同步，不一致则处理服务鉴权拒绝。</p>
+    <p><span class="badge green">处理</span>密钥轮换选低峰期并通知用户重登；SERVICE_TOKEN 改后 <code>docker compose up -d</code> 让两个应用同时拿到新值。</p>
+
+    <h4 id="faq15">Q15 打开「运行模式」菜单立刻被踢回登录页（其他菜单正常）？</h4>
+    <p><span class="badge gray">现象</span>admin 登录后，一点「运行模式」（/system/gateway）就提示"登录已失效，请重新登录"并跳转 /login；其他菜单正常。</p>
+    <p><span class="badge blue">原因</span>该页是唯一在打开时让浏览器直接带 JWT 请求 processing-service 的页面（/api/simulator/status、/api/simulator/mock/status、/api/ingest/dataset/status）。2026-10-06 前 Java 侧 <code>signWith(key)</code> 未指定算法，JJWT 按密钥长度自选——JWT_HMAC_SECRET 为 50 字节（≥48 字节）时签发的是 <strong>HS384</strong>，而 processing 的 PyJWT 验签白名单只有 HS256，判 InvalidAlgorithmError 回 401；前端拦截器收到 401 即清令牌硬跳 /login。</p>
+    <p><span class="badge green">处理</span>已于 2026-10-06 修复（v1.3.0）：Java <code>JwtUtil</code> 显式 <code>signWith(key, Jwts.SIG.HS256)</code> 固定 HS256；processing <code>app/security.py</code> 验签白名单放宽为 HS256/HS384/HS512 兼容存量令牌（修复后无需重登）。应急排查命令：先解 JWT 头部看 alg（<code>token.split('.')[0]</code> base64 解码），再 <code>docker exec mydbd-processing-app-1 python -c "import jwt; ..."</code> 复现验签异常；改后按 §7 发版（Python 改文件可先 docker cp + restart 止血，再 docker compose build 固化镜像）。方案存档：<a href="../plans/20261006-01-jwt-alg-401-fix.md">plans/20261006-01-jwt-alg-401-fix.md</a>。</p>
+
+    <h2 id="s12">12 测试账号</h2>
+    <p>以下账号由后端首启初始化器幂等创建，登录页提供点击快捷填充。账号事实以 <code>16-province-test-data.sql</code> 与初始化器代码为准。</p>
+    <table>
+      <thead><tr><th>账号</th><th>初始密码</th><th>角色 / 数据范围</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>admin</code></td><td><code>admin123</code></td><td>超级管理员 / 全部数据</td><td>平台管理与全量功能验证；首启后请尽快改密</td></tr>
+        <tr><td><code>shanghai_disp</code> / <code>shanghai_capt</code></td><td><code>test123456</code></td><td>上海节点：调度监控员（本部门及以下）/ 企业车队长（本企业及以下）</td><td rowspan="4">数据权限隔离验证：用同省两个角色与跨省账号交叉验证"本范围可见、范围外不可见"</td></tr>
+        <tr><td><code>jiangsu_disp</code> / <code>jiangsu_capt</code></td><td><code>test123456</code></td><td>江苏节点：同上两角色</td></tr>
+        <tr><td><code>anhui_disp</code> / <code>anhui_capt</code></td><td><code>test123456</code></td><td>安徽节点：同上两角色</td></tr>
+        <tr><td><code>shandong_disp</code> / <code>shandong_capt</code></td><td><code>test123456</code></td><td>山东节点：同上两角色</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>四省共 8 个账号，命名规则 <code>&lt;省拼音&gt;_disp</code>（调度监控员）/ <code>&lt;省拼音&gt;_capt</code>（企业车队长）；</li>
+      <li>初始化器内部仍枚举 31 个省份，但当前种子 SQL 只建立 4 个省级部门节点，其余 27 省在首启日志中以 warn 跳过，因此实际只有上述 8 个账号可登录，属预期；</li>
+      <li>密码可通过配置键 <code>mydbd.bootstrap.admin-password</code>、<code>mydbd.bootstrap.test-password</code> 覆盖，但<strong>仅在账号首次创建时生效</strong>；已存在账号改密须走系统管理界面或数据库重置。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>正式文档库初版。环境/版本/配置/命令以 docker-compose.yml、两个 Dockerfile、.env.example、application.yml、portal.conf、初始化 SQL 与 2026-10-05 代码为事实源；FAQ 收录本阶段实际踩坑案例</td></tr>
+        <tr><td>v1.1.0</td><td>2026-10-06</td><td>GATEWAY-PLAN-001 一期：§2 补 Kafka（dev-infra profile）组件与附件卷目录；§3 补 GATEWAY_MODE/KAFKA_*/GATEWAY_FILE_BASE_URL/GATEWAY_MEDIA_STRATEGY/mydbd.processing.base-url 配置；§4 补 mock 模式启动命令与启动顺序提示；§5 补 18 号迁移脚本；新增 §6.4 网关模式运维（三模式切换、状态页、隔离区/死信/附件/日志）。</td></tr>
+        <tr><td>v1.2.0</td><td>2026-10-06</td><td>测试模式治理二轮：§6.4 菜单 925 更名「运行模式」；mock 报警限频 ≤2 起/分；补 mock 仿真投递运行时启停（/api/simulator/mock/start|stop|status，gateway.mock-delivery-enabled 持久化）与「清除模拟数据」（/api/ingest/dataset/clear-runtime，清运行数据保留基础数据）操作说明。</td></tr>
+        <tr><td>v1.3.0</td><td>2026-10-06</td><td>JWT 跨服务算法契约修复：§3.1 JWT_HMAC_SECRET 补算法说明（签发固定 HS256、processing 验签兼容 HS384/HS512）；FAQ 新增 Q15「打开运行模式被踢回登录页」的现象/原因/排查/处理全过程。方案存档见 <a href="../plans/20261006-01-jwt-alg-401-fix.md">plans/20261006-01-jwt-alg-401-fix.md</a>。</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>DEP-DBD-001 部署与运维手册 · v1.3.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-06</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

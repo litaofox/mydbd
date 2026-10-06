@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-002 用户与权限（IAM） · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">mydbd 项目文档中心</a>
+  <div class="sub">MOD-DBD-002 用户与权限（IAM） · RBAC+数据范围 / 菜单与按钮权限 / TOTP 二次验证</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 用户管理</a></li>
+            <li><a href="#s3-2">3.2 角色管理与授权</a></li>
+            <li><a href="#s3-3">3.3 自定义数据范围配置</a></li>
+            <li><a href="#s3-4">3.4 个人开启动态口令（MFA）</a></li>
+            <li><a href="#s3-5">3.5 管理员代关闭 MFA / 解锁</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 RBAC 模型与权限点判定</a></li>
+            <li><a href="#s7-2">7.2 五级数据范围 deptScope 计算</a></li>
+            <li><a href="#s7-3">7.3 主体装载与权限缓存</a></li>
+            <li><a href="#s7-4">7.4 用户管理保护规则</a></li>
+            <li><a href="#s7-5">7.5 角色管理与保护规则</a></li>
+            <li><a href="#s7-6">7.6 TOTP 二次验证（F33）</a></li>
+            <li><a href="#s7-7">7.7 前端权限渲染与页面实现</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 种子数据与初始化</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-002 用户与权限（IAM）</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-002<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F33
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码（backend-java module-iam、platform-common）与初始化 SQL（<code>06-iam-tables.sql</code>）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>IamUserController</code> / <code>IamRoleController</code> / <code>IamMenuController</code> / <code>AuthController</code>；<code>UserService</code> / <code>RoleService</code> / <code>MenuService</code> / <code>AuthService</code> / <code>DataScopeService</code> / <code>TotpService</code> / <code>PasswordCodec</code> / <code>DbAuthRealm</code>（module-iam）；<code>RequiresPerm</code> / <code>PermAspect</code> / <code>PermissionCache</code> / <code>UserInfo</code>（platform-common）；前端 <code>views/system/UserList.vue</code>、<code>views/system/RoleList.vue</code>、<code>components/ProfileDialog.vue</code>、<code>api/iam.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>IAM 模块回答三个问题：<strong>你是谁</strong>（用户档案与登录策略）、<strong>你能点哪些功能</strong>（角色 → 菜单/按钮权限点，RBAC）、<strong>你能看哪些部门的数据</strong>（角色 → 五级数据范围 deptScope，属 ABAC 维度的属性授权）。此外提供登录的 TOTP 二次验证（F33）。</p>
+    <ul>
+      <li><strong>用户管理</strong>：用户 CRUD、启停、重置密码、分配角色、解锁、管理员代关 MFA；用户名部分唯一（valid_mark=1），软删。</li>
+      <li><strong>角色管理</strong>：角色 CRUD、菜单/按钮授权（树）、数据范围五选一、自定义范围勾选部门；内置角色受保护。</li>
+      <li><strong>菜单/权限点</strong>：traj.sys_menu 三级模型（1 目录 / 2 菜单 / 3 按钮），种子化维护、不开放界面维护，权限点编码唯一。</li>
+      <li><strong>登录 MFA（F33）</strong>：TOTP（RFC 6238）动态口令，绑定/开关在个人中心，登录时强制二步；管理员可代关闭。</li>
+    </ul>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>登录动作与令牌签发机制见 MOD-DBD-001；本模块负责"登录策略（锁定/MFA）、用户角色档案、权限点与数据范围"。数据范围算出的部门集合由监控、报警、主数据等业务模块消费，消费方式见各模块文档。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>用户分页/详情/增改删</td><td>按用户名/姓名/状态/部门/角色筛选；登录名 4~20 位字母数字下划线；软删</td><td><code>IamUserController</code> + <code>UserService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>启停/重置密码/解锁/分配角色</td><td>管理员操作全部带 @AuditLog；密码 8~20 位含字母数字；启用时清零锁定</td><td><code>UserService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>超管与自操作保护</td><td>admin 不可停用/删除/降级；不可删除/停用当前登录账号；不可移除自己全部角色</td><td><code>UserService.guard*</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>角色 CRUD 与授权</td><td>角色码 2~40 位大写开头；菜单树勾选（含按钮权限点）；变更后 evictAll 全员缓存</td><td><code>IamRoleController</code> + <code>RoleService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>五级数据范围</td><td>1 全部 / 2 本企业及以下 / 3 本部门及以下 / 4 仅本部门 / 5 自定义；多角色取并集</td><td><code>DataScopeService.compute</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>菜单/权限点模型</td><td>三级（目录/菜单/按钮）+ perm_code 唯一；种子维护；/api/iam/menus/tree 供授权树</td><td><code>SysMenu</code> + <code>MenuService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>后端权限判定</td><td>@RequiresPerm 类级/方法级，AND/OR 逻辑；超管硬编码绕过；AOP 不查库</td><td><code>PermAspect</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>登录 MFA（TOTP）</td><td>RFC 6238、30 秒步长、6 位、±1 时间步容差；绑定二维码 otpauth://；登录二步 mfa 令牌</td><td><code>TotpService</code> + <code>AuthService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>管理员代关 MFA</td><td>PUT /api/iam/users/{id}/mfa/disable（手机丢失兜底）</td><td><code>AuthService.adminDisableMfa</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>前端页面</td><td>用户管理 /system/users、角色管理 /system/roles、个人中心 ProfileDialog（资料/密码/口令）</td><td>UserList.vue / RoleList.vue / ProfileDialog.vue</td><td><span class="badge green">已上线</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>权限点 perm_code</td><td>sys_menu 上的权限编码（如 iam:user:edit），按钮级权限的载体；uk_sys_menu_perm 部分唯一索引约束。</td></tr>
+        <tr><td>data_scope</td><td>角色上的数据范围档位：1 全部 / 2 本企业及以下 / 3 本部门及以下 / 4 仅本部门 / 5 自定义。</td></tr>
+        <tr><td>deptScope</td><td>登录主体（UserInfo）上算好的可见部门 ID 集合；null=不限制，空集=不可见任何部门数据。</td></tr>
+        <tr><td>企业节点 dept_type=1</td><td>组织树中标记为"企业"的节点；data_scope=2 时沿父链向上找最近的企业节点再取其整棵子树。</td></tr>
+        <tr><td>内置角色 built_in=1</td><td>种子角色（SUPER_ADMIN/SAFE_ADMIN/DISPATCHER/FLEET_CAPTAIN），禁删、禁改编码与数据范围。</td></tr>
+        <tr><td>SUPER_ADMIN</td><td>超管角色码，后端硬编码绕过一切权限点与数据范围判定（PermAspect、DbAuthRealm）。</td></tr>
+        <tr><td>UserInfo</td><td>请求级登录主体：userId/username/realName/deptId/superAdmin/perms/deptScope，由 DbAuthRealm 装载。</td></tr>
+        <tr><td>TOTP</td><td>RFC 6238 时间型动态口令，HMAC-SHA1、30 秒步长、6 位数字；密钥 Base32 存储（20 字节随机）。</td></tr>
+        <tr><td>mfa_pending_secret</td><td>绑定流程中已生成但未验证确认的密钥；确认后才迁入 mfa_secret 生效。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">新员工开号</div>
+        <div class="sc-desc">在 系统管理 → 用户管理 新增用户：设登录名、初始密码、归属部门、勾角色（如"调度监控员"）。新员工登录后只看到监控与主数据只读菜单，且只看得到本部门数据。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">定制角色授权</div>
+        <div class="sc-desc">为"省公司风控专员"建自定义角色：菜单树勾选风险预警分析、处置工单、报警中心（不含主数据维护按钮），数据范围选"自定义部门"并勾选该省组织节点。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">高权限用户</div>
+        <div class="sc-name">绑动态口令加固</div>
+        <div class="sc-desc">在 个人中心 → 动态口令 页获取密钥，用手机身份验证器（扫码 otpauth 二维码）绑定，此后登录必须在密码后再输 6 位动态码。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">手机丢失应急</div>
+        <div class="sc-desc">用户手机丢失无法提供动态码，管理员在 用户管理 列表点该用户"关口令"（代关 MFA），用户用密码登录后可重新绑定新手机。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+
+    <h3 id="s3-1">3.1 用户管理</h3>
+    <p>菜单路径：<strong>系统管理 → 用户管理</strong>（sys_menu id=901，路由 /system/users，权限点 <code>iam:user:view</code>；维护按钮 id=911，权限点 <code>iam:user:edit</code>）。</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">筛选查询</div>
+        <div class="s-desc">顶部按用户名、姓名、状态、部门、角色组合筛选；列表含"锁定"标记（locked_until 未到期即显示）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">新增用户</div>
+        <div class="s-desc">「新增用户」（v-perm iam:user:edit）→ 抽屉填登录名/初始密码/姓名/部门/角色/状态 → 保存（密码 8~20 位含字母数字）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">行内操作</div>
+        <div class="s-desc">编辑、分配角色、重置密码、解锁（仅锁定时出现）、启停、关口令（仅已开 MFA 且非 admin）、删除；admin 行隐藏大部分操作。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">生效时间</div>
+        <div class="s-desc">用户/角色变更立即 evict 权限缓存，该用户下一次请求即按新权限判定（无 120 秒等待）。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 角色管理与授权</h3>
+    <p>菜单路径：<strong>系统管理 → 角色管理</strong>（sys_menu id=902，路由 /system/roles，权限点 <code>iam:role:view</code>；维护按钮 id=912，权限点 <code>iam:role:edit</code>）。</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">列表与筛选</div>
+        <div class="s-desc">按角色码/名称关键字、状态筛选；列显示角色码、名称、数据范围 tag、内置标记、用户数。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">新建/编辑角色</div>
+        <div class="s-desc">抽屉填角色码（大写开头 2~40 位）、名称、数据范围单选（内置角色禁用编码与数据范围）、状态、备注。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">勾选菜单权限树</div>
+        <div class="s-desc">el-tree 按 sys_menu 三级展示（目录→菜单→按钮），勾选即授权；目录勾选会级联子节点。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">删除限制</div>
+        <div class="s-desc">内置角色禁删；有用户关联的角色提示"已分配给 N 个用户，请先解除"；删除弹窗注明用户数与自动解除关联。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 自定义数据范围配置</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">选择"自定义部门"</div>
+        <div class="s-desc">角色编辑抽屉中数据范围选 5（自定义部门），下方出现部门勾选区。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">勾选部门</div>
+        <div class="s-desc">组织树（traj.traj_dept）勾选可见部门；后端强制至少勾一个，且部门必须存在；关系存 sys_role_dept。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">效果</div>
+        <div class="s-desc">该角色用户的主体 deptScope=勾选部门的并集（不再自动含下级，勾什么看什么）；多角色时与其他角色范围取并集。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 个人开启动态口令（MFA）</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">打开个人中心</div>
+        <div class="s-desc">右上角用户名 → 个人中心 → "动态口令"页签（未绑定时显示空态与"获取绑定密钥"）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">获取密钥与二维码</div>
+        <div class="s-desc">调 GET /api/auth/mfa/setup，后端生成 Base32 密钥存 mfa_pending_secret，返回 otpauth:// URI；前端用 qrcode 库渲染 170px 二维码。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">验证器扫码并确认</div>
+        <div class="s-desc">手机身份验证器扫码（或手输密钥），输入当前 6 位动态码提交 POST /api/auth/mfa/enable；验证通过密钥迁入 mfa_secret、mfa_enabled=1。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">此后登录二步</div>
+        <div class="s-desc">登录页密码通过后进入第二步输 6 位码；顶栏用户名旁出现"动态口令"标记。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">关闭</div>
+        <div class="s-desc">已开启状态下需同时验证登录密码 + 当前动态码才可关闭（POST /api/auth/mfa/disable），密钥一并清除。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-5">3.5 管理员代关闭 MFA / 解锁</h3>
+    <ul>
+      <li><strong>代关 MFA</strong>：用户管理列表对已开启 MFA 的用户点"关口令"→ PUT /api/iam/users/{id}/mfa/disable，清空 mfa_enabled/secret/pending，无需用户提供任何凭证（属高权操作，带审计）。</li>
+      <li><strong>解锁</strong>：锁定用户行出现"解锁"按钮 → PUT /api/iam/users/{id}/unlock，清零 fail_count 与 locked_until；启用一个停用账号时同样自动清零锁定。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块前端为 2 个路由页面 + 1 个个人中心弹窗。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">👥</div>
+      <div class="sh-t">截图 4-1：用户管理列表（系统管理 → 用户管理，/system/users）</div>
+      <div class="sh-p">应截：筛选区（用户名/姓名/状态/部门/角色）、「新增用户」按钮、列表行（含锁定标记、MFA 状态、角色名、最近登录时间）与行内操作（编辑/分配角色/重置密码/解锁/启停/关口令/删除）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">➕</div>
+      <div class="sh-t">截图 4-2：新增/编辑用户抽屉</div>
+      <div class="sh-p">应截：抽屉表单（登录名、初始密码、姓名、手机、邮箱、归属部门树选、角色多选、状态、备注）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🎭</div>
+      <div class="sh-t">截图 4-3：角色管理列表（系统管理 → 角色管理，/system/roles）</div>
+      <div class="sh-p">应截：关键字/状态筛选、四个内置角色行（SUPER_ADMIN/SAFE_ADMIN/DISPATCHER/FLEET_CAPTAIN）的数据范围 tag 与内置标记、用户数字段。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🌲</div>
+      <div class="sh-t">截图 4-4：角色授权抽屉</div>
+      <div class="sh-p">应截：角色码/名称/数据范围单选（五项）、菜单权限树（三级，含按钮节点）、数据范围选"自定义部门"时出现的部门勾选树。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📱</div>
+      <div class="sh-t">截图 4-5：个人中心-动态口令绑定</div>
+      <div class="sh-p">应截：动态口令页签、170px otpauth 二维码、Base32 密钥明文与复制提示、6 位验证码输入与"确认绑定"按钮。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">3 级</div><div class="l">目录/菜单/按钮权限点，功能与操作双维度授权</div></div>
+      <div class="stat"><div class="v">5 档</div><div class="l">数据范围从全集团到仅本部门，多角色取并集</div></div>
+      <div class="stat"><div class="v">±1 步</div><div class="l">TOTP 时间容差，手机时钟轻微漂移也能通过</div></div>
+      <div class="stat"><div class="v">0 等待</div><div class="l">权限变更即时 evict 缓存，下一请求生效</div></div>
+    </div>
+    <ul>
+      <li><strong>最小授权可落地</strong>：调度员只读、车队长管本企业、安全管理员管账号不管业务，内置角色即开即用，自定义角色可精确到按钮。</li>
+      <li><strong>越权双保险</strong>：前端按钮按 v-perm 隐藏，后端 PermAspect 强制校验，直调接口也过不去。</li>
+      <li><strong>数据不出辖区</strong>：deptScope 在登录主体装载时算好，业务查询按部门过滤，省级账号天然看不到别省车辆。</li>
+      <li><strong>高权账号可加固</strong>：TOTP 二次验证绑定在个人中心自助完成；手机丢失有管理员兜底通道，不会锁死账号。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>IAM 是纯 Java 模块（module-iam），对外提供 REST 与两个 SPI 实现（AuthRealm 主体装载、权限/范围数据源），判定逻辑（PermAspect/UserContext）在 platform-common，不反向依赖。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>UserList.vue</b> 用户 CRUD/分配角色/解锁/关口令</span>
+          <span class="node"><b>RoleList.vue</b> 角色 CRUD/菜单树/部门树授权</span>
+          <span class="node"><b>ProfileDialog.vue</b> 资料/密码/TOTP 绑定（qrcode 渲染）</span>
+          <span class="node"><b>api/iam.ts</b> 用户/角色/菜单树接口封装；<b>directives/perm</b> v-perm 按钮控制</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">module-iam<br>controller</div>
+        <div class="al-body">
+          <span class="node"><b>IamUserController</b> /api/iam/users（view/edit 两级）</span>
+          <span class="node"><b>IamRoleController</b> /api/iam/roles（+ /all 下拉）</span>
+          <span class="node"><b>IamMenuController</b> /api/iam/menus/tree</span>
+          <span class="node"><b>AuthController</b> /api/auth/**（MFA 三件套现此组）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">module-iam<br>service</div>
+        <div class="al-body">
+          <span class="node"><b>UserService</b> 用户 CRUD 与保护规则</span>
+          <span class="node"><b>RoleService</b> 角色 CRUD、菜单/部门关系、evictAll</span>
+          <span class="node"><b>DataScopeService</b> 五级范围 → 部门集合</span>
+          <span class="node"><b>AuthService / TotpService / PasswordCodec</b> 登录策略 / TOTP / 口令哈希</span>
+          <span class="node"><b>DbAuthRealm</b> AuthRealm 实现：主体装载</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层<br>traj schema</div>
+        <div class="al-body">
+          <span class="node"><b>traj.sys_user / sys_role / sys_menu</b> 主档</span>
+          <span class="node"><b>traj.sys_user_role / sys_role_menu / sys_role_dept</b> 关系</span>
+          <span class="node"><b>traj.traj_dept</b> 组织树（MDM 维护，IAM 消费）</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>IamUserController</code></td><td>Java</td><td>用户管理 REST</td><td>类级 @RequiresPerm("iam:user:view")；写操作方法级 iam:user:edit；全部写操作挂 @AuditLog（objectType=USER）</td></tr>
+        <tr><td><code>IamRoleController</code></td><td>Java</td><td>角色管理 REST</td><td>类级 iam:role:view；/all 允许 iam:role:view 或 iam:user:edit（OR）供分配角色下拉</td></tr>
+        <tr><td><code>IamMenuController</code></td><td>Java</td><td>授权菜单树</td><td>/tree 允许 iam:role:view 或 iam:user:edit（OR）</td></tr>
+        <tr><td><code>UserService</code></td><td>Java</td><td>用户业务</td><td>用户名正则 ^[A-Za-z0-9_]{4,20}$；guardDisable/guardRoleChange 保护；删除=软删+清角色关系+evict</td></tr>
+        <tr><td><code>RoleService</code></td><td>Java</td><td>角色业务</td><td>编码正则 ^[A-Z][A-Z0-9_]{1,39}$；内置角色禁改编码/数据范围；仅 data_scope=5 存 sys_role_dept；更新/删除 evictAll</td></tr>
+        <tr><td><code>DataScopeService</code></td><td>Java</td><td>数据范围计算</td><td>多角色并集；SCOPE_ALL 短路返回 null；BFS 求子树；resolveEnterpriseId 带 100 步防环</td></tr>
+        <tr><td><code>DbAuthRealm</code></td><td>Java</td><td>主体装载</td><td>超管 perms=空集（绕过后端判定）、deptScope=null；非超管查 selectPermsByUserId + compute</td></tr>
+        <tr><td><code>PermAspect</code></td><td>common</td><td>权限点 AOP</td><td>方法级注解优先于类级；superAdmin 直放；AND/OR 判定；不查库</td></tr>
+        <tr><td><code>PermissionCache</code></td><td>common</td><td>主体缓存</td><td>ConcurrentHashMap TTL 120 秒；evict(userId)/evictAll 主动失效</td></tr>
+        <tr><td><code>TotpService</code></td><td>Java</td><td>TOTP 实现</td><td>RFC 6238；30s 步长；±1 漂移；Base32 自实现编解码；otpauth URI issuer=mydbd</td></tr>
+        <tr><td><code>MenuService</code></td><td>Java</td><td>菜单树组装</td><td>treeForUser（按角色过滤）与 treeAll（授权用全量启用树）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 RBAC 模型与权限点判定</h3>
+    <p>模型：<code>用户 → sys_user_role → 角色 → sys_role_menu → 菜单/按钮(perm_code)</code>。判定链：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">① 主体装载</div>
+        <div class="s-desc">DbAuthRealm：超管 perms 给空集（判定端直接放行，不浪费一次权限查询）；非超管 selectPermsByUserId 取全部有效角色的 perm_code 并集。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② AOP 拦截</div>
+        <div class="s-desc">PermAspect 两个切点：@annotation（方法级优先）与 @within 且方法无注解（类级兜底）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ 判定</div>
+        <div class="s-desc">superAdmin 直接通过；否则按 Logical.OR（任一命中即过）/ AND（全部命中）匹配 perms；失败抛 40301"无操作权限：码1 / 码2"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ 前端一致渲染</div>
+        <div class="s-desc">v-perm 指令与 auth.has() 按 profile 返回的 perms 判定；SUPER_ADMIN 角色前端同样硬编码放行（store/auth.ts）。</div>
+      </div>
+    </div>
+
+    <h3 id="s7-2">7.2 五级数据范围 deptScope 计算</h3>
+    <p><code>DataScopeService.compute(user, roles)</code> 的语义（多角色取并集；返回 null 表示不限制；返回空集表示什么部门都不可见）：</p>
+    <table>
+      <thead><tr><th>档位</th><th>常量</th><th>计算规则</th><th>组织树操作</th></tr></thead>
+      <tbody>
+        <tr><td>1 全部数据</td><td>SCOPE_ALL</td><td>直接 return null（任一角色为全部即整体不限制）</td><td>—</td></tr>
+        <tr><td>2 本企业及以下</td><td>SCOPE_ENTERPRISE</td><td>沿用户 dept_id 父链向上找最近 dept_type=1 的企业节点，取其整棵子树；链上无企业节点时退化为本部门</td><td>resolveEnterpriseId（100 步防环）+ subtree BFS</td></tr>
+        <tr><td>3 本部门及以下</td><td>SCOPE_DEPT_TREE</td><td>用户 dept_id 的整棵子树（含自身）</td><td>subtree BFS</td></tr>
+        <tr><td>4 仅本部门</td><td>SCOPE_DEPT_ONLY</td><td>只含用户 dept_id 本身</td><td>—</td></tr>
+        <tr><td>5 自定义</td><td>SCOPE_CUSTOM</td><td>sys_role_dept 中该角色勾选的部门 ID 原样并入（不含下级）</td><td>selectDeptIds(roleId)</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>组织树一次性 <code>DataScopeDeptMapper.selectAllNodes()</code> 全量加载为内存 Map（id → parentId/deptType/children），子树计算在内存 BFS，不做递归 SQL。</li>
+      <li>用户无部门（dept_id 为空）时，2/3/4 档贡献为空；5 档只看角色勾选，与用户部门无关。</li>
+      <li>内置角色范围：DISPATCHER=3（本部门及以下）、FLEET_CAPTAIN=2（本企业及以下）、SAFE_ADMIN/SUPER_ADMIN=1。</li>
+    </ul>
+
+    <h3 id="s7-3">7.3 主体装载与权限缓存</h3>
+    <p>每个 /api/* 请求由 JwtAuthFilter 调 <code>PermissionCache.getOrLoad(userId, DbAuthRealm::loadByUserId)</code>：</p>
+    <ul>
+      <li>缓存命中且未过 120 秒 TTL：直接用缓存主体，<strong>不查库</strong>。</li>
+      <li>未命中/过期：DbAuthRealm 重查用户 + 角色 + 权限 + deptScope，回写缓存。</li>
+      <li>账号被停用/删除：loadByUserId 返回 null，缓存清除该键，过滤器按 401 处理。</li>
+      <li>写操作联动失效：UserService 各写方法 evict(userId)；RoleService 更新/删除 evictAll()（影响所有持有该角色的用户）；AuthService 登录/改密/MFA 操作 evict 自身。</li>
+    </ul>
+
+    <h3 id="s7-4">7.4 用户管理保护规则</h3>
+    <table>
+      <thead><tr><th>规则</th><th>代码位置</th><th>拒绝文案</th></tr></thead>
+      <tbody>
+        <tr><td>admin 不可删除</td><td>UserService.delete</td><td>超级管理员账号不可删除</td></tr>
+        <tr><td>admin 不可停用</td><td>guardDisable</td><td>超级管理员账号不可停用</td></tr>
+        <tr><td>admin 必须保留超管角色</td><td>guardRoleChange</td><td>超级管理员账号必须保留超级管理员角色</td></tr>
+        <tr><td>不可删除/停用当前登录账号</td><td>delete / guardDisable</td><td>不可删除当前登录账号 / 不可停用当前登录账号</td></tr>
+        <tr><td>不可移除自己全部角色</td><td>guardRoleChange</td><td>不可移除当前登录账号的全部角色</td></tr>
+        <tr><td>角色必须有效且启用</td><td>validateRoles</td><td>存在无效或已停用的角色</td></tr>
+        <tr><td>归属部门必须存在</td><td>validateDept</td><td>归属部门不存在</td></tr>
+        <tr><td>登录名唯一/格式</td><td>create</td><td>登录名已存在 / 登录名须为 4~20 位字母、数字或下划线</td></tr>
+        <tr><td>密码强度</td><td>PasswordCodec.isStrong</td><td>8~20 位且同时包含字母与数字</td></tr>
+      </tbody>
+    </table>
+    <p>删除为软删事务：valid_mark=0 + status=0 + 清 sys_user_role + evict 缓存。前端对 admin 行直接隐藏分配角色/重置密码/启停/关口令/删除按钮（isAdmin 判断），与后端保护双保险。</p>
+
+    <h3 id="s7-5">7.5 角色管理与保护规则</h3>
+    <ul>
+      <li><strong>内置角色保护</strong>：built_in=1 时禁删；更新时不允许修改 roleCode 与 dataScope（前端表单同步禁用这两项）。</li>
+      <li><strong>删除前置</strong>：countActiveUsers(roleId) &gt; 0 拒绝删除（"该角色已分配给 N 个用户，请先解除"）；删除成功后清 role_menu/role_dept/user_role 三类关系并 evictAll。</li>
+      <li><strong>关系维护</strong>：更新采用"全删全建"（deleteByRole 后按请求体重插）；仅 data_scope=5 写 sys_role_dept，其他档位保持空表避免脏数据（代码注释明确）。</li>
+      <li><strong>校验</strong>：dataScope ∈ [1,5]；dataScope=5 必须至少勾一个部门且全部有效；menuIds 必须全部存在于 sys_menu。</li>
+    </ul>
+
+    <h3 id="s7-6">7.6 TOTP 二次验证（F33）</h3>
+    <p>实现：<code>TotpService</code> 自实现 RFC 6238（HMAC-SHA1、30 秒步长、6 位、验证时容忍 ±1 个时间步）；密钥为 SecureRandom 20 字节，Base32 编码（32 字符）存储。流程状态机：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">setup（未开通）</div>
+        <div class="s-desc">GET /api/auth/mfa/setup：生成密钥写 mfa_pending_secret（不动正式密钥）；已开通者拒绝"如需更换请先关闭"。返回 secret + otpauth://totp/mydbd:{username}?secret=...&issuer=mydbd。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">enable 确认</div>
+        <div class="s-desc">POST /api/auth/mfa/enable：验证 pending 密钥的动态码 → mfa_enabled=1、mfa_secret=pending、清 pending。无 pending 时报"请先获取绑定密钥"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">登录二步</div>
+        <div class="s-desc">login 密码通过且 mfa_enabled=1：返回 mfaRequired + 5 分钟 mfa 令牌；/api/auth/mfa/verify 校验 purpose=mfa、账号有效、动态码正确后签发 access。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">disable 关闭</div>
+        <div class="s-desc">本人关闭需密码 + 当前动态码双验证；管理员代关（adminDisableMfa）无凭证要求，用于手机丢失兜底。两者都清空 secret 与 pending。</div>
+      </div>
+    </div>
+    <p>前端 ProfileDialog 用 <code>qrcode</code> 库把 otpauth URI 渲染为 170px 二维码；Login.vue 第二步仅接受 6 位数字正则。</p>
+
+    <h3 id="s7-7">7.7 前端权限渲染与页面实现</h3>
+    <ul>
+      <li><strong>路由级</strong>：/system/users、/system/roles 在 router meta.perm 配 iam:user:view / iam:role:view，守卫无权回落。</li>
+      <li><strong>按钮级</strong>：所有维护按钮 v-perm="'iam:user:edit'" / 'iam:role:edit'；UserList 对 admin 行额外隐藏敏感操作。</li>
+      <li><strong>ID 按 string</strong>：iam.ts 中 UserListRow.id、UserDetail.id 等雪花 ID 字段全部声明为 string，避免 JS 精度丢失；roleIds: string[]。</li>
+      <li><strong>角色抽屉</strong>：菜单树 el-tree（props label=menuName），数据范围 5 时才展示部门树（label=deptName），保存时 getCheckedKeys() 收集；重置时 dataScope 默认 3。</li>
+      <li><strong>锁定展示</strong>：后端在 UserListVO 上算好 locked（locked_until &gt; now），前端仅锁定时显示"解锁"按钮。</li>
+    </ul>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>"安全管理员给调度员降权"的端到端链路：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">改角色授权</div>
+        <div class="s-desc">PUT /api/iam/roles/{id}（iam:role:edit）→ RoleService 全删全建 role_menu → evictAll。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">缓存失效</div>
+        <div class="s-desc">PermissionCache 清空，所有在线用户下一请求重载主体。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">主体重载</div>
+        <div class="s-desc">DbAuthRealm 重算 perms 与 deptScope（调度员失去被取消的权限点）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">接口拦截</div>
+        <div class="s-desc">调度员再调被收回的接口，PermAspect 抛 40301，前端弹"无操作权限"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">前端收敛</div>
+        <div class="s-desc">调度员重新进入或刷新后 profile 菜单树同步缩小，入口消失。</div>
+      </div>
+    </div>
+
+    <h2 id="s9">9 数据模型</h2>
+    <p>IAM 六张表都在 <strong>traj</strong> schema（组织表 traj_dept 由 MDM 维护）。完整字段以 DDL 手册为准：</p>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/约束</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr><td><code>traj.sys_user</code></td><td>用户主档</td><td>uk_sys_user_username（valid_mark=1 部分唯一）、password_hash、dept_id、status、mfa_*、fail_count/locked_until、valid_mark</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_user">DDL · tbl-traj_sys_user</a></td></tr>
+        <tr><td><code>traj.sys_role</code></td><td>角色主档</td><td>uk_sys_role_code 部分唯一、data_scope 1~5（默认 3）、built_in、status、valid_mark</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_role">DDL · tbl-traj_sys_role</a></td></tr>
+        <tr><td><code>traj.sys_menu</code></td><td>菜单/按钮权限点</td><td>parent_id、menu_type(1/2/3)、perm_code（uk_sys_menu_perm 部分唯一）、path、icon、sort_no、visible、status；无软删（种子维护）</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_menu">DDL · tbl-traj_sys_menu</a></td></tr>
+        <tr><td><code>traj.sys_user_role</code></td><td>用户-角色</td><td>PRIMARY KEY(user_id, role_id)</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_user_role">DDL · tbl-traj_sys_user_role</a></td></tr>
+        <tr><td><code>traj.sys_role_menu</code></td><td>角色-权限点</td><td>PRIMARY KEY(role_id, menu_id)</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_role_menu">DDL · tbl-traj_sys_role_menu</a></td></tr>
+        <tr><td><code>traj.sys_role_dept</code></td><td>角色自定义范围部门</td><td>PRIMARY KEY(role_id, dept_id)；仅 data_scope=5 使用</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_role_dept">DDL · tbl-traj_sys_role_dept</a></td></tr>
+        <tr><td><code>traj.traj_dept</code></td><td>组织树（IAM 消费）</td><td>parent_id、dept_type=1 标记企业节点；维护见 MOD-DBD-003</td><td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_traj_dept">DDL · tbl-traj_traj_dept</a></td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块全部端点与权限。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/iam/users</code></td><td>用户分页（username/realName/status/deptId/roleId）</td><td>iam:user:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>GET <code>/api/iam/users/{id}</code></td><td>用户详情（含 roleIds/roleCodes）</td><td>iam:user:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>POST <code>/api/iam/users</code></td><td>新建用户</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}</code></td><td>编辑用户（可同改角色/密码）</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}/status</code></td><td>启停（启用自动清锁定）</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}/reset-password</code></td><td>重置密码（同时清锁定）</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}/roles</code></td><td>分配角色（全量替换）</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}/unlock</code></td><td>解锁</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>PUT <code>/api/iam/users/{id}/mfa/disable</code></td><td>管理员代关 MFA</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>DELETE <code>/api/iam/users/{id}</code></td><td>删除（软删）</td><td>iam:user:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-user">grp-iam-user</a></td></tr>
+        <tr><td>GET <code>/api/iam/roles</code> / <code>/{id}</code></td><td>角色分页 / 详情（含 menuIds/deptIds）</td><td>iam:role:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-role">grp-iam-role</a></td></tr>
+        <tr><td>GET <code>/api/iam/roles/all</code></td><td>启用角色下拉</td><td>iam:role:view 或 iam:user:edit（OR）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-role">grp-iam-role</a></td></tr>
+        <tr><td>POST/PUT/DELETE <code>/api/iam/roles</code></td><td>角色增改删</td><td>iam:role:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-role">grp-iam-role</a></td></tr>
+        <tr><td>GET <code>/api/iam/menus/tree</code></td><td>授权菜单树（启用全量）</td><td>iam:role:view 或 iam:user:edit（OR）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-iam-menu">grp-iam-menu</a></td></tr>
+        <tr><td>GET/POST <code>/api/auth/mfa/setup|enable|disable</code></td><td>TOTP 绑定三件套（本人）</td><td>登录态</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-auth">grp-auth</a></td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s11">11 种子数据与初始化</h2>
+    <ul>
+      <li><strong>菜单种子（06-iam-tables.sql §6.5）</strong>：实时监控组（10/11/12/13）、主数据管理组（100~104、按钮 201~204）、系统管理组（900/901/902/903、按钮 911/912）；后续脚本（07/08/09/11/12/13/14/15/17）陆续追加风控、工单、字典、消息中心、大屏、报警中心、评分、画像、分析菜单，全部幂等（ON CONFLICT DO NOTHING）并重置序列。</li>
+      <li><strong>内置角色（§6.6）</strong>：SUPER_ADMIN（全部/1）、SAFE_ADMIN（全部/1）、DISPATCHER（本部门及以下/3）、FLEET_CAPTAIN（本企业及以下/2），均 built_in=1。</li>
+      <li><strong>角色授权（§6.7）</strong>：超管全量；安全管理员=系统管理目录+用户（含维护）+角色查看+审计+主数据目录+组织查看；调度监控员=监控组全部+主数据组菜单只读；企业车队长=监控（无回放）+主数据查看+车辆/终端/驾驶员维护。</li>
+      <li><strong>admin 用户</strong>：由后端 <code>DataInitializer</code> 首启创建（SQL 注释明确"不把密码哈希写死在 SQL"）；演示密码 admin123（登录页提示首次登录修改）。</li>
+      <li><strong>省份测试账号（16/17 号种子）</strong>：四省（上海/山东/江苏/安徽）调度员 *_disp 与车队长 *_capt，密码统一 test123456，由 <code>ProvinceTestUserInitializer</code> 配合建号，登录页快捷填充与之对应。</li>
+    </ul>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>RBAC + 数据范围双维模型</strong>：菜单/按钮解决"能不能用"，deptScope 解决"能看哪些"，二者正交；多角色并集是行业通行语义，用户排障时可逐角色还原。</li>
+      <li><strong>权限判定 AOP 化、不查库</strong>：权限集在请求主体上，PermAspect 纯内存匹配；鉴权 SQL 只在主体装载（且被 120 秒缓存覆盖）时发生，接口热路径零权限查询。</li>
+      <li><strong>菜单种子化而非界面维护</strong>：权限点与代码强耦合（注解、v-perm、meta.perm 都引用编码），界面可改只会制造失配；SQL 种子幂等随版本演进。</li>
+      <li><strong>组织树内存计算</strong>：部门量级小，selectAllNodes 一次加载 + BFS 子树，比递归 CTE 简单且躲开数据库方言差异。</li>
+      <li><strong>TOTP 自实现</strong>：RFC 6238 算法简短（HMAC-SHA1 + 动态截断），自实现免引依赖；±1 时间步是标准容差。</li>
+      <li><strong>pending 密钥两段式绑定</strong>：未确认密钥与生效密钥分列（mfa_pending_secret / mfa_secret），绑定中途退出不会破坏既有可用状态。</li>
+      <li><strong>写操作主动 evict + 120s TTL 兜底</strong>：兼顾"权限变更立即生效"与"防代码漏 evict"两个目标。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>多实例权限缓存不一致</td>
+          <td>PermissionCache 为进程内 ConcurrentHashMap，evictAll 只清本进程</td>
+          <td>多实例部署时角色变更后部分实例短期旧权</td>
+          <td>当前单实例部署；横向扩展时改 Redis 共享缓存或失效广播</td>
+        </tr>
+        <tr>
+          <td>组织树全量加载</td>
+          <td>DataScopeService.loadTrees 每次 compute 全表读</td>
+          <td>部门极多时装载成本上升（当前量级无感）</td>
+          <td>部门规模上千后给 selectAllNodes 加短缓存（与权限缓存同 TTL）</td>
+        </tr>
+        <tr>
+          <td>超管完全硬编码</td>
+          <td>SUPER_ADMIN 前后端均硬编码绕过；admin 账号多重保护</td>
+          <td>超管被盗=全平台失守</td>
+          <td>建议超管强制开启 MFA（当前为自助）；网关侧可加登录来源限制</td>
+        </tr>
+        <tr>
+          <td>管理员代关 MFA 无二次确认凭证</td>
+          <td>adminDisableMfa 只验操作者 iam:user:edit 权限</td>
+          <td>高权账号被冒用可批量关闭 MFA</td>
+          <td>已有 @AuditLog 留痕；可叠加操作者自身 MFA 校验</td>
+        </tr>
+        <tr>
+          <td>自定义范围不含下级部门</td>
+          <td>SCOPE_CUSTOM 只并入勾选 ID 本身</td>
+          <td>新增下级部门后旧角色看不见，易误解</td>
+          <td>属设计口径（勾什么看什么）；培训与文档明确，必要时增加"含下级"选项</td>
+        </tr>
+        <tr>
+          <td>TOTP 依赖手机时钟</td>
+          <td>±1 时间步（±30 秒）容差</td>
+          <td>手机时钟严重不准时无法登录</td>
+          <td>提示语已含"确认手机时间与服务器一致"；管理员代关兜底</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-001-平台基础与通用能力.html">MOD-DBD-001 平台基础</a></td><td>JwtAuthFilter 经 AuthRealm SPI 调 DbAuthRealm；PermAspect/UserContext 在 platform-common；登录与 JWT 机制归 MOD-001</td><td>AuthRealm、UserInfo</td></tr>
+        <tr><td><a href="MOD-DBD-003-主数据管理.html">MOD-DBD-003 主数据管理</a></td><td>组织树 traj_dept 由 MDM 维护，IAM 的部门选择器与 deptScope 计算都消费它；档案按数据范围过滤的口径与本文 7.2 一致</td><td>DataScopeDeptMapper、ProvDeptMapper</td></tr>
+        <tr><td><a href="MOD-DBD-005-实时监控与可视化.html">MOD-DBD-005 实时监控</a></td><td>WebSocket 会话按 UserInfo.deptScope 过滤位置推送（WsScopeResolver），即本模块算出的集合</td><td>WsScopeResolver、SessionRegistry</td></tr>
+        <tr><td><a href="MOD-DBD-013-操作审计日志.html">MOD-DBD-013 操作审计</a></td><td>IAM 全部写操作挂 @AuditLog（module=IAM），是审计日志的主要来源之一</td><td>IamUserController/IamRoleController 注解</td></tr>
+        <tr><td>全部业务模块</td><td>所有 @RequiresPerm 编码均来自 sys_menu 种子；deptScope 被监控/报警/轨迹/主数据查询消费</td><td>PermAspect、UserInfo.deptScope</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">改了角色权限，用户多久生效？</div><div class="vv">立即。RoleService 更新/删除后 evictAll 清空权限缓存，用户下一次请求即按新权限判定；前端菜单需重新进入或刷新后收敛。</div></div>
+      <div class="kv"><div class="k">多角色时数据范围怎么算？</div><div class="vv">取并集；任一角色为"全部数据"则整体不限制（deptScope=null）。没有任何角色贡献部门时为空集，即看不到任何部门数据。</div></div>
+      <div class="kv"><div class="k">"本企业及以下"的企业怎么认定？</div><div class="vv">沿用户部门的父链向上找最近 dept_type=1 的节点；找不到时退化为本部门。防循环做了 100 步上限。</div></div>
+      <div class="kv"><div class="k">自定义范围勾选上级部门会含下级吗？</div><div class="vv">不会。自定义档位只看勾选 ID 本身，不含下级；要含下级请改用"本部门及以下"或把下级也勾上。</div></div>
+      <div class="kv"><div class="k">为什么内置角色不能改编码和数据范围？</div><div class="vv">内置角色的编码（如 SUPER_ADMIN）被后端硬编码引用，数据范围是其业务语义的一部分（如 DISPATCHER=3），改动会破坏内置约定，故 RoleService 强制保护。</div></div>
+      <div class="kv"><div class="k">超管为什么没有 perms 也能过所有接口？</div><div class="vv">DbAuthRealm 给超管空权限集但置 superAdmin=true，PermAspect 第一行就放行；这是刻意的性能取舍（超管不需要加载权限集）。</div></div>
+      <div class="kv"><div class="k">绑 MFA 中途关闭页面会怎样？</div><div class="vv">无影响。密钥还在 pending 列，正式密钥未动；再次进入 setup 会重新生成 pending 密钥覆盖。</div></div>
+      <div class="kv"><div class="k">mfa 令牌能当登录令牌用吗？</div><div class="vv">不能。purpose=mfa，过滤器只允许其调 /api/auth/mfa/verify，5 分钟过期。</div></div>
+      <div class="kv"><div class="k">用户被删除后还能登录吗？</div><div class="vv">不能。软删后 valid_mark=0，登录查不到该用户（按 valid_mark=1 过滤），已有令牌在主体装载时也会被 401。</div></div>
+      <div class="kv"><div class="k">菜单能在界面上维护吗？</div><div class="vv">不能。sys_menu 由 SQL 种子维护（版本化），/api/iam/menus/tree 只读；这是权限点与代码强耦合下的有意设计。</div></div>
+      <div class="kv"><div class="k">新建用户能立刻登录吗？</div><div class="vv">能。create 即写库且 valid_mark=1；若给了初始密码符合强度，即可登录（未分配角色则无菜单可见，落入 /monitor 兜底但接口权限仍按空 perms 判定）。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>用户 CRUD 与校验</td><td>合法用户可建；登录名重名/格式非法/弱密码被拒；编辑、启停、删除生效</td><td>用户管理操作</td></tr>
+        <tr><td>2</td><td>保护规则</td><td>admin 不可停用/删除/降级；不可停用/删除自己；不可移除自己全部角色</td><td>界面 + 接口直调</td></tr>
+        <tr><td>3</td><td>分配角色生效</td><td>分配后该用户下一请求即按新角色判定；被收回权限的接口 40301</td><td>双账号交叉验证</td></tr>
+        <tr><td>4</td><td>角色授权树</td><td>勾选菜单/按钮保存后 menuIds 与 sys_role_menu 一致；无效 menuId 被拒</td><td>角色抽屉 + 数据库核对</td></tr>
+        <tr><td>5</td><td>内置角色保护</td><td>内置角色禁删；编码与数据范围编辑被禁用/拒绝</td><td>界面 + 接口直调</td></tr>
+        <tr><td>6</td><td>删除联动</td><td>有用户的角色禁删；删除自定义角色后三类关系清除</td><td>数据库核对</td></tr>
+        <tr><td>7</td><td>数据范围五档</td><td>同用户依次挂五档角色，deptScope 与 7.2 表一致；自定义不含下级</td><td>构造角色 + 业务查询验证</td></tr>
+        <tr><td>8</td><td>多角色并集</td><td>挂"本部门及以下"+"自定义"两角色，可见部门=两者并集；挂全部则不限制</td><td>同上</td></tr>
+        <tr><td>9</td><td>MFA 绑定登录</td><td>setup→扫码→enable 成功；登录强制二步；错码被拒；±30 秒内旧码可用</td><td>身份验证器实测</td></tr>
+        <tr><td>10</td><td>MFA 关闭两路径</td><td>本人关闭需密码+动态码；管理员代关无需凭证且写审计</td><td>两路径各验一次</td></tr>
+        <tr><td>11</td><td>解锁</td><td>锁定用户经 /unlock 或重置密码后可立即登录</td><td>连续错 5 次后操作</td></tr>
+        <tr><td>12</td><td>审计留痕</td><td>用户/角色全部写操作在审计日志可见（module=IAM，动作名中文）</td><td>操作审计页核对</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>未找到充分证据或依赖运行环境</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>超管强制 MFA 策略</strong>：当前 MFA 为个人自助开启，未见对 SUPER_ADMIN/高权角色的强制开启约束，是否纳入安全基线待确认。</li>
+      <li><strong>权限点变更的下发通道</strong>：菜单种子变更（如新增权限点）需要执行对应 SQL 并重载权限缓存；生产发布流程中的执行顺序以部署手册为准。</li>
+      <li><strong>省份测试账号的生产处置</strong>：16/17 号种子与 ProvinceTestUserInitializer 创建的演示账号（*_disp/*_capt），生产环境是否禁用/剔除待实施确认。</li>
+      <li><strong>多实例部署的 evictAll 传播</strong>：当前单实例有效；横向扩展时的失效广播方案待架构演进时确认。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>首次发布。以 2026-10-05 源代码与 06-iam-tables.sql 种子为准编写：固化五级数据范围语义（含 SCOPE_ALL 短路、企业节点解析、自定义不含下级）、PermAspect 判定顺序、PermissionCache 120 秒 TTL 与 evict 联动、用户/角色保护规则全集、TOTP 两段式绑定与 mfa 令牌隔离等实现事实。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-002 用户与权限（IAM） · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

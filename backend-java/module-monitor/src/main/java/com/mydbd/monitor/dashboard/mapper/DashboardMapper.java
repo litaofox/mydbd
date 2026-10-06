@@ -25,7 +25,9 @@ public interface DashboardMapper {
     String selectConfigValue(@Param("key") String key);
 
     /**
-     * D-01/D-02：有效车辆总数 + 窗口内有定位的车辆数（vehicle→terminal→gps 链路）
+     * D-01/D-02：有效车辆总数 + 在线车辆数（vehicle→terminal 链路）。
+     * 在线口径（GATEWAY-PLAN-001）：绑定终端 online_status=1 优先；状态未知（NULL）
+     * 回退"窗口内有定位"原口径。无绑定终端的车辆本就不进入子查询（与原口径一致）。
      * 性能：相关子查询按 (identity_code, gps_time DESC) 索引取 max，避免 JOIN 全量轨迹表聚合。
      */
     @Select("""
@@ -34,8 +36,10 @@ public interface DashboardMapper {
                      <if test="deptIds != null">
                        AND dept_id IN <foreach collection="deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>
                      </if>) AS "vehicleTotal",
-                   count(*) FILTER (WHERE t.last_gps >= now() - make_interval(mins => #{windowMinutes})) AS "onlineCount"
-              FROM (SELECT v.id,
+                   count(*) FILTER (WHERE t.online_status = 1
+                                       OR (t.online_status IS NULL
+                                           AND t.last_gps >= now() - make_interval(mins => #{windowMinutes}))) AS "onlineCount"
+              FROM (SELECT v.id, tm.online_status,
                            (SELECT max(p.gps_time) FROM traj.traj_gps_point p
                              WHERE p.identity_code = tm.identity_code) AS last_gps
                       FROM traj.traj_vehicle v

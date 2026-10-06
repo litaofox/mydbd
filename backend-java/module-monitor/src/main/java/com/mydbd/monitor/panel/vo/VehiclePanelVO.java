@@ -65,6 +65,8 @@ public class VehiclePanelVO {
         private String equipmentType;
         private Integer videoChannel;
         private Integer status;
+        /** 网关在案在线状态：0 离线 1 在线（GATEWAY-PLAN-001；NULL=未知，回退点位窗口口径） */
+        private Integer onlineStatus;
         private LocalDateTime bindTime;
     }
 
@@ -91,7 +93,7 @@ public class VehiclePanelVO {
         private Integer direction;
         private LocalDateTime gpsTime;
         private Integer alarmFlag;
-        /** gpsTime 距今 ≤5 分钟（与 F14/大屏口径一致） */
+        /** 终端 online_status=1 优先；状态未知时回退 gpsTime 距今 ≤5 分钟（与 F14/大屏口径一致） */
         private Boolean online;
     }
 

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-007 电子围栏 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-007 电子围栏 · 圆形/多边形围栏管理与车辆进出实时判定</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位与边界</a></li>
+            <li><a href="#s1-2">1.2 功能清单与上线状态</a></li>
+            <li><a href="#s1-3">1.3 编号沿革与实现分工</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 围栏列表与筛选</a></li>
+            <li><a href="#s3-2">3.2 新建圆形围栏</a></li>
+            <li><a href="#s3-3">3.3 新建多边形围栏</a></li>
+            <li><a href="#s3-4">3.4 启停 / 编辑 / 删除</a></li>
+            <li><a href="#s3-5">3.5 进出事件的消费路径</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 围栏 CRUD 与参数校验</a></li>
+            <li><a href="#s7-2">7.2 PostGIS 图形读写（Java 侧）</a></li>
+            <li><a href="#s7-3">7.3 实时进出判定 SQL（Python 侧）</a></li>
+            <li><a href="#s7-4">7.4 进出状态机与冷却</a></li>
+            <li><a href="#s7-5">7.5 围栏配置热加载</a></li>
+            <li><a href="#s7-6">7.6 触发入口与旁路容错</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 定时任务与后台行为</a></li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-007 电子围栏</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-007<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F13
+    </p>
+    <p class="cover-meta">
+      事实基准：2026-10-05 源代码与初始化 SQL（<code>07-risk-tables.sql</code>）
+    </p>
+    <p class="cover-meta">
+      主要代码锚点：<code>GeoFenceController</code> / <code>GeoFenceService</code> / <code>RiskGeoFence</code> / <code>RiskGeoFenceMapper</code>（Java，module-risk）；<code>processing-service/app/services/cep_engine.py</code> / <code>app/db.py</code>（Python）；前端 <code>views/system/GeoFenceList.vue</code>、<code>api/risk.ts</code>
+    </p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位与边界</h3>
+    <p>电子围栏模块提供在地图上划定地理区域、对车辆实时位置进行<strong>进出判定</strong>、并在状态翻转时产生风险事件（<code>GEO_ENTER</code> / <code>GEO_EXIT</code>）的能力。围栏支持两种几何形状：</p>
+    <ul>
+      <li><strong>圆形围栏（CIRCLE）</strong>：中心点经纬度 + 半径（50~100000 米），判定使用 PostGIS <code>geography</code> 类型的 <code>ST_DWithin</code>，半径按真实米制大地距离计算；</li>
+      <li><strong>多边形围栏（POLYGON）</strong>：地图手绘顶点（≥3 个顶点，闭合后 ≥4 个点），图形以 <code>geometry(Polygon,4326)</code> 存储，判定使用 <code>ST_Contains</code>。</li>
+    </ul>
+    <p>每个围栏可独立配置<strong>触发方向</strong>（1=进入报警 / 2=离开报警 / 3=进出都报）、<strong>风险等级</strong>（1 低 / 2 中 / 3 高）与<strong>冷却时间</strong>（0~86400 秒，冷却窗口内同车同围栏不重复产生事件）。</p>
+
+    <blockquote class="tip">
+      <p><strong>一句话边界：</strong>围栏档案与图形维护在 Java 平台（<code>/api/risk/fences</code>）；车辆进出的实时判定不在 Java 进程内，而在轨迹处理服务 processing-service（Python FastAPI）中，以 PostGIS 空间函数旁路完成。两侧共享同一套 PostgreSQL/PostGIS 表。</p>
+    </blockquote>
+
+    <h3 id="s1-2">1.2 功能清单与上线状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>说明</th><th>实现位置</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>围栏分页/全量查询、详情</td><td>按名称、形状、状态筛选；<code>/all</code> 返回有效围栏供下拉使用</td><td><code>GeoFenceController</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>圆形/多边形围栏增改删</td><td>名称唯一、经纬度/半径/顶点校验、多边形自动闭合；软删 <code>valid_mark=0</code></td><td><code>GeoFenceService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>围栏启停</td><td><code>PUT /{id}/status</code>，停用后不参与实时判定（热加载约 30 秒生效）</td><td><code>GeoFenceService</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>多边形图形 PostGIS 存储</td><td><code>ST_GeomFromGeoJSON</code> 入库、<code>ST_AsGeoJSON</code> 回读，GiST 空间索引</td><td><code>RiskGeoFenceMapper</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>车辆进出实时判定</td><td>轨迹点入库后旁路执行；圆形 <code>ST_DWithin</code>（geography 米制）、多边形 <code>ST_Contains</code></td><td><code>cep_engine._evaluate_fences</code> + <code>db.fences_inside_status</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>进出状态机与冷却</td><td>首见只初始化不补报；状态翻转且过冷却才落 <code>GEO_ENTER/GEO_EXIT</code> 事件</td><td><code>db.get_fence_states/apply_fence_transitions</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>围栏事件自动建单</td><td>事件与规则事件走同一落库事务，自动生成 PENDING 处置工单（见 MOD-009）</td><td><code>db.insert_risk_events</code></td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>历史批量轨迹补判</td><td>批量导入（<code>/api/ingest/load-sample</code>）只入库不评估围栏</td><td>—</td><td><span class="badge gray">不提供（现状）</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 编号沿革与实现分工（对旧资料的纠正）</h3>
+    <blockquote class="warn">
+      <p><strong>旧说法与代码不一致，本文以代码为准：</strong></p>
+      <p>1. 旧版功能清单曾把电子围栏标注为"待建设"。代码证明该功能<strong>已上线</strong>：围栏 CRUD、PostGIS 图形存储、车辆实时进出事件链路均完整运行，文档门户卡片亦为"已上线"绿标。</p>
+      <p>2. Java/Python 代码注释普遍把围栏写作 "F18"（如 <code>07-risk-tables.sql</code> 标题"F18 风控规则引擎（CEP）：规则配置、电子围栏……"、实体注释）。现行功能编号体系中围栏为 <strong>F13</strong>，F18 是风控规则引擎整体编号（见 MOD-DBD-008）。本文统一使用 F13；历史注释中的 F18 字样属编号沿革遗留，不代表功能未实现。</p>
+      <p>3. 门户卡片简介"基于 PostGIS 空间查询"属实，但空间判定 SQL 位于 <strong>processing-service（Python <code>db.py</code>）</strong>，不是 Java 平台；Java 侧只通过 <code>ST_GeomFromGeoJSON</code>/<code>ST_AsGeoJSON</code> 维护图形，不含 <code>ST_DWithin</code>/<code>ST_Contains</code> 判定。</p>
+    </blockquote>
+
+    <h3 id="s1-4">1.4 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:170px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>围栏（GeoFence）</td><td>一条 <code>mon.risk_geo_fence</code> 记录，描述一个圆形或多边形地理区域及其触发策略（方向 / 等级 / 冷却）。</td></tr>
+        <tr><td>触发方向 triggerDir</td><td>1=仅进入报警，2=仅离开报警，3=进出都报；即使状态发生翻转，方向不匹配也不落事件。</td></tr>
+        <tr><td>冷却 cooldownSec</td><td>同车 × 同围栏 × 同事件类型（进入/离开）的最小时间间隔；窗口内重复翻转被丢弃，基准为 <code>risk_fence_state</code> 的 last_enter_time / last_exit_time。</td></tr>
+        <tr><td>状态翻转</td><td>本批 inside 与上一状态不同（外 ↔ 内）；只有翻转才可能产生事件，连续在内或连续在外不产生。</td></tr>
+        <tr><td>首见不补报</td><td>某车 × 某围栏在状态表无历史记录时，第一个点只初始化 inside，不推断此前是否已发生进出。</td></tr>
+        <tr><td>EPSG:4326</td><td>WGS84 经纬度坐标系，多边形图形与前端 Leaflet 统一使用；圆形距离计算时再 <code>::geography</code> 转型。</td></tr>
+        <tr><td>热加载 TTL</td><td>processing-service 内 <code>risk_cache_sec</code>（默认 30 秒）的规则 / 围栏缓存寿命，到期懒刷新，无主动失效推送。</td></tr>
+        <tr><td>软删 valid_mark</td><td>删除围栏只置 <code>valid_mark=0</code>，配合部分唯一索引使同名围栏可再次创建；历史事件通过 fence_id 保留引用。</td></tr>
+      </tbody>
+    </table>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">重点区域闯入监控</div>
+        <div class="sc-desc">在化工园区、事故多发路段、港口堆场中心画一个圆形围栏，触发方向设为"进入报警"。车辆一进入区域，坐席界面即收到高风险"进入围栏"事件与工单。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">调度监控员</div>
+        <div class="sc-name">规定路线偏离预警</div>
+        <div class="sc-desc">沿允许行驶走廊绘制多边形围栏，触发方向设为"离开报警"。车辆离开走廊即产生 GEO_EXIT 事件，等价于偏离路线提醒，无需建设专门路线系统。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">车队长</div>
+        <div class="sc-name">禁区/电子围栏考勤</div>
+        <div class="sc-desc">把仓库、客户站点设为围栏并选择"进出都报"，可以从风险事件中还原车辆到离站点时点，用于调度核对；冷却 600 秒可避免停靠期间刷屏。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">演示/测试人员</div>
+        <div class="sc-name">国贸演示围栏</div>
+        <div class="sc-desc">脚本内置种子"演示围栏·国贸（可删）"：圆心 116.404,39.912、半径 3000 米、进出都报、冷却 600 秒，配合内置模拟器车辆游走即可自然产生进出事件。</div>
+      </div>
+    </div>
+
+    <h2 id="s3">3 操作流程</h2>
+    <p>菜单路径：<strong>系统管理 → 电子围栏</strong>（<code>sys_menu</code> id=905，父菜单 900"系统管理"，路由 <code>/system/fences</code>，权限点 <code>risk:fence:view</code>；维护按钮 id=914，权限点 <code>risk:fence:edit</code>）。</p>
+
+    <h3 id="s3-1">3.1 围栏列表与筛选</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入列表</div>
+        <div class="s-desc">系统管理 → 电子围栏，打开 <code>GeoFenceList.vue</code>，默认分页展示全部有效围栏。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">设置筛选</div>
+        <div class="s-desc">顶部可按围栏名称（fenceName 模糊）、形状（CIRCLE/POLYGON）、状态（启用/停用）组合筛选后查询。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">查看列表字段</div>
+        <div class="s-desc">名称、形状、中心/半径或顶点摘要、触发方向、风险等级、冷却秒数、启停开关、备注、操作列。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">进入详情/编辑</div>
+        <div class="s-desc">点"编辑"打开 720px 抽屉，内嵌 Leaflet 地图回显既有图形，可直接修改后保存。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-2">3.2 新建圆形围栏</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">点击「新建圆形围栏」</div>
+        <div class="s-desc">按钮受 <code>v-perm="'risk:fence:edit'"</code> 控制，无维护权限的角色不可见。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">地图选点确定中心</div>
+        <div class="s-desc">抽屉内 Leaflet 地图（高德栅格瓦片底图）点击"地图选点"后在图上点选中心，centerLng/centerLat 自动回填；中国范围校验：经度 73~135、纬度 3~54。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">填写半径与策略</div>
+        <div class="s-desc">半径数字框 50~100000 米；触发方向（进入/离开/进出）、风险等级（低/中/高）、冷却秒数（0~86400）、状态、备注。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">保存</div>
+        <div class="s-desc">后端校验名称在有效围栏中唯一（<code>valid_mark=1</code> 部分唯一索引兜底）；保存成功后前端提示配置约 30 秒内热加载生效。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-3">3.3 新建多边形围栏</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">开始绘制</div>
+        <div class="s-desc">点「新建多边形围栏」→ 抽屉地图上点"开始绘制"，逐点单击落顶点。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">编辑顶点</div>
+        <div class="s-desc">"撤销一点"回退最后一个顶点；"清空重画"作废重来；顶点计数 tag 实时显示，至少 3 个顶点。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">保存闭合</div>
+        <div class="s-desc">后端 <code>closedRing()</code> 自动把尾点补成与首点相同形成闭合环（闭合后 ≥4 点），GeoJSON 经 <code>ST_SetSRID(ST_GeomFromGeoJSON,4326)</code> 入库。</div>
+      </div>
+    </div>
+
+    <h3 id="s3-4">3.4 启停 / 编辑 / 删除</h3>
+    <ul>
+      <li><strong>启停</strong>：列表 switch 调 <code>PUT /api/risk/fences/{id}/status</code>（body <code>{"status": 0|1}</code>）。停用即从 processing-service 的启用围栏缓存中淘汰（TTL 到期后），不再判定。</li>
+      <li><strong>编辑</strong>：<code>PUT /{id}</code>，重新做全套形状与取值校验；多边形重新写 <code>polygon_geom</code>。</li>
+      <li><strong>删除</strong>：<code>DELETE /{id}</code> 为软删（<code>valid_mark=0</code>），同时执行 <code>deleteFenceState</code> 清除 <code>mon.risk_fence_state</code> 中该围栏全部车辆状态。前端二次确认文案明确：<strong>"历史越界事件保留，围栏状态数据同步清除"</strong>。</li>
+    </ul>
+
+    <h3 id="s3-5">3.5 进出事件的消费路径</h3>
+    <p>围栏产生的 <code>GEO_ENTER/GEO_EXIT</code> 事件与规则事件结构一致（同落 <code>mon.risk_event</code>，差异仅是 <code>rule_id</code> 为空、<code>fence_id</code> 有值），因此后续消费零定制：</p>
+    <ul>
+      <li>实时监控 → 风险预警分析页（<code>/risk</code>）可按来源"北斗"、等级、车牌、城市查询；</li>
+      <li>自动生成处置工单（PENDING），进入 MOD-009 的认领/分派/闭环流程；</li>
+      <li>计入 MOD-010 风险画像的事件趋势、黑点路段与排行（画像事件名兜底表包含 <code>GEO_ENTER/GEO_EXIT</code>）。</li>
+    </ul>
+
+    <h3 id="s3-6">3.6 列表字段与展示映射</h3>
+    <table>
+      <thead><tr><th>列 / 控件</th><th>数据来源</th><th>展示规则</th></tr></thead>
+      <tbody>
+        <tr><td>名称</td><td>fenceName</td><td>文本；点击进入编辑抽屉</td></tr>
+        <tr><td>形状</td><td>fenceType</td><td>标签：CIRCLE=圆形、POLYGON=多边形</td></tr>
+        <tr><td>范围摘要</td><td>centerLng/centerLat/radiusM 或 points</td><td>圆形显示"中心 经度,纬度 / 半径 N 米"；多边形显示"N 个顶点"</td></tr>
+        <tr><td>触发方向</td><td>triggerDir</td><td>1=仅进入、2=仅离开、3=进出都报</td></tr>
+        <tr><td>风险等级</td><td>riskLevel</td><td>Element Plus tag：1 低（info/success 色）、2 中（warning）、3 高（danger）</td></tr>
+        <tr><td>冷却（秒）</td><td>cooldownSec</td><td>0 显示为"不冷却"</td></tr>
+        <tr><td>启停</td><td>status</td><td>switch 直接调 /status 接口；无 edit 权限禁用</td></tr>
+        <tr><td>操作</td><td>—</td><td>编辑、删除；按钮受 <code>risk:fence:edit</code> 控制</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <p>本模块前端仅 1 个路由页面 + 2 类表单抽屉。截图占位仅描述应截取的真实界面内容，不引用任何外部图片。</p>
+    <div class="shot">
+      <div class="sh-icon">🗺️</div>
+      <div class="sh-t">截图 4-1：围栏列表页（系统管理 → 电子围栏，/system/fences）</div>
+      <div class="sh-p">应截：顶部筛选区（名称输入框、形状下拉、状态下拉、查询/重置）；右上「新建圆形围栏」「新建多边形围栏」按钮；列表含"演示围栏·国贸（可删）"行，展示形状标签、触发方向、等级 tag、冷却、启停 switch 与编辑/删除操作。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">⭕</div>
+      <div class="sh-t">截图 4-2：新建圆形围栏抽屉</div>
+      <div class="sh-p">应截：720px 抽屉内嵌地图，地图上已画出的圆形覆盖物与中心标记；"地图选点"按钮态；下方表单（中心经纬度、半径米、触发方向单选、风险等级、冷却秒数、状态、备注）与保存按钮。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🛑</div>
+      <div class="sh-t">截图 4-3：新建多边形围栏抽屉</div>
+      <div class="sh-p">应截：绘制工具条（开始绘制 / 撤销一点 / 清空重画）、顶点计数 tag（如"已绘制 6 个顶点"）、地图上折线/多边形覆盖物；保存成功后的 toast"约 30 秒内热加载生效"。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">⚠️</div>
+      <div class="sh-t">截图 4-4：删除确认弹窗</div>
+      <div class="sh-p">应截：删除围栏时的确认框，完整呈现"历史越界事件保留，围栏状态数据同步清除"提示文案。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">2 类</div><div class="l">圆形 + 多边形，覆盖点域与走廊两类管控</div></div>
+      <div class="stat"><div class="v">≤30s</div><div class="l">配置热加载延迟（risk_cache_sec 默认 30 秒）</div></div>
+      <div class="stat"><div class="v">0 漏报</div><div class="l">状态翻转才报警，配冷却杜绝停车刷屏</div></div>
+      <div class="stat"><div class="v">1 套事件</div><div class="l">围栏事件复用工单/画像/通知全链路</div></div>
+    </div>
+    <ul>
+      <li><strong>零代码划区</strong>：安全管理员在地图上直接画，不需要开发介入，区域策略随业务调整分钟级上线。</li>
+      <li><strong>判定可信</strong>：圆形用 geography 大地米制距离，不做平面近似，高纬度地区半径依然准确；多边形用 4326 经纬度坐标系与前端 Leaflet 一致，无坐标系转换歧义。</li>
+      <li><strong>告警克制</strong>：每车每围栏维护 inside 状态与最后进出时间，状态未翻转不重复报警；冷却窗口防止边界点抖动造成事件风暴。</li>
+      <li><strong>闭环可管</strong>：围栏事件即标准风险事件，自动建单、可分派、可考核处置时效，不是孤立的地图提示。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <p>模块横跨两个部署组件：Java 平台（module-risk）负责<strong>配置面</strong>，Python processing-service 负责<strong>判定面</strong>，两者只通过 PostgreSQL 表耦合，无进程间直接调用。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>GeoFenceList.vue</b> 列表/筛选/启停/删除</span>
+          <span class="node"><b>圆形/多边形抽屉</b> Leaflet 选点与绘制</span>
+          <span class="node"><b>api/risk.ts</b> pageFences/listAllFences/getFence/createFence/updateFence/changeFenceStatus/deleteFence</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Java 平台<br>module-risk</div>
+        <div class="al-body">
+          <span class="node"><b>GeoFenceController</b> /api/risk/fences（@RequiresPerm risk:fence:view/edit）</span>
+          <span class="node"><b>GeoFenceService</b> 校验/闭合环/软删/清状态/事务</span>
+          <span class="node"><b>RiskGeoFence</b> @TableName("mon.risk_geo_fence")，points 为 @TableField(exist=false) 瞬态</span>
+          <span class="node"><b>RiskGeoFenceMapper</b> ST_AsGeoJSON / ST_GeomFromGeoJSON / 清状态自定义 SQL</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层<br>PostGIS</div>
+        <div class="al-body">
+          <span class="node"><b>mon.risk_geo_fence</b> polygon_geom geometry(Polygon,4326) + GiST 索引</span>
+          <span class="node"><b>mon.risk_fence_state</b> (identity_code,fence_id) 联合主键状态机</span>
+          <span class="node"><b>mon.risk_event</b> GEO_ENTER/GEO_EXIT 事件（fence_id 有值、rule_id 为空）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">判定面<br>Python</div>
+        <div class="al-body">
+          <span class="node"><b>routes/ingest.py</b> POST /api/ingest/traj 入库后旁路调 CEP</span>
+          <span class="node"><b>cep_engine.evaluate_points → _evaluate_fences</b> 分组排序后逐点判定</span>
+          <span class="node"><b>db.fences_inside_status</b> ST_DWithin / ST_Contains 空间 SQL</span>
+          <span class="node"><b>db.get_fence_states / apply_fence_transitions</b> 状态翻转 + 冷却 + 落事件</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>层</th><th>职责</th><th>关键实现点</th></tr></thead>
+      <tbody>
+        <tr><td><code>GeoFenceController</code></td><td>Java</td><td>围栏 REST 端点</td><td>类级 <code>@RequiresPerm("risk:fence:view")</code>；写操作方法级 <code>risk:fence:edit</code>；增/改挂 <code>@AuditLog</code>（CREATE/UPDATE GEO_FENCE）</td></tr>
+        <tr><td><code>GeoFenceService</code></td><td>Java</td><td>业务校验与事务</td><td>名称唯一、中国经纬度范围、半径范围、多边形顶点数、closedRing 补尾点、冷却范围、分页 size 钳制 1~200</td></tr>
+        <tr><td><code>RiskGeoFence</code></td><td>Java</td><td>实体</td><td>centerLng/Lat 为 <code>BigDecimal</code>（映射 numeric(10,6)）；顶点列表 <code>points</code> 不入库，仅用于传输 GeoJSON</td></tr>
+        <tr><td><code>RiskGeoFenceMapper</code></td><td>Java</td><td>图形 SQL</td><td><code>selectPolygonGeoJson</code>、<code>updatePolygonGeom</code>、<code>clearPolygonGeom</code>、<code>deleteFenceState</code>，全部 mon schema</td></tr>
+        <tr><td><code>cep_engine</code></td><td>Python</td><td>实时判定编排</td><td>按 identity_code 分组、gps_time 排序；每点调用围栏判定并与历史 inside 状态比对</td></tr>
+        <tr><td><code>db</code></td><td>Python</td><td>空间查询与状态持久化</td><td>psycopg2 直连；单事务 upsert state + insert event</td></tr>
+        <tr><td><code>GeoFenceList.vue</code></td><td>前端</td><td>管理界面</td><td>Leaflet 地图、高德栅格瓦片（系统现状）、顶点编辑、v-perm 按钮控制</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><strong>单页双抽屉</strong>：列表页 <code>views/system/GeoFenceList.vue</code> 内联圆形与多边形两个 720px 抽屉表单，共用一套名称/方向/等级/冷却字段，按 fenceType 切换中心点或顶点编辑区。</li>
+      <li><strong>Leaflet 绘制</strong>：圆形用 marker + circle 覆盖物；多边形用 polyline 预览，保存前把顶点数组按 GeoJSON Polygon（首点闭合）组装提交；编辑回显时以 ST_AsGeoJSON 结果重建覆盖物。</li>
+      <li><strong>底图现状</strong>：使用在线高德栅格瓦片 URL，前端代码不含任何图片资源；离线部署需替换瓦片地址（见第 17 节待核实项）。</li>
+      <li><strong>交互保护</strong>：删除走 <code>ElMessageBox.confirm</code> 二次确认并完整展示"历史事件保留 / 状态清除"后果；启停 switch 在接口失败时回滚视觉状态。</li>
+      <li><strong>权限渲染</strong>：新建/编辑/删除按钮统一 <code>v-perm="'risk:fence:edit'"</code>；菜单由 905/914 种子驱动，超级管理员默认可见。</li>
+      <li><strong>API 封装</strong>：<code>api/risk.ts</code> 提供 pageFences、listAllFences、getFence、createFence、updateFence、changeFenceStatus、deleteFence，返回值走统一 Result/PageData 解包。</li>
+    </ul>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 围栏 CRUD 与参数校验</h3>
+    <p><code>GeoFenceService</code> 的全部校验规则（非法即抛 <code>BizException</code>，前端收到统一错误码提示）：</p>
+    <table>
+      <thead><tr><th>校验项</th><th>规则</th><th>落地位置</th></tr></thead>
+      <tbody>
+        <tr><td>名称唯一</td><td>同一时间仅允许一个 <code>valid_mark=1</code> 的同名围栏；软删后名称可复用</td><td>Service 计数 + 部分唯一索引 <code>uk_risk_fence_name</code></td></tr>
+        <tr><td>中国经纬度</td><td>经度 73~135、纬度 3~54</td><td>Service（圆形中心点）</td></tr>
+        <tr><td>半径</td><td>50 ≤ radiusM ≤ 100000 米</td><td>Service</td></tr>
+        <tr><td>多边形顶点</td><td>≥3 个顶点；<code>closedRing()</code> 自动追加与首点相同的尾点（闭合后 ≥4 点）</td><td>Service</td></tr>
+        <tr><td>触发方向</td><td>triggerDir ∈ {1 进入, 2 离开, 3 进出}</td><td>Service</td></tr>
+        <tr><td>冷却</td><td>0 ≤ cooldownSec ≤ 86400（秒）</td><td>Service</td></tr>
+        <tr><td>分页大小</td><td>size 钳制到 1~200</td><td>Service</td></tr>
+      </tbody>
+    </table>
+    <p>删除为<strong>软删 + 清状态</strong>事务：<code>UPDATE mon.risk_geo_fence SET valid_mark=0</code> 后 <code>DELETE FROM mon.risk_fence_state WHERE fence_id=?</code>。历史 <code>risk_event</code> 不动（fence_id 成为历史引用），因此风险事件中仍可查到已删围栏的越界记录。</p>
+
+    <h4>保存接口（POST/PUT）请求体字段</h4>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>校验规则</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td><code>fenceName</code></td><td>string</td><td>必填；有效围栏（valid_mark=1）中唯一</td><td>重名返回业务错误，部分唯一索引兜底</td></tr>
+        <tr><td><code>fenceType</code></td><td>enum</td><td>CIRCLE 或 POLYGON</td><td>决定中心点 / 顶点哪组字段生效</td></tr>
+        <tr><td><code>centerLng/centerLat</code></td><td>number</td><td>CIRCLE 必填；经度 73~135、纬度 3~54，6 位小数</td><td>POLYGON 不使用</td></tr>
+        <tr><td><code>radiusM</code></td><td>int</td><td>50 ≤ radius ≤ 100000（米）</td><td>geography ST_DWithin 半径参数</td></tr>
+        <tr><td><code>points</code></td><td>array</td><td>POLYGON 必填，≥3 个 {lng,lat}；后端自动闭合</td><td>闭合后 ≥4 点；未设上限</td></tr>
+        <tr><td><code>triggerDir</code></td><td>int</td><td>1 / 2 / 3</td><td>进入 / 离开 / 进出</td></tr>
+        <tr><td><code>riskLevel</code></td><td>int</td><td>1 / 2 / 3</td><td>写入事件的风险等级快照</td></tr>
+        <tr><td><code>cooldownSec</code></td><td>int</td><td>0~86400</td><td>0 表示不做冷却（每次翻转都报）</td></tr>
+        <tr><td><code>status</code></td><td>int</td><td>0 / 1</td><td>新建默认启用</td></tr>
+        <tr><td><code>remark</code></td><td>string</td><td>可空</td><td>仅备注用途</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s7-2">7.2 PostGIS 图形读写（Java 侧）</h3>
+    <p>多边形图形不以顶点数组入库，而是序列化为 GeoJSON 后交给 PostGIS 解析：</p>
+    <pre><code>-- 写入（RiskGeoFenceMapper.updatePolygonGeom）
+UPDATE mon.risk_geo_fence
+SET polygon_geom = ST_SetSRID(ST_GeomFromGeoJSON(#{geojson}), 4326)
+WHERE id = #{id}
+
+-- 读取（selectPolygonGeoJson）
+SELECT ST_AsGeoJSON(polygon_geom) AS geojson FROM mon.risk_geo_fence WHERE id = #{id}</code></pre>
+    <p>空间索引：<code>CREATE INDEX idx_risk_fence_geom ON mon.risk_geo_fence USING gist (polygon_geom)</code>。圆形围栏不写 <code>polygon_geom</code>，只存中心点与半径。<strong>Java 侧没有任何 <code>ST_DWithin</code>/<code>ST_Contains</code> 调用</strong>——几何判定全部在 Python 侧。</p>
+
+    <h3 id="s7-3">7.3 实时进出判定 SQL（Python 侧）</h3>
+    <p><code>db.fences_inside_status(lng, lat)</code> 一条 SQL 同时返回当前点命中的全部<strong>启用中</strong>围栏，圆形与多边形各用各的空间谓词：</p>
+    <pre><code>-- 圆形：geography 米制大圆距离
+ST_DWithin(
+  ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+  ST_SetSRID(ST_MakePoint(center_lng, center_lat), 4326)::geography,
+  radius_m
+)
+
+-- 多边形：4326 平面包含
+ST_Contains(f.polygon_geom, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326))</code></pre>
+    <blockquote class="tip">
+      <p>圆形围栏把几何显式 <code>::geography</code> 转型，<code>ST_DWithin</code> 第三参数半径按米解释，避免把经纬度度数当距离；这是它与"直接用经纬度差估算"的本质区别。</p>
+    </blockquote>
+
+    <h3 id="s7-4">7.4 进出状态机与冷却</h3>
+    <p>状态保存在 <code>mon.risk_fence_state</code>（主键 = identity_code + fence_id），字段 <code>inside</code>、<code>last_point_time</code>、<code>last_enter_time</code>、<code>last_exit_time</code>。<code>cep_engine._evaluate_fences</code> 对每个轨迹点：</p>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">① 查当前命中</div>
+        <div class="s-desc">fences_inside_status(lng,lat) 得到本点 inside=true 的围栏 id 集合。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② 取历史状态</div>
+        <div class="s-desc">get_fence_states(identity, fence_ids) 取该车上批 inside 与最近进出时间。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ 首见只初始化</div>
+        <div class="s-desc">state 为 None（该车第一次接近该围栏）时仅 upsert 当前 inside，不补报任何历史进出事件——表注释明确"首见只初始化不补报"。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ 状态未变无事件</div>
+        <div class="s-desc">old==inside（连续在围栏内或连续在围栏外）不产生事件，只更新 last_point_time。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑤ 翻转 + 方向 + 冷却</div>
+        <div class="s-desc">false→true 候选 GEO_ENTER，true→false 候选 GEO_EXIT；方向须命中围栏 trigger_dir；_cooled 比对 last_enter_time/last_exit_time，未过 cooldown_sec 放弃。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑥ 单事务落状态+事件</div>
+        <div class="s-desc">apply_fence_transitions：ON CONFLICT (identity_code,fence_id) DO UPDATE（COALESCE 保留未更新的冷却时间），同事务 insert mon.risk_event。</div>
+      </div>
+    </div>
+    <p>围栏事件字段固定写法：<code>event_code</code>=GEO_ENTER/GEO_EXIT、<code>event_source='北斗'</code>、<code>confidence=1.00</code>、<code>fence_id</code>=围栏 id、<code>rule_id</code>=NULL、<code>title</code>=「进入围栏·{围栏名}」/「离开围栏·{围栏名}」、<code>risk_level</code>=围栏配置等级。</p>
+
+    <h3 id="s7-5">7.5 围栏配置热加载</h3>
+    <p>processing-service 不在每个点上查围栏表，<code>cep_engine._fences()</code> 维护 TTL 缓存：</p>
+    <ul>
+      <li>TTL 配置项 <code>settings.risk_cache_sec</code>（<code>app/config.py</code>），<strong>默认 30 秒</strong>；规则表 <code>_rules()</code> 共用同一 TTL。</li>
+      <li>到期后下次调用重新执行 <code>db.load_enabled_fences()</code>（仅 status=1 且 valid_mark=1）。</li>
+      <li>因此前端保存围栏后不会瞬间生效，页面提示"约 30 秒内热加载生效"与此一致；无需重启处理服务。</li>
+    </ul>
+
+    <h3 id="s7-6">7.6 触发入口与旁路容错</h3>
+    <ul>
+      <li><strong>实时路径</strong>：<code>POST /api/ingest/traj</code>（服务令牌 <code>verify_service_token</code>）按 5000 点分片入库后，<code>try/except</code> 调 <code>cep_engine.evaluate_points(rows)</code>；CEP 抛异常只 <code>print</code> 日志，<strong>不阻断轨迹入库主链路</strong>。</li>
+      <li><strong>批量路径</strong>：<code>POST /api/ingest/load-sample</code> 导入 CSV 后只 insert 点（并幂等导入当日 driver_events.json 事件），<strong>不调用围栏评估</strong>，历史轨迹不会反补围栏事件。</li>
+      <li><strong>模拟器路径</strong>：内置 SimulatorService 每 2 秒走的也是 <code>/api/ingest/traj</code> 同一入口，因此模拟器车辆穿越国贸演示围栏时会真实产生进出事件。</li>
+    </ul>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p>以"车辆进入禁区"为例的端到端时序（组件间全部经数据库或 HTTP，无隐式耦合）：</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">终端/模拟器推点</div>
+        <div class="s-desc">POST /api/ingest/traj，batch 含 identityCode、plateNo、points[]（gpsTime/lng/lat/speed…）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">轨迹入库</div>
+        <div class="s-desc">db.insert_gps_points 5000 点分片写入轨迹表。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">CEP 围栏评估</div>
+        <div class="s-desc">分组排序 → 逐点 fences_inside_status → 与 risk_fence_state 比对翻转。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">落事件+建单</div>
+        <div class="s-desc">insert_risk_events 同事务写 risk_event（GEO_ENTER）并建 PENDING 工单（读 risk_order_sla 算 deadline）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">坐席消费</div>
+        <div class="s-desc">风险预警分析页可见；工单中心可认领处置；通知中心向有权坐席推送（MOD-011）。</div>
+      </div>
+    </div>
+    <blockquote class="warn">
+      <p><strong>配置面与判定面的时延窗口：</strong>Java 侧围栏写入立即提交，但 Python 侧缓存最长 30 秒后才刷新。演示与培训时若"画完围栏车开过没反应"，先等待一个 TTL 周期再验证。</p>
+    </blockquote>
+
+    <h3 id="s8-1">8.1 异常与降级路径</h3>
+    <table>
+      <thead><tr><th>异常情形</th><th>系统行为</th><th>影响面</th></tr></thead>
+      <tbody>
+        <tr><td>fences_inside_status 空间查询失败</td><td>evaluate_points 外层 try/except 捕获并打印日志，本批不产生围栏事件</td><td>轨迹仍正常入库；规则判定在同一 try 内也一并跳过本批</td></tr>
+        <tr><td>状态 upsert 与事件 insert 事务失败</td><td>整事务回滚：状态不更新、事件不落、工单不建</td><td>下一批点会按旧 inside 重新比对，相当于该批"未发生"</td></tr>
+        <tr><td>围栏改名 / 改等级</td><td>只影响后续事件的 title 快照与等级</td><td>历史 risk_event 标题与等级不变</td></tr>
+        <tr><td>删除围栏时存在未闭环工单</td><td>不联动关闭工单；工单与历史事件保留</td><td>坐席仍可正常闭环存量工单</td></tr>
+        <tr><td>批量导入历史轨迹</td><td>load-sample 不调用 CEP</td><td>历史数据永不反补围栏事件（设计如此）</td></tr>
+        <tr><td>在线瓦片不可达（内网）</td><td>Leaflet 底图空白，绘制的图形覆盖物仍在</td><td>仅影响底图参照，不影响坐标数据保存</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 数据模型</h2>
+    <p>围栏本体表在 <strong>mon</strong> schema（不是 traj）。完整字段以 DDL 手册为准：</p>
+    <blockquote class="tip">
+      <p><strong>读写量级提示：</strong>risk_geo_fence 是低频配置表（人工维护，量级在数十到数百行）；risk_fence_state 行数 ≈ 在线车辆数 × 命中围栏数，随判定实时 upsert；risk_event 为高频增长表，围栏事件只占其中一部分，按 event_code/fence_id 与时间列查询，画像侧另有 (plate_no,event_time DESC)、(identity_code,event_time DESC) 索引支撑。</p>
+    </blockquote>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段/约束</th><th>DDL 锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mon.risk_geo_fence</code></td>
+          <td>围栏档案 + 多边形图形</td>
+          <td>fence_name、fence_type(CIRCLE/POLYGON)、center_lng/center_lat numeric(10,6)、radius_m、polygon_geom geometry(Polygon,4326)、trigger_dir、risk_level、cooldown_sec、status、valid_mark；部分唯一索引 uk_risk_fence_name；GiST idx_risk_fence_geom</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_geo_fence">DDL · tbl-mon_risk_geo_fence</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_fence_state</code></td>
+          <td>每车每围栏当前状态与冷却时间戳</td>
+          <td>PRIMARY KEY(identity_code, fence_id)、inside、last_point_time、last_enter_time、last_exit_time、update_date</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_fence_state">DDL · tbl-mon_risk_fence_state</a></td>
+        </tr>
+        <tr>
+          <td><code>mon.risk_event</code></td>
+          <td>围栏进出事件落点（与规则事件共用）</td>
+          <td>fence_id（围栏事件有值）、rule_id（围栏事件为 NULL）、title 中文名快照、event_source、confidence、handle_status</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-mon_risk_event">DDL · tbl-mon_risk_event</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>种子数据（<code>07-risk-tables.sql</code> §7.6）：<strong>演示围栏·国贸（可删）</strong>，CIRCLE，中心 (116.404000, 39.912000)，半径 3000 米，trigger_dir=3，risk_level=2，cooldown_sec=600，启用。</p>
+
+    <h3 id="s9-1">9.1 围栏事件在 risk_event 中的固定取值</h3>
+    <p>围栏事件与规则事件共用 <code>mon.risk_event</code>，排查问题时按下表区分来源与核对字段：</p>
+    <table>
+      <thead><tr><th>字段</th><th>围栏事件取值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>event_code</code></td><td>GEO_ENTER / GEO_EXIT</td><td>进入 / 离开；画像事件名兜底表含这两个码</td></tr>
+        <tr><td><code>event_source</code></td><td>'北斗'</td><td>固定来源标识，区别于 DSM/ADAS 视频事件</td></tr>
+        <tr><td><code>confidence</code></td><td>1.00</td><td>空间判定确定性结果，无置信度衰减</td></tr>
+        <tr><td><code>fence_id</code></td><td>围栏主键</td><td>围栏事件必有；规则事件为 NULL</td></tr>
+        <tr><td><code>rule_id</code></td><td>NULL</td><td>围栏不产生规则引用；规则引擎统计不含围栏事件</td></tr>
+        <tr><td><code>risk_level</code></td><td>取围栏 risk_level（1/2/3）</td><td>由配置快照写入，事后改围栏等级不影响历史事件</td></tr>
+        <tr><td><code>title</code></td><td>进入围栏·{围栏名} / 离开围栏·{围栏名}</td><td>中文名快照，围栏改名不影响历史标题</td></tr>
+        <tr><td><code>plate_no / identity_code</code></td><td>轨迹点所属车辆</td><td>与 GPS 点一致，是工单、画像关联的主键</td></tr>
+        <tr><td><code>handle_status</code></td><td>新建即未处理</td><td>由工单闭环联动更新，围栏模块自身不回写</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <p>HTTP 端点细节、参数与返回体以接口手册为准；下表列出本模块涉及的全部端点与权限。</p>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限</th><th>手册锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/risk/fences</code></td><td>分页查询（fenceName/fenceType/status）</td><td>risk:fence:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>GET <code>/api/risk/fences/all</code></td><td>全部有效围栏（下拉用）</td><td>risk:fence:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>GET <code>/api/risk/fences/{id}</code></td><td>围栏详情（含多边形 GeoJSON）</td><td>risk:fence:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>POST <code>/api/risk/fences</code></td><td>新建（@AuditLog CREATE GEO_FENCE）</td><td>risk:fence:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>PUT <code>/api/risk/fences/{id}</code></td><td>编辑</td><td>risk:fence:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>PUT <code>/api/risk/fences/{id}/status</code></td><td>启停（body StatusRequest.status）</td><td>risk:fence:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>DELETE <code>/api/risk/fences/{id}</code></td><td>软删并清状态</td><td>risk:fence:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+        <tr><td>POST <code>/api/ingest/traj</code>（Python）</td><td>轨迹推送，入库后旁路触发围栏判定</td><td>服务令牌（非用户权限）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-geofence">grp-geofence</a></td></tr>
+      </tbody>
+    </table>
+    <p>消费端间接相关：<code>GET /api/monitor/risks</code>（风险预警分析页查询 GEO_* 事件）见 MOD-008/MOD-005；工单接口见 MOD-009。</p>
+
+    <h2 id="s11">11 定时任务与后台行为</h2>
+    <p>围栏模块<strong>没有独立定时任务</strong>。实时性完全依托轨迹推送的事件驱动：点到即判、不点不判（车辆静止无新点时不会重复产生事件，这与冷却机制共同抑制噪声）。</p>
+    <table>
+      <thead><tr><th>后台行为</th><th>触发方式</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>围栏/规则缓存刷新</td><td>TTL 懒加载</td><td>risk_cache_sec 默认 30 秒，到期后下次评估时重查</td></tr>
+        <tr><td>实时进出评估</td><td>/api/ingest/traj 同步旁路</td><td>在请求线程内完成；异常被吞，不影响入库返回</td></tr>
+        <tr><td>围栏事件自动建单</td><td>事件落库同事务</td><td>db.insert_risk_events 内部读 SLA 并插工单与 CREATE 日志（MOD-009）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>PostGIS 而非自写几何算法</strong>：GiST 空间索引 + 成熟的 <code>ST_DWithin/ST_Contains</code> 让"一点对全部围栏"的判定保持在 SQL 单查询内，精度与性能都有保障，避免 Java 应用层实现射线法/距离公式的维护成本。</li>
+      <li><strong>圆形用 geography、多边形用 geometry</strong>：圆形半径是真实米制业务语义，geography 大圆距离在全国纬度范围内一致；多边形区域本身用经纬度坐标描述，<code>ST_Contains</code> 语义直观且与前端 GeoJSON 坐标系（EPSG:4326）天然一致。</li>
+      <li><strong>判定下沉到接入服务而非 Java 平台</strong>：processing-service 已是轨迹入库的必经节点，在同进程旁路判定省一次网络跳转，且引擎异常天然隔离于平台事务。</li>
+      <li><strong>状态机表而不是滑动窗口查询</strong>：每车每围栏一行 inside 状态 + 冷却时间戳，判定复杂度只与"当前点命中的围栏数"相关，不随历史点数增长。</li>
+      <li><strong>配置 TTL 缓存而非消息通知</strong>：单实例演示阶段 30 秒 TTL 足够，省去 Java→Python 的配置广播通道；热加载对运维零要求。</li>
+      <li><strong>图形存 GeoJSON 入 geometry 列、顶点瞬态传输</strong>：实体 RiskGeoFence 不绑定 PostGIS Java 类型，points 仅作传输字段，降低 ORM 与空间类型扩展耦合。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>现状证据</th><th>影响</th><th>对策/演进</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>配置生效有最长 30 秒延迟</td>
+          <td>risk_cache_sec 默认 30，TTL 懒刷新</td>
+          <td>紧急画禁区后短时不报警</td>
+          <td>运维知悉等待一个 TTL；必要时调小 TTL；未来可改为配置变更主动失效（Redis pub/sub 或回调）</td>
+        </tr>
+        <tr>
+          <td>状态机只对实时流生效</td>
+          <td>load-sample 批量导入不评估围栏；首见不补报</td>
+          <td>历史轨迹无法回溯围栏事件；换轨迹来源时首批点不报警</td>
+          <td>如需补判，提供离线扫描任务（按车辆时间轴重放），并明确"首见不补报"口径不变</td>
+        </tr>
+        <tr>
+          <td>双服务共享表、无契约强约束</td>
+          <td>Java 与 Python 直接读写 mon.risk_geo_fence/state</td>
+          <td>表结构变更需两处同步改，易漏</td>
+          <td>DDL 变更走评审并双侧回归；中期将状态写入收敛到 processing-service 独占</td>
+        </tr>
+        <tr>
+          <td>CEP 异常静默</td>
+          <td>ingest.py 仅 print 异常堆栈</td>
+          <td>围栏判定整体失效时平台侧无告警</td>
+          <td>接入日志采集与 CEP 健康/失败率指标；当前仅有 processing-service 的 GET /health 存活探针</td>
+        </tr>
+        <tr>
+          <td>边界抖动</td>
+          <td>GPS 漂移可能致 inside 来回翻转</td>
+          <td>同一边界点产生成対进出事件</td>
+          <td>已有 cooldown_sec；必要时增加连续 N 点确认或边界缓冲带（buffer）再翻转</td>
+        </tr>
+        <tr>
+          <td>底图为在线高德栅格瓦片</td>
+          <td>GeoFenceList.vue Leaflet 配置高德瓦片 URL（系统现状）</td>
+          <td>内网/离线环境地图不显示，无法画栏</td>
+          <td>部署内网瓦片服务后替换底图地址；围栏数据本身不依赖底图</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>代码/数据证据</th></tr></thead>
+      <tbody>
+        <tr><td><a href="MOD-DBD-008-风控规则引擎.html">MOD-DBD-008 风控规则引擎</a></td><td>同属 F18 脚本（07）建设的 CEP 能力：围栏与规则共用 <code>evaluate_points</code> 评估入口、<code>insert_risk_events</code> 落库出口与 30 秒 TTL 缓存；事件通过 rule_id/fence_id 互斥区分</td><td>cep_engine.py、db.py</td></tr>
+        <tr><td><a href="MOD-DBD-009-处置工单与坐席干预.html">MOD-009 处置工单</a></td><td>GEO_ENTER/GEO_EXIT 事件在落库同事务自动生成 PENDING 工单，后续认领/分派/闭环与规则事件完全一致</td><td>db.insert_risk_events → mon.risk_work_order</td></tr>
+        <tr><td><a href="MOD-DBD-010-驾驶评分与风险画像.html">MOD-010 驾驶评分/画像</a></td><td>围栏事件不进驾驶评分扣分白名单（ScoreConstants 8 个码不含 GEO_*）；但进入画像的事件趋势、黑点路段、排行统计，事件名由兜底表 GEO_ENTER/GEO_EXIT 提供</td><td>ScoreConstants、ProfileConstants.EVENT_NAME_FALLBACK</td></tr>
+        <tr><td>MOD-005 实时监控</td><td>围栏事件在风险预警分析页（/risk）按普通风险事件查询展示；事件经 WebSocket 实时推送链路间接触达坐席</td><td>MonitorController、relatedRisks</td></tr>
+        <tr><td><a href="MOD-DBD-011-通知中心与多渠道预警.html">MOD-011 通知中心</a></td><td>围栏事件本身不直接发通知；其工单的新建/升级/闭环按工单模块规则触发通知</td><td>RiskOrderScheduler、RiskOrderService</td></tr>
+        <tr><td><a href="MOD-DBD-012-系统配置与数据字典.html">MOD-012 系统配置</a></td><td>围栏模块无自定义系统参数与字典项；risk_event_code 字典含 GEO_EXIT（偏离路线）一项</td><td>09-system-config.sql 种子</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">画完围栏多久生效？</div><div class="vv">最长约 30 秒（risk_cache_sec TTL）。Java 保存立即提交，Python 侧下次缓存到期重查后才纳入判定；页面提示与该口径一致。</div></div>
+      <div class="kv"><div class="k">车辆一开始就在围栏里，会报警吗？</div><div class="vv">不会。状态表无历史记录（首见）时只初始化 inside 状态、不补报事件；必须发生"外→内"或"内→外"的翻转才报警。</div></div>
+      <div class="kv"><div class="k">导入历史轨迹为什么没有围栏事件？</div><div class="vv">/api/ingest/load-sample 批量导入只做轨迹 insert，不调用 cep_engine；围栏判定只挂在实时推送 /api/ingest/traj 链路上。</div></div>
+      <div class="kv"><div class="k">删除围栏后历史事件还在吗？</div><div class="vv">在。删除是软删（valid_mark=0），mon.risk_event 历史保留；被清除的只是 mon.risk_fence_state 车辆状态。确认弹窗文案已明确这一点。</div></div>
+      <div class="kv"><div class="k">停用与删除对状态的影响一样吗？</div><div class="vv">不一样。停用（status=0）只让围栏退出判定，risk_fence_state 保留，重新启用后沿用原 inside；删除才清状态。因此长期停用后再启用，首个点可能直接触发一次翻转事件。</div></div>
+      <div class="kv"><div class="k">多边形顶点数有上限吗？</div><div class="vv">后端只校验 ≥3 个顶点并自动闭合，未设顶点上限（现状）。顶点过多会加大 ST_Contains 与 GiST 比对开销，绘制体验也会下降，管理上建议控制在几十个顶点量级。</div></div>
+      <div class="kv"><div class="k">圆形半径为什么不用经纬度差？</div><div class="vv">半径按真实米制业务语义配置，判定把点与圆心都 ::geography 转型后用 ST_DWithin 做大地距离，全国任意纬度半径一致；经纬度 1 度对应的米数随纬度变化，不能直接用。</div></div>
+      <div class="kv"><div class="k">CEP 评估出错会导致轨迹丢点吗？</div><div class="vv">不会。ingest.py 中 evaluate_points 被 try/except 包裹，异常仅打印日志，轨迹入库结果照常返回。</div></div>
+      <div class="kv"><div class="k">围栏事件为什么没有 rule_id？</div><div class="vv">围栏不是规则引擎的规则，没有 mon.risk_rule 对应行；事件以 fence_id 关联围栏、rule_id 为 NULL，引擎概览"规则事件 TOP5"因此不计围栏事件。</div></div>
+      <div class="kv"><div class="k">围栏事件会计入驾驶评分扣分吗？</div><div class="vv">不会。ScoreConstants 的扣分白名单只有 8 个事件码（超速、疲劳、DSM、ADAS、组合码），GEO_ENTER/GEO_EXIT 不在其中；但画像趋势/黑点/排行仍统计围栏事件。</div></div>
+      <div class="kv"><div class="k">围栏可以按车辆/部门分别配置吗？</div><div class="vv">现状不可以。围栏是全局生效的地理区域，对所有在线车辆判定；按车/按部门的围栏授权与差异化策略未在当前代码中实现。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>菜单与权限</td><td>安全管理员可见系统管理 → 电子围栏；无 risk:fence:edit 角色看不到新建/编辑/删除按钮，接口直调返回无权限</td><td>多角色登录 + 接口直调</td></tr>
+        <tr><td>2</td><td>圆形围栏 CRUD</td><td>合法圆心/半径可保存；越界经纬度、半径越界、重名被后端拒绝；详情回显中心与半径</td><td>GeoFenceList 抽屉操作</td></tr>
+        <tr><td>3</td><td>多边形围栏 CRUD</td><td>≥3 顶点可保存，尾点自动闭合；ST_AsGeoJSON 回读顶点与绘制一致；GiST 索引存在</td><td>地图绘制 + 数据库 ST_NPoints 核对</td></tr>
+        <tr><td>4</td><td>实时进入事件</td><td>trigger_dir 含进入时，模拟器车辆外→内穿越产生 GEO_ENTER（event_source='北斗'、confidence=1.00、title 含围栏名）</td><td>模拟器 + risk_event 查询</td></tr>
+        <tr><td>5</td><td>实时离开事件</td><td>内→外穿越且方向含离开时产生 GEO_EXIT；方向不匹配不产生</td><td>同上</td></tr>
+        <tr><td>6</td><td>首见不补报</td><td>清空 risk_fence_state 后车辆已在围栏内的首批点不产生事件</td><td>删状态后推点验证</td></tr>
+        <tr><td>7</td><td>冷却生效</td><td>冷却窗口内反复穿越不重复落事件；窗口后恢复</td><td>连续推点比对事件时间间隔</td></tr>
+        <tr><td>8</td><td>热加载</td><td>新增/停用围栏后 30 秒内判定行为变化，无需重启 processing-service</td><td>计时验证</td></tr>
+        <tr><td>9</td><td>删除联动</td><td>删除后 valid_mark=0 且 risk_fence_state 对应行清除，历史 risk_event 保留</td><td>数据库核对</td></tr>
+        <tr><td>10</td><td>自动建单</td><td>围栏事件存在对应 PENDING 工单与 CREATE 日志，风险页"去处理"可直达</td><td>risk_work_order 联查</td></tr>
+        <tr><td>11</td><td>方向过滤</td><td>trigger_dir=2 的围栏在车辆进入时不产生事件，仅离开时产生</td><td>模拟器双向穿越</td></tr>
+        <tr><td>12</td><td>停用即时性</td><td>停用并等过一个 TTL 后，穿越不再产生事件；状态行仍保留</td><td>risk_fence_state 核对</td></tr>
+        <tr><td>13</td><td>同名重建</td><td>删除围栏后允许用相同名称新建（部分唯一索引仅约束 valid_mark=1）</td><td>连续两次建同名围栏</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>以下条目在 2026-10-05 代码阅读中<strong>未找到充分证据或依赖运行环境</strong>，按"待核实"标注，不在本文做确定性结论：</p>
+    </blockquote>
+    <ul>
+      <li><strong>圆形围栏判定的大数据量性能</strong>：<code>polygon_geom</code> 有 GiST 索引，但圆形判定基于 center_lng/center_lat 标量列与 geography 距离，未见专用空间索引；启用围栏数量很大时全表 ST_DWithin 成本待压测。</li>
+      <li><strong>多实例并发一致性</strong>：状态机 upsert 依赖单实例处理同一车辆的点流；若 processing-service 水平扩展且同一 identity_code 的点分散到多实例并发评估，缺少分布式锁，存在重复翻转事件的理论可能。当前为单实例部署。</li>
+      <li><strong>状态表增长与清理</strong>：<code>risk_fence_state</code> 只在删除围栏时清除对应行，车辆退役或围栏长期停用后的残留状态没有独立的定期清理任务，是否需要归档/清扫策略待确认。</li>
+      <li><strong>围栏工单 SLA 口径</strong>：围栏事件建单复用工单通用 SLA 配置（<code>risk_order_sla</code> 按事件码/等级匹配，未匹配到时的兜底时限以 MOD-009 说明为准）；是否需要为 GEO_ENTER/GEO_EXIT 单独配置 SLA 未见种子数据，属运营配置待核实项。</li>
+      <li><strong>底图可用性</strong>：前端使用在线高德栅格瓦片，目标内网环境的瓦片替代地址与离线部署方案待实施时确认。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>v1.0.0</td>
+          <td>2026-10-05</td>
+          <td>初版。以 2026-10-05 源代码为准编写：纠正旧功能清单"待建设"标注（实际已上线，编号 F13）；区分 Java 配置面与 Python 判定面的职责；固化圆形 ST_DWithin（geography）/多边形 ST_Contains、进出状态机、30 秒热加载等实现事实。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>MOD-DBD-007 电子围栏 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

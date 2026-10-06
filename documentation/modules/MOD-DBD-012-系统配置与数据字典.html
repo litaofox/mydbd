@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-012 系统配置与数据字典 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-012 系统配置与数据字典 ｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 功能概述</a>
+          <ul>
+            <li><a href="#s1-1">1.1 模块定位</a></li>
+            <li><a href="#s1-2">1.2 功能清单与状态</a></li>
+            <li><a href="#s1-3">1.3 术语与概念</a></li>
+            <li><a href="#s1-4">1.4 菜单层级澄清</a></li>
+            <li><a href="#s1-5">1.5 本期边界（不做什么）</a></li>
+          </ul>
+        </li>
+        <li><a href="#s2">2 典型场景</a></li>
+        <li><a href="#s3">3 操作流程</a>
+          <ul>
+            <li><a href="#s3-1">3.1 数据字典双栏维护</a></li>
+            <li><a href="#s3-2">3.2 系统参数维护</a></li>
+            <li><a href="#s3-3">3.3 测试数据与模拟器卡片</a></li>
+            <li><a href="#s3-4">3.4 业务侧消费字典与参数</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 页面与截图清单</a></li>
+        <li><a href="#s5">5 用户价值</a></li>
+        <li><a href="#s6">6 模块架构与组件</a></li>
+        <li><a href="#s7">7 核心实现逻辑</a>
+          <ul>
+            <li><a href="#s7-1">7.1 系统参数读写与缓存</a></li>
+            <li><a href="#s7-2">7.2 参数值类型与校验</a></li>
+            <li><a href="#s7-3">7.3 字典类型管理</a></li>
+            <li><a href="#s7-4">7.4 字典项管理与缓存</a></li>
+            <li><a href="#s7-5">7.5 对外字典查询</a></li>
+            <li><a href="#s7-6">7.6 前端 useDict 缓存</a></li>
+            <li><a href="#s7-7">7.7 内置参数与受保护数据</a></li>
+            <li><a href="#s7-8">7.8 审计留痕</a></li>
+          </ul>
+        </li>
+        <li><a href="#s8">8 数据流程</a></li>
+        <li><a href="#s9">9 数据模型</a></li>
+        <li><a href="#s10">10 接口清单</a></li>
+        <li><a href="#s11">11 种子数据清单</a>
+          <ul><li><a href="#s11-1">11.1 建表与索引汇总</a></li></ul>
+        </li>
+        <li><a href="#s12">12 技术选型依据</a></li>
+        <li><a href="#s13">13 技术风险与对策</a></li>
+        <li><a href="#s14">14 与其他模块的关系</a></li>
+        <li><a href="#s15">15 边界行为与常见问题</a></li>
+        <li><a href="#s16">16 上线验收清单</a></li>
+        <li><a href="#s17">17 待核实项</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-012 系统配置与数据字典</h1>
+    <p class="cover-meta">
+      文档编号 MOD-DBD-012<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F35（系统部分）
+    </p>
+    <p class="cover-meta">事实基准：2026-10-05 源代码（ConfigController / DictController 等）、<code>09-system-config.sql</code>、<code>11-notify.sql</code> 与前端 <code>views/system/</code>、<code>composables/useDict.ts</code>、<code>constants/dict.ts</code></p>
+    <p class="cover-meta">主要代码锚点：<code>ConfigController / ConfigService / SysConfig</code>、<code>DictController / DictService / DictType / DictItem</code>；前端 <code>ConfigList.vue / DictList.vue / api/system.ts / useDict.ts</code></p>
+
+    <h2 id="s1">1 功能概述</h2>
+
+    <h3 id="s1-1">1.1 模块定位</h3>
+    <p>本模块是平台的<strong>基础数据与运行参数中心</strong>，由两组相互独立的能力组成，同处系统管理域但分属两个顶级菜单：</p>
+    <ul>
+      <li><strong>数据字典（F35）</strong>：维护"类型（dict_type）+ 选项（dict_item）"两级枚举，如车牌颜色、终端状态、风险等级、事件码、工单状态等 11 个内置类型；业务页面的下拉框、标签、颜色统一从字典取，避免枚举散落在代码与 SQL 中。</li>
+      <li><strong>系统参数（F35）</strong>：以 key-value 维护运行期配置（密码策略、登录锁定、通知开关与弹窗级别等），支持 STRING / INT / BOOL / JSON 四种值类型，带内存缓存与类型校验，业务代码通过 ConfigService 按类型安全读取。</li>
+    </ul>
+    <p>此外，"系统参数"页面上半区承载了<strong>测试数据与模拟器</strong>管理卡片（标准 / 稠密测试集加载、业务数据清空、实时轨迹模拟器开关与状态轮询），该卡片从实时监控页迁入，与参数 CRUD 同页共存（详见 3.3，验收时勿当成多余功能）。</p>
+
+    <h3 id="s1-2">1.2 功能清单与状态</h3>
+    <table>
+      <thead><tr><th>能力</th><th>要点</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>字典类型 CRUD</td><td>/api/system/dict/types 分页、编码唯一、删除实为停用（status=0）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>字典项 CRUD</td><td>按类型维护选项；(类型,存储值) 唯一；删除为停用；sort 排序、cssClass 配色</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>字典开放查询</td><td>GET /items/{code} 取启用项；GET /all 取全量 Map 供前端预热 / 构建标签</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>系统参数 CRUD</td><td>键唯一、四类值校验、内置参数不可删；变更主动刷新内存缓存</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>参数按键取值</td><td>GET /value/{key}?defaultValue= 供业务读取，带类型安全访问器与缺省回落</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>前端字典组合式</td><td>useDict(code) 模块级 Map 缓存（无 TTL），失败后允许重试；toMap 提供 value→label 反查</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>测试数据与模拟器</td><td>测试集加载 / 清空业务数据 / 实时轨迹模拟器启停与 2~5 秒轮询状态</td><td><span class="badge amber">仅测试 / 演示用途</span></td></tr>
+        <tr><td>旧硬编码枚举</td><td>constants/dict.ts 仍保留设备形态等旧常量（注释标注待迁移）</td><td><span class="badge amber">待统一</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-3">1.3 术语与概念</h3>
+    <table>
+      <thead><tr><th style="width:190px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>字典类型 DictType</td><td>traj.sys_dict_type 一行：dict_code（唯一编码，如 risk_level）、dict_name（中文名）、status、remark。</td></tr>
+        <tr><td>字典项 DictItem</td><td>traj.sys_dict_item 一行：归属 dict_type_id、item_label（显示名）、item_value（存储值）、sort、status、css_class（标签样式名，如 danger）。</td></tr>
+        <tr><td>启用 / 停用</td><td>字典类型与项均用 status=1/0；<strong>"删除"按钮执行的是 UPDATE status=0 而非物理删除</strong>，历史业务数据仍可按值反查标签。</td></tr>
+        <tr><td>系统参数 SysConfig</td><td>traj.sys_config 一行：config_key 唯一键、config_value 文本值、value_type（STRING/INT/BOOL/JSON）、is_system 是否内置锁定。</td></tr>
+        <tr><td>内置参数</td><td>is_system=1 的种子参数（密码 / 登录 / SLA 比例共 5 个），可改值但<strong>不可删除</strong>；通知类 5 个参数 is_system=0。</td></tr>
+        <tr><td>内存缓存</td><td>ConfigService 与 DictService 各持一个 ConcurrentHashMap 做进程内缓存；写操作主动 put / evict，无 TTL、不做定时刷新。</td></tr>
+        <tr><td>前端字典缓存</td><td>useDict 的模块级 Map：同一 code 全局只请求一次；无 TTL，靠页面刷新 / 重新登录重新加载。</td></tr>
+        <tr><td>cssClass</td><td>字典项上的样式标记（如 success / warning / danger），前端 tag 组件据此着色，而不是每页写死颜色映射。</td></tr>
+        <tr><td>测试数据卡片</td><td>ConfigList.vue 上半区的调试功能集合（dataset 加载 / 清空 / simulator），与参数业务无关，生产环境需按角色收敛入口。</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s1-4">1.4 菜单层级澄清</h3>
+    <blockquote class="warn">
+      <p><strong>旧说法纠正：</strong>09 脚本里的菜单注释写着"挂在系统管理分组下（parent_id=0 即根菜单）"，容易被理解为折叠在"系统管理"目录（id=900）内。实际种子数据是：</p>
+    </blockquote>
+    <table>
+      <thead><tr><th>菜单</th><th>id</th><th>parent</th><th>路由 / 图标 / 排序</th><th>权限</th></tr></thead>
+      <tbody>
+        <tr><td>数据字典</td><td>920</td><td><strong>0（顶级单菜单）</strong></td><td>/system/dict，Grid，sort 918</td><td>system:dict:view（按钮 922 edit）</td></tr>
+        <tr><td>系统参数</td><td>921</td><td><strong>0（顶级单菜单）</strong></td><td>/system/config，Setting，sort 919</td><td>system:config:view（按钮 923 edit）</td></tr>
+      </tbody>
+    </table>
+    <p>MainLayout 对 menuType=2、parent=0 的顶级单菜单直接渲染到侧栏；两者<strong>不出现</strong>在"系统管理（900）"折叠组中（900 组内只有风控规则 904、电子围栏 905 等）。授权：role1 全部；role2 仅授 920 / 921 的 view（只读，不含 edit 按钮）。操作手册必须按"侧栏顶级入口"描述。</p>
+
+    <h3 id="s1-5">1.5 本期边界（不做什么）</h3>
+    <ul>
+      <li><strong>不做多级 / 树形字典</strong>：字典固定两级（类型 → 项），不支持项挂项；行政区划等树形基础数据不在本模块维护。</li>
+      <li><strong>不做字典项级权限</strong>：字典内容对所有登录用户一致，不按角色返回不同选项集合；数据权限仍由各业务模块自己控制。</li>
+      <li><strong>不做多节点缓存同步</strong>：缓存为各节点本地内存，依赖"写后主动刷新本节点 + 从节点通过各自请求触发 load / 重启"工作；不发缓存失效广播。</li>
+      <li><strong>不做参数热推送</strong>：参数改完更新缓存供后续读取，已持有旧值的长周期任务不会被强制中断或回调通知。</li>
+      <li><strong>不清理旧硬编码常量</strong>：constants/dict.ts 中设备形态等枚举仍被部分页面引用，本期不做全量替换（见第 13 节风险）。</li>
+      <li><strong>不提供历史版本 / 回滚</strong>：字典与参数只有当前值与 @AuditLog 审计记录，没有版本对比与一键回滚。</li>
+    </ul>
+
+    <span class="part-tag product">产品篇</span>
+    <h2 id="s2">2 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">系统管理员</div>
+        <div class="sc-name">新增一种风险事件中文名</div>
+        <div class="sc-desc">设备侧新增了事件码，管理员在数据字典 risk_event_code 类型下新增选项（存储值=事件码、显示名=中文、样式=warning），刷新业务页后风险列表与画像构成直接显示中文标签，无需发版。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员</div>
+        <div class="sc-name">收紧登录密码策略</div>
+        <div class="sc-desc">把内置参数 password.min_length 从 8 调到 10、login.max_fail 调到 5；保存即通过类型校验并刷新缓存，后续注册 / 修改密码立即按新策略执行。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">值班管理员</div>
+        <div class="sc-name">调整通知打扰级别</div>
+        <div class="sc-desc">夜间值班只想要高级别弹窗：把 notify.popup.min_level 保持 3；白天改为 1 允许所有级别弹窗。该参数非内置项，可在页面直接修改或停用。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">开发 / 测试人员</div>
+        <div class="sc-name">加载测试集与开启模拟器</div>
+        <div class="sc-desc">演示前在系统参数页上半区加载标准 / 稠密测试集、清空业务数据、打开实时轨迹模拟器；卡片每 2 秒轮询加载状态、每 5 秒刷新模拟器状态。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">业务开发</div>
+        <div class="sc-name">代码里安全读配置</div>
+        <div class="sc-desc">后端用 ConfigService.getInt/getBool/getJson 读取参数，键缺失或值非法时自动回落默认值并对 JSON 解析失败打 warn，业务逻辑不被脏配置击穿。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">前端开发</div>
+        <div class="sc-name">下拉与标签统一来源</div>
+        <div class="sc-desc">新页面用 useDict('order_status') 拿选项渲染下拉与 tag，value↔label 用 toMap 反查；不再为新枚举新增硬编码常量。</div>
+      </div>
+    </div>
+    <h2 id="s3">3 操作流程</h2>
+
+    <h3 id="s3-1">3.1 数据字典双栏维护</h3>
+    <p>入口：侧栏顶级菜单"数据字典"（DictList.vue，/system/dict）。页面为<strong>左右双栏</strong>布局。</p>
+    <div class="flow">
+      <div class="step"><div class="s-title">左栏选类型</div><div class="s-desc">左栏宽 320px，字典类型表支持按名称 / 编码搜索与新增、编辑、停用；点击某行触发 el-table current-change。</div></div>
+      <div class="step"><div class="s-title">右栏加载字典项</div><div class="s-desc">右栏按所选类型的 typeId 调 GET /types/{typeId}/items 加载选项（后端按 sort 升序），未选类型时右栏为空态。</div></div>
+      <div class="step"><div class="s-title">类型弹窗</div><div class="s-desc">新增 / 编辑类型：编码（编辑时禁用输入，防止改码导致引用失联）、名称、状态 switch、备注；保存走 POST/PUT /types 并留审计。</div></div>
+      <div class="step"><div class="s-title">字典项弹窗</div><div class="s-desc">显示名 itemLabel、存储值 itemValue、排序 el-input-number、状态、样式 cssClass（占位提示"如 danger"）、备注。</div></div>
+      <div class="step"><div class="s-title">停用即删除</div><div class="s-desc">列表上的"删除 / 停用"操作把 status 置 0（类型与项相同语义），行从启用集合消失但数据仍在库中。</div></div>
+    </div>
+
+    <h3 id="s3-2">3.2 系统参数维护</h3>
+    <p>入口：侧栏顶级菜单"系统参数"（ConfigList.vue，/system/config）。<strong>页面下半区</strong>才是参数 CRUD。</p>
+    <ul>
+      <li>查询：keyword 同时模糊匹配 config_name 与 config_key；列表按 create_date DESC 排列。</li>
+      <li>新增 / 编辑弹窗：名称、键、值、类型下拉（STRING/INT/BOOL/JSON）、备注。BOOL 类型用 switch（active-value=true / inactive-value=false），JSON 类型用 textarea 多行编辑。</li>
+      <li>保存时后端按 value_type 做校验（见 7.2）；config_key 重复拒绝（"参数键已存在"）；is_system=1 的内置行<strong>不显示删除按钮</strong>，后端删除接口也会拒绝（"内置参数不可删除"）。</li>
+      <li>新增 / 编辑按钮受 system:config:edit（923）控制（v-perm）；role2 只读。</li>
+    </ul>
+
+    <h3 id="s3-3">3.3 测试数据与模拟器卡片</h3>
+    <blockquote class="warn">
+      <p>ConfigList.vue <strong>页面上半部分是"测试数据与模拟器"卡片，下半部分才是系统参数</strong>。两块同页是既有实现（卡片从实时监控页迁入），不是页面放错。</p>
+    </blockquote>
+    <table>
+      <thead><tr><th>功能</th><th>调用</th><th>行为</th></tr></thead>
+      <tbody>
+        <tr><td>标准测试集加载</td><td>@/api/traj datasetLoad（标准集）</td><td>灌入演示用车辆 / 终端 / 司机 / 绑定等基础数据</td></tr>
+        <tr><td>稠密测试集加载</td><td>datasetLoad（稠密集）</td><td>灌入更大密度数据用于地图 / 性能演示</td></tr>
+        <tr><td>清空业务数据</td><td>datasetClear</td><td>清空演示业务数据（高危操作，按按钮二次确认）</td></tr>
+        <tr><td>模拟器启停</td><td>simulatorStart / simulatorStop</td><td>开关实时轨迹模拟推送</td></tr>
+        <tr><td>状态轮询</td><td>datasetStatus / simulatorStatus</td><td>加载中每 2 秒轮询进度；模拟器状态每 5 秒定时刷新</td></tr>
+      </tbody>
+    </table>
+    <p>生产部署应通过菜单 / 按钮权限收敛该卡片可见性；后端数据集接口不属于本模块（在 traj / 监控相关接口中），本页只是承载入口。</p>
+
+    <h3 id="s3-4">3.4 业务侧消费字典与参数</h3>
+    <ul>
+      <li><strong>前端字典</strong>：业务页调 useDict(code) 得到 {items, toMap}；下拉渲染 items，标签着色用 cssClass，存量数据 value 反查中文名用 toMap。首次请求后缓存于模块级 Map。</li>
+      <li><strong>前端参数</strong>：个别页面可经 getConfigValue(key, default) 读参数（如通知设置由通知模块自己调）；不提供全量参数订阅。</li>
+      <li><strong>后端参数</strong>：ConfigService.getValue/getInt/getBool/getJson 为统一入口，缺省值由调用方给出，解析失败回落默认（JSON 失败额外 log.warn）。</li>
+      <li><strong>后端字典</strong>：需要中文名的服务（如画像 eventName）通过 DictService.getItemsByCode 读取，类型或项被停用则查不到，走调用方兜底。</li>
+    </ul>
+
+    <h2 id="s4">4 页面与截图清单</h2>
+    <div class="shot">
+      <div class="sh-icon">📑</div>
+      <div class="sh-t">截图 4-1：数据字典双栏页（/system/dict）</div>
+      <div class="sh-p">应截：左侧 320px 类型表（搜索框、新增 / 编辑 / 停用按钮、状态标签）；右侧选中类型的字典项表（显示名 / 存储值 / 排序 / 样式 / 状态）；未选类型时右栏空态。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🏷️</div>
+      <div class="sh-t">截图 4-2：类型弹窗与字典项弹窗</div>
+      <div class="sh-p">应截：类型弹窗（编码框在编辑态禁用置灰、名称、状态 switch、备注）；字典项弹窗（显示名、存储值、排序数字框、状态、cssClass"如 danger"占位、备注）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🧪</div>
+      <div class="sh-t">截图 4-3：系统参数页上半区——测试数据与模拟器</div>
+      <div class="sh-p">应截：标准测试集 / 稠密测试集加载按钮、清空业务数据、模拟器开关与当前状态文字 / 进度（轮询中的动态状态）。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">⚙️</div>
+      <div class="sh-t">截图 4-4：系统参数下半区 CRUD</div>
+      <div class="sh-p">应截：关键字搜索（名称 / 键）、新增按钮 v-perm 态；表格内置参数行无删除按钮；新增弹窗的 STRING/INT/BOOL/JSON 类型下拉、BOOL switch、JSON textarea。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🎨</div>
+      <div class="sh-t">截图 4-5：字典在业务页面的消费效果</div>
+      <div class="sh-p">应截：风险等级 / 工单状态等页面按字典 cssClass 着色的 tag、下拉选项与值标签一致，证明字典为统一来源。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🔒</div>
+      <div class="sh-t">截图 4-6：只读角色视图与内置参数保护</div>
+      <div class="sh-p">应截：role2 账号下两个页面无新增 / 编辑 / 停用按钮；role1 账号下 5 个内置参数行不显示删除按钮，普通参数行有删除按钮的对比。</div>
+    </div>
+
+    <h2 id="s5">5 用户价值</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="v">11 类</div><div class="l">内置字典类型覆盖车 / 终端 / 司机 / 风险 / 工单全链路枚举</div></div>
+      <div class="stat"><div class="v">4 种</div><div class="l">参数值类型 STRING / INT / BOOL / JSON，写入即校验</div></div>
+      <div class="stat"><div class="v">0 发版</div><div class="l">新增枚举选项、调整运行参数不需要重新发布应用</div></div>
+      <div class="stat"><div class="v">双缓存</div><div class="l">后端 ConcurrentHashMap + 前端模块 Map，读路径基本零 SQL</div></div>
+    </div>
+    <ul>
+      <li><strong>枚举一处维护、处处生效</strong>：标签中文名、颜色、排序统一在字典中心，业务页不再各写各的映射。</li>
+      <li><strong>配置带类型与默认值保护</strong>：INT / BOOL / JSON 写入即拦非法值，读取侧还有默认值兜底，脏配置难以击穿业务。</li>
+      <li><strong>停用而非物理删除</strong>：字典类型 / 项删除走 status=0，历史业务数据永远能反查到当时的中文名。</li>
+      <li><strong>内置项防误删</strong>：密码 / 登录策略等 is_system=1 参数不可删，防止运维事故导致登录策略失效。</li>
+      <li><strong>演示效率</strong>：测试数据与模拟器同页管理，交付演示与联调造数无需 SQL 脚本。</li>
+    </ul>
+
+    <span class="part-tag">技术篇</span>
+    <h2 id="s6">6 模块架构与组件</h2>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">前端<br>Vue3</div>
+        <div class="al-body">
+          <span class="node"><b>DictList.vue</b> 双栏（类型 320px + 字典项）</span>
+          <span class="node"><b>ConfigList.vue</b> 测试数据卡片 + 参数 CRUD 两块共存</span>
+          <span class="node"><b>useDict.ts</b> 模块级 Map 缓存 + toMap 反查</span>
+          <span class="node"><b>api/system.ts</b> 字典 7 函数 + 参数 5 函数</span>
+          <span class="node"><b>constants/dict.ts</b> 旧硬编码枚举（待迁移，仍被引用）</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">Web / 服务</div>
+        <div class="al-body">
+          <span class="node"><b>DictController</b> /api/system/dict（类型 / 项 CRUD + 开放查询）</span>
+          <span class="node"><b>DictService</b> 缓存 + 停用语义 + 编码唯一</span>
+          <span class="node"><b>ConfigController</b> /api/system/config（CRUD + /value/{key}）</span>
+          <span class="node"><b>ConfigService</b> valueCache + 类型校验 + 安全访问器</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">数据层<br>Postgres</div>
+        <div class="al-body">
+          <span class="node"><b>traj.sys_dict_type</b>（uk_dict_type_code）</span>
+          <span class="node"><b>traj.sys_dict_item</b>（uk_dict_item_type_value、FK CASCADE、idx_dict_item_type）</span>
+          <span class="node"><b>traj.sys_config</b>（uk_config_key）</span>
+          <span class="node"><b>traj.sys_message / sys_file</b> 同脚本预留表</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>组件职责表</h3>
+    <table>
+      <thead><tr><th>组件</th><th>职责</th><th>关键约束</th></tr></thead>
+      <tbody>
+        <tr><td><code>ConfigController</code></td><td>参数 REST</td><td>类级 system:config:view；写操作另需 system:config:edit + @AuditLog</td></tr>
+        <tr><td><code>ConfigService</code></td><td>参数业务与缓存</td><td>ConcurrentHashMap valueCache；computeIfAbsent；写后主动 put / remove；内置不可删</td></tr>
+        <tr><td><code>DictController</code></td><td>字典 REST</td><td>类级 system:dict:view；类型 / 项写接口需 system:dict:edit + @AuditLog</td></tr>
+        <tr><td><code>DictService</code></td><td>字典业务与缓存</td><td>类型 / 项删除=停用；编码变更双清缓存；computeIfAbsent 懒加载启用项</td></tr>
+        <tr><td><code>SysConfig / DictType / DictItem</code></td><td>实体（均继承 BaseEntity）</td><td>@TableName("traj.xxx")；Mapper 为空接口继承 BaseMapper</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s6-1">6.1 前端实现要点</h3>
+    <ul>
+      <li><code>api/system.ts</code>：字典 7 个函数（类型分页 / 增改删、按类型查项、项增改删、按 code 查启用项、全量字典 Map）；参数 5 个函数（分页、增、改、删、按键取值）。</li>
+      <li>DictList 左右栏通过 current-change 联动；类型编码编辑态禁用，避免改码后字典项外键语义与前端缓存键错乱。</li>
+      <li>cssClass 为纯文本输入（占位"如 danger"），样式名由前端 Element 标签类型白名单解释，不接受任意 CSS / HTML，无样式注入风险。</li>
+      <li>ConfigList BOOL 类型 switch 绑定 active-value="true" / inactive-value="false"，提交字符串与后端 Boolean.parseBoolean 对齐；JSON textarea 不做前端格式化，校验以后端 readTree 为准。</li>
+      <li>测试数据卡片轮询定时器在组件卸载时清理；模拟器状态与数据集状态分别独立轮询（2s / 5s）。</li>
+    </ul>
+
+    <h3 id="s6-2">6.2 后端类清单与权限矩阵</h3>
+    <table>
+      <thead><tr><th>类</th><th>层</th><th>关键方法 / 内容</th></tr></thead>
+      <tbody>
+        <tr><td>ConfigController</td><td>web</td><td>page、add(@AuditLog CREATE CONFIG)、update(UPDATE)、delete(DELETE)、value(key,default)</td></tr>
+        <tr><td>ConfigService</td><td>service</td><td>valueCache、add/update/delete、getValue/getInt/getBool/getJson、validate</td></tr>
+        <tr><td>SysConfig</td><td>entity</td><td>extends BaseEntity，@TableName("traj.sys_config")</td></tr>
+        <tr><td>DictController</td><td>web</td><td>types 分页与 CRUD、items 管理 CRUD、items/{code}、all</td></tr>
+        <tr><td>DictService</td><td>service</td><td>itemCache、addType/updateType/deleteType、addItem/updateItem/deleteItem、getItemsByCode、getAllDictMap、evictByType</td></tr>
+        <tr><td>DictType / DictItem</td><td>entity</td><td>@TableName("traj.sys_dict_type" / "traj.sys_dict_item")</td></tr>
+        <tr><td>Mapper × 2</td><td>mapper</td><td>空接口继承 BaseMapper（无自定义 SQL）</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>角色 / 菜单</th><th>920 字典 view</th><th>922 字典 edit</th><th>921 参数 view</th><th>923 参数 edit</th></tr></thead>
+      <tbody>
+        <tr><td>role1（超级管理员）</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>role2</td><td>✅（只读）</td><td>—</td><td>✅（只读）</td><td>—</td></tr>
+        <tr><td>role3 / role4</td><td colspan="4">菜单种子未授予（如经自定义角色赋权，以角色菜单关系为准）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s7">7 核心实现逻辑</h2>
+
+    <h3 id="s7-1">7.1 系统参数读写与缓存</h3>
+    <ul>
+      <li>缓存：<code>ConcurrentHashMap&lt;String,String&gt; valueCache</code>，键为 configKey。getValue(key, defaultValue) 使用 computeIfAbsent：未缓存时查库，库里也没有则回退调用方传入的 defaultValue。</li>
+      <li><strong>写后维护</strong>：add（校验唯一 + validate 后 insert 并 put 缓存，isSystem 缺省 0）、update（更新后 put 新值）、delete（仅非内置，删除后 remove）。缓存<strong>无 TTL</strong>，一致性完全由写操作主动维护。</li>
+      <li>类型访问器：getInt 用 parseInt，失败回落默认值；getBool 用 Boolean.parseBoolean；getJson 用 ObjectMapper.readValue 反序列化目标类型，失败回落默认并 log.warn，且 getJson 不把失败结果放入缓存（避免缓存坏对象）。</li>
+      <li>按键开放接口 GET /value/{key}?defaultValue= 注释为"业务读取参数值（登录即可）"，但类级 <code>system:config:view</code> 注解仍然生效——实际门槛是<strong>登录 + 拥有 view 权限</strong>，不是任意登录用户，调用方鉴权设计需注意（见待核实项）。</li>
+    </ul>
+
+    <h3 id="s7-2">7.2 参数值类型与校验</h3>
+    <table>
+      <thead><tr><th>value_type</th><th>validate 规则</th><th>读取</th></tr></thead>
+      <tbody>
+        <tr><td>INT</td><td>必须可被 parseInt 解析为整数</td><td>getInt(key, 默认)</td></tr>
+        <tr><td>BOOL</td><td>仅接受 true / false（忽略大小写）</td><td>getBool（Boolean.parseBoolean，非法按 false）</td></tr>
+        <tr><td>JSON</td><td>objectMapper.readTree 能解析为合法 JSON 树</td><td>getJson(目标类型, 默认)，失败回落 + warn</td></tr>
+        <tr><td>STRING / 空</td><td>不校验，原样保存（text 列）</td><td>getValue 原样取</td></tr>
+      </tbody>
+    </table>
+    <p>config_key 唯一约束 uk_config_key 与服务端"参数键已存在"双重防护；value_type 默认 STRING、is_system 默认 0。</p>
+
+    <h3 id="s7-3">7.3 字典类型管理</h3>
+    <ul>
+      <li>分页 GET /types 的 keyword 同时模糊 dict_name 与 dict_code；新增类型编码唯一（数据库 uk_dict_type_code 兜底），status 默认 1。</li>
+      <li>updateType：若 dictCode 发生变化，<strong>同时清旧码与新码两个缓存键</strong>，防止旧编码缓存残留。</li>
+      <li>deleteType：<strong>不是物理删除</strong>，而是 UPDATE status=0；停用后 getItemsByCode 因类型 status≠1 不再返回任何项，等于"整类下线"。</li>
+      <li>字典项表对类型有外键 FK ON DELETE CASCADE——它为物理删除场景准备级联清理，但当前业务路径只用停用，不会触发级联删项。</li>
+    </ul>
+
+    <h3 id="s7-4">7.4 字典项管理与缓存</h3>
+    <ul>
+      <li><code>ConcurrentHashMap&lt;String,List&lt;DictItem&gt;&gt; itemCache</code>，键为 dictCode。新增项默认 status=1、sort=0，插入后 evictByType 清缓存。</li>
+      <li>updateItem / deleteItem 同样清该类型缓存；删除项也是 <strong>UPDATE status=0</strong>，不物理删。</li>
+      <li>唯一约束 <code>uk_dict_item_type_value UNIQUE(dict_type_id,item_value)</code>：同一类型下存储值不可重复；idx_dict_item_type 支撑按类型取列表。</li>
+      <li>后台项列表 GET /types/{typeId}/items 按 sort 升序返回全部项（含停用，供右栏管理）；开放接口只返回启用项（见 7.5）。</li>
+    </ul>
+    <h3 id="s7-5">7.5 对外字典查询</h3>
+    <ul>
+      <li><code>GET /items/{dictCode}</code>：开放给业务页面的取项接口，<strong>只返回类型启用（status=1）且项启用（status=1）的选项</strong>，按 sort 升序。</li>
+      <li>getItemsByCode 走 computeIfAbsent 懒加载：类型停用或不存在时返回空集（空结果也会缓存，避免缓存穿透反复打库）。</li>
+      <li><code>GET /all</code>：getAllDictMap 先查全部启用类型，再逐个走 getItemsByCode 缓存，返回 <code>Map&lt;code, List&lt;DictItem&gt;&gt;</code>，供前端一次性预热或公共布局渲染多个枚举。</li>
+    </ul>
+
+    <h3 id="s7-6">7.6 前端 useDict 缓存</h3>
+    <ul>
+      <li><code>composables/useDict.ts</code> 在<strong>模块作用域维护 Map&lt;code, items&gt;（dictCache）</strong>，全局无 TTL；同一 code 第一次被业务页使用时请求 getDictItemsByCode，之后所有页面共享结果。</li>
+      <li>返回 { items, toMap }：toMap 把 itemValue → itemLabel 建成反查表，供表格里只存值的场景显示中文名。</li>
+      <li><strong>失败可重试</strong>：请求失败时会 delete 占位（不缓存失败态），下次调用重新请求；成功后常驻，直到刷新页面 / 重新登录。</li>
+      <li>这意味着管理员在字典页改了选项后，<strong>已打开的其他标签页不会实时刷新</strong>，需要重新进页面；这是无 TTL 设计的已知取舍（见第 13 节）。</li>
+    </ul>
+
+    <h3 id="s7-7">7.7 内置参数与受保护数据</h3>
+    <ul>
+      <li>删除拦截：ConfigService.delete 先查记录，is_system=1 直接拒绝（"内置参数不可删除"），不执行 DELETE；前端对内置行也不渲染删除按钮，前后端双保险。</li>
+      <li>内置参数可修改值（例如调整密码长度），修改同样经过类型校验与审计；不可改的是"存在性"而非"取值"。</li>
+      <li>通知类 5 个参数 is_system=0，属于"种子提供但可运维"的普通参数，允许编辑与删除（删除后通知模块回落到代码默认值）。</li>
+      <li>字典侧无 is_system 标记，11 个内置字典类型理论上可停用；停用影响面大（所有引用该 code 的页面 / 服务显示受影响），靠编辑权限 system:dict:edit 与审计约束。</li>
+    </ul>
+
+    <h3 id="s7-8">7.8 审计留痕</h3>
+    <table>
+      <thead><tr><th>操作</th><th>权限码</th><th>@AuditLog</th></tr></thead>
+      <tbody>
+        <tr><td>参数新增</td><td>system:config:edit</td><td>CREATE CONFIG</td></tr>
+        <tr><td>参数修改</td><td>system:config:edit</td><td>UPDATE，objectId=#id</td></tr>
+        <tr><td>参数删除</td><td>system:config:edit</td><td>DELETE</td></tr>
+        <tr><td>字典类型增改删（停用）</td><td>system:dict:edit</td><td>DICT_TYPE</td></tr>
+        <tr><td>字典项增改删（停用）</td><td>system:dict:edit</td><td>DICT_ITEM</td></tr>
+      </tbody>
+    </table>
+    <p>读接口（分页、/items/{code}、/all、/value/{key}）不写审计。操作审计统一落操作审计日志能力（见 MOD-DBD-013）。</p>
+
+    <h3 id="s7-9">7.9 缓存键与失效点总览</h3>
+    <table>
+      <thead><tr><th>缓存</th><th>位置</th><th>键</th><th>加载时机</th><th>失效 / 更新点</th><th>TTL</th></tr></thead>
+      <tbody>
+        <tr><td>valueCache</td><td>ConfigService（后端，ConcurrentHashMap）</td><td>config_key</td><td>getValue computeIfAbsent 懒加载</td><td>add/update 后 put；delete 后 remove</td><td>无</td></tr>
+        <tr><td>itemCache</td><td>DictService（后端，ConcurrentHashMap）</td><td>dict_code</td><td>getItemsByCode computeIfAbsent</td><td>项增改删 evictByType；类型编码变更清旧码 + 新码</td><td>无</td></tr>
+        <tr><td>dictCache</td><td>useDict.ts（前端，模块级 Map）</td><td>dict_code</td><td>首次 useDict(code)</td><td>仅请求失败时 delete 占位；成功后随页面生命周期释放</td><td>无</td></tr>
+      </tbody>
+    </table>
+    <p>三套缓存全部"写时维护、无定时过期"，因此运维侧的排查顺序固定为：①后端是否已保存成功；②本节点缓存是否已刷新（写路径保证）；③前端是否需要重新加载页面；④多节点场景考虑其他节点未刷新（见第 13 节）。</p>
+
+    <h2 id="s8">8 数据流程</h2>
+    <p><strong>管理写流程：</strong>管理员在 DictList / ConfigList 提交 → Controller 校验 view + edit 权限 → Service 做唯一约束与值类型校验 → 写库 → 主动 put / evict 进程内缓存 → @AuditLog 留痕。字典停用更新 status，不物理删。</p>
+    <p><strong>业务读流程（后端）：</strong>ConfigService.getXxx / DictService.getItemsByCode → 先查本地 ConcurrentHashMap（computeIfAbsent）→ 未命中查库并缓存 → 类型 / 键不存在或缺省 / 解析失败时回落调用方默认值。</p>
+    <p><strong>业务读流程（前端）：</strong>useDict(code) → 查模块级 dictCache → 未命中请求 GET /api/system/dict/items/{code} → 缓存 items 并返回 toMap；失败删除占位允许重试。</p>
+
+    <h3 id="s8-1">8.1 异常与降级路径</h3>
+    <table>
+      <thead><tr><th>异常情形</th><th>系统行为</th></tr></thead>
+      <tbody>
+        <tr><td>参数键不存在</td><td>getValue/getInt/getBool/getJson 全部回落调用方 defaultValue；不抛异常</td></tr>
+        <tr><td>INT 值被改成非整数</td><td>写入侧 INT 校验直接拒绝；历史脏值读取时 getInt 回落默认</td></tr>
+        <tr><td>JSON 值非法</td><td>写入侧 readTree 拒绝；读取侧 readValue 失败回落默认 + log.warn，不缓存坏对象</td></tr>
+        <tr><td>BOOL 值写成 y/n 等</td><td>写入侧仅接受 true/false；读取侧 Boolean.parseBoolean 对任意非 true 文本按 false</td></tr>
+        <tr><td>字典类型 / 项被停用</td><td>开放查询返回空集；业务侧按自身兜底（如画像 eventName 回退兜底常量 / 原码）</td></tr>
+        <tr><td>删除内置参数</td><td>服务端拒绝"内置参数不可删除"；前端内置行无删除入口</td></tr>
+        <tr><td>字典编码重复 / 项值重复</td><td>服务端提示重复；数据库 uk 约束兜底，并发下抛唯一键异常</td></tr>
+        <tr><td>前端字典请求失败</td><td>删除缓存占位允许下次重试；页面下拉为空但不白屏</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s8-2">8.2 冷启动与缓存预热行为</h3>
+    <ul>
+      <li><strong>后端启动不预热</strong>：valueCache / itemCache 初始为空，所有键都靠第一次请求 computeIfAbsent 加载；重启后第一批请求略慢（一次主键 / 索引查询），随后回到内存读。</li>
+      <li><strong>空结果也缓存</strong>：字典类型停用、code 不存在时缓存空列表，防止不存在的 code 被高频调用时反复打库（缓存穿透）；写入 / 启用操作会主动 evict 对应键使下次重新加载。</li>
+      <li><strong>/all 不额外建缓存结构</strong>：全量查询逐 code 复用 getItemsByCode，结果不单独保存；它的价值是把多个懒加载一次填满。</li>
+      <li><strong>前端首屏</strong>：使用 useDict 的第一个页面触发请求；MainLayout 不做全局预拉，避免登录后一次性请求全部字典；需要预热的公共布局可显式调 /all。</li>
+      <li><strong>刷新即"手动清缓存"</strong>：前端无 TTL 也无推送失效，浏览器刷新 / 重登是当前唯一的重新加载入口；后端重启是服务端缓存清空的唯一时机。</li>
+    </ul>
+
+    <h2 id="s9">9 数据模型</h2>
+    <table>
+      <thead><tr><th>表</th><th>作用</th><th>关键字段 / 约束</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>traj.sys_dict_type</code></td>
+          <td>字典类型</td>
+          <td>id、dict_code、dict_name、status、remark；唯一约束 uk_dict_type_code</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_dict_type">DDL · tbl-traj_sys_dict_type</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_dict_item</code></td>
+          <td>字典项</td>
+          <td>id、dict_type_id、item_label、item_value、sort、status、css_class、remark；uk_dict_item_type_value UNIQUE(dict_type_id,item_value)；FK→type ON DELETE CASCADE；idx_dict_item_type</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_dict_item">DDL · tbl-traj_sys_dict_item</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_config</code></td>
+          <td>系统参数</td>
+          <td>id、config_key、config_value(text)、config_name、value_type(STRING/INT/BOOL/JSON)、is_system、remark；uk_config_key；value_type 默认 STRING；is_system 默认 0</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_config">DDL · tbl-traj_sys_config</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_message</code></td>
+          <td>站内信（09 脚本预留基础列，11 脚本扩展）</td><td>见 MOD-DBD-011；本脚本仅建基础列</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_message">DDL · tbl-traj_sys_message</a></td>
+        </tr>
+        <tr>
+          <td><code>traj.sys_file</code></td>
+          <td>文件元数据（预留表）</td>
+          <td>09 脚本随系统配置一同预留，本期暂无业务读写</td>
+          <td><a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_file">DDL · tbl-traj_sys_file</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 id="s9-1">9.1 字段与枚举速查</h3>
+    <table>
+      <thead><tr><th>字段 / 枚举</th><th>取值</th></tr></thead>
+      <tbody>
+        <tr><td>sys_dict_type.status / sys_dict_item.status</td><td>1 启用（默认）/ 0 停用（删除按钮的实际语义）</td></tr>
+        <tr><td>sys_config.value_type</td><td>STRING（默认）/ INT / BOOL / JSON</td></tr>
+        <tr><td>sys_config.is_system</td><td>1 内置（密码 / 登录 / SLA 5 项，不可删）/ 0 普通（含通知 5 项）</td></tr>
+        <tr><td>BOOL 存储约定</td><td>字符串 "true" / "false"（忽略大小写写入校验）</td></tr>
+        <tr><td>css_class 典型值</td><td>success / warning / danger / info 等 Element 标签样式名（前端白名单解释）</td></tr>
+        <tr><td>排序</td><td>字典项 sort 整数，升序；新增默认 0</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s10">10 接口清单</h2>
+    <table>
+      <thead><tr><th>方法/路径</th><th>用途</th><th>权限</th><th>锚点</th></tr></thead>
+      <tbody>
+        <tr><td>GET <code>/api/system/config</code></td><td>参数分页（keyword 模糊名称 / 键，create_date DESC）</td><td>system:config:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-config">grp-config</a></td></tr>
+        <tr><td>POST <code>/api/system/config</code></td><td>新增参数（CREATE CONFIG）</td><td>system:config:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-config">grp-config</a></td></tr>
+        <tr><td>PUT <code>/api/system/config/{id}</code></td><td>修改参数（UPDATE，objectId=#id）</td><td>system:config:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-config">grp-config</a></td></tr>
+        <tr><td>DELETE <code>/api/system/config/{id}</code></td><td>删除（内置拒绝）（DELETE）</td><td>system:config:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-config">grp-config</a></td></tr>
+        <tr><td>GET <code>/api/system/config/value/{key}</code></td><td>按键取值（defaultValue 兜底）</td><td>类级 view 仍生效（登录 + view）</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-config">grp-config</a></td></tr>
+        <tr><td>GET <code>/api/system/dict/types</code></td><td>类型分页</td><td>system:dict:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+        <tr><td>POST/PUT/DELETE <code>/api/system/dict/types[/{id}]</code></td><td>类型增改 / 停用（DICT_TYPE）</td><td>system:dict:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+        <tr><td>GET <code>/api/system/dict/types/{typeId}/items</code></td><td>类型下全部项（含停用，sort 升序）</td><td>system:dict:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+        <tr><td>POST/PUT/DELETE <code>/api/system/dict/items[/{id}]</code></td><td>项增改 / 停用（DICT_ITEM）</td><td>system:dict:edit</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+        <tr><td>GET <code>/api/system/dict/items/{dictCode}</code></td><td>按编码取启用项（业务开放查询）</td><td>system:dict:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+        <tr><td>GET <code>/api/system/dict/all</code></td><td>全量启用字典 Map</td><td>system:dict:view</td><td><a href="../api/API-DBD-001-平台接口手册.html#grp-dict">grp-dict</a></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s10-1">10.1 写接口请求体与校验提示</h3>
+    <p><strong>参数新增 / 修改（POST/PUT /api/system/config）：</strong></p>
+    <pre><code>{
+  "configKey": "notify.popup.min_level",   // 唯一；新增重复 → "参数键已存在"
+  "configValue": "3",                       // 按 valueType 校验
+  "configName": "弹窗最低级别",
+  "valueType": "INT",                       // STRING | INT | BOOL | JSON
+  "isSystem": 0,                            // 可缺省，缺省 0
+  "remark": "1 低 / 2 中 / 3 高"
+}
+// INT 非整数 / BOOL 非 true|false / JSON 非法 → 校验失败，不落库
+// 删除 is_system=1 的行 → "内置参数不可删除"</code></pre>
+    <p><strong>字典类型新增 / 修改（POST/PUT /api/system/dict/types）：</strong></p>
+    <pre><code>{
+  "dictCode": "risk_level",   // 唯一 uk_dict_type_code；编辑态前端禁用
+  "dictName": "风险等级",
+  "status": 1,
+  "remark": "1 低 2 中 3 高"
+}</code></pre>
+    <p><strong>字典项新增 / 修改（POST/PUT /api/system/dict/items）：</strong></p>
+    <pre><code>{
+  "dictTypeId": 8,
+  "itemLabel": "高",
+  "itemValue": "3",          // 同 (dictTypeId,itemValue) 唯一
+  "sort": 30,                // 缺省 0
+  "status": 1,               // 缺省 1
+  "cssClass": "danger",
+  "remark": "高风险红色标签"
+}
+// 类型 / 项的 DELETE 不物理删，仅置 status=0</code></pre>
+    <p>所有写接口除权限拒绝外，业务侧可见的主要提示为："参数键已存在"、"内置参数不可删除"以及字典编码 / 项值重复提示；数据库唯一约束作为并发兜底。</p>
+
+    <h2 id="s11">11 种子数据清单</h2>
+    <p><strong>11 个内置字典类型</strong>（09-system-config.sql，全部 ON CONFLICT / 冲突跳过式幂等插入）：plate_color（车牌颜色）、protocol_type（协议类型）、equipment_type（设备类型）、terminal_status（终端状态）、driver_sex（司机性别）、driver_status（司机状态）、risk_event_code（风险事件码）、risk_level（风险等级）、close_result（闭环结果）、order_status（工单状态）、alarm_type（报警类型）。</p>
+    <table>
+      <thead><tr><th>典型枚举</th><th>字典种子值</th></tr></thead>
+      <tbody>
+        <tr><td>equipment_type</td><td>GNSS / DSM / ADAS / ALL_IN_ONE</td></tr>
+        <tr><td>terminal_status</td><td>ONLINE / OFFLINE / DISABLED</td></tr>
+        <tr><td>risk_level</td><td>1 低 / 2 中 / 3 高（各业务页签着色）</td></tr>
+      </tbody>
+    </table>
+    <p><strong>5 个内置系统参数</strong>（is_system=1，STRING 存储）：</p>
+    <table>
+      <thead><tr><th>键</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>password.min_length</td><td>8</td><td>密码最小长度</td></tr>
+        <tr><td>password.max_length</td><td>20</td><td>密码最大长度</td></tr>
+        <tr><td>login.max_fail</td><td>5</td><td>连续登录失败上限</td></tr>
+        <tr><td>login.lock_minutes</td><td>15</td><td>锁定时长（分钟）</td></tr>
+        <tr><td>sla.grace_ratio</td><td>0.2</td><td>备注"工单剩余时限低于该比例视为临期"；<strong>工单代码中的临期口径是写死的 ×0.2 字面量，未见读取本参数的消费方</strong>（见待核实项）</td></tr>
+      </tbody>
+    </table>
+    <p>另有 5 个通知参数（notify.popup.min_level=3、notify.sound.enabled=true、sms/voice/push.enabled=false，is_system=0）由 11-notify.sql 写入，见 MOD-DBD-011。菜单种子：920 数据字典、921 系统参数（均 parent=0 顶级单菜单）及 922 / 923 编辑按钮；role1 全授、role2 仅 920 / 921 view。</p>
+
+    <h3 id="s11-1">11.1 09 脚本建表与索引汇总</h3>
+    <table>
+      <thead><tr><th>对象</th><th>关键约束 / 索引</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td>sys_dict_type</td><td>uk_dict_type_code UNIQUE(dict_code)</td><td>类型编码全局唯一</td></tr>
+        <tr><td>sys_dict_item</td><td>uk_dict_item_type_value UNIQUE(dict_type_id,item_value)</td><td>同类型内存储值唯一</td></tr>
+        <tr><td>sys_dict_item → type 外键</td><td>FOREIGN KEY(dict_type_id) REFERENCES sys_dict_type(id) ON DELETE CASCADE</td><td>为物理删除场景提供级联（当前业务路径只用停用）</td></tr>
+        <tr><td>sys_dict_item</td><td>idx_dict_item_type（dict_type_id 普通索引）</td><td>右栏按类型查项</td></tr>
+        <tr><td>sys_config</td><td>uk_config_key UNIQUE(config_key)</td><td>参数键全局唯一</td></tr>
+        <tr><td>sys_config 列默认</td><td>value_type DEFAULT 'STRING'，is_system DEFAULT 0</td><td>新增参数的安全缺省</td></tr>
+        <tr><td>sys_message</td><td>"预留：站内消息"基础列集</td><td>09 只建基础列，11 脚本 ALTER 扩展（详见 MOD-011）</td></tr>
+        <tr><td>sys_file</td><td>文件元数据预留</td><td>本期无读写方</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s12">12 技术选型依据</h2>
+    <ol>
+      <li><strong>字典两级模型足够覆盖业务</strong>：车 / 终端 / 司机 / 风险 / 工单的枚举全是"一类 + 平级选项"，不引入三级或树形，换取 UI 双栏与 SQL 的极简实现。</li>
+      <li><strong>停用代替删除</strong>：风险表、工单表大量历史行只存枚举值（字符串 / 数字码），物理删除字典项会导致历史数据无法回显；status=0 既隐藏选项又保留可追溯性。</li>
+      <li><strong>数据库唯一约束前置</strong>：类型编码、(类型,项值) 在数据库层加 uk，服务端校验只是体验优化；并发新增也不会产生重复枚举。</li>
+      <li><strong>参数带类型而非全当字符串</strong>：INT / BOOL / JSON 写入即校验，把配置错误拦在保存时；读取侧再用带默认值的访问器兜底，形成双保险。</li>
+      <li><strong>ConcurrentHashMap 本地缓存</strong>：字典与参数都是极热点、极低变更率数据，单节点部署下本地缓存零序列化、零网络开销，写操作主动维护即可接受。</li>
+      <li><strong>前端模块级 Map 无 TTL</strong>：枚举在一次登录会话内视为不变量，避免每个下拉都发请求；代价是改字典后需刷新页面，在管理后台场景可接受。</li>
+    </ol>
+
+    <h2 id="s13">13 技术风险与对策</h2>
+    <table>
+      <thead><tr><th>风险</th><th>影响</th><th>对策（代码现状）</th></tr></thead>
+      <tbody>
+        <tr><td><strong>旧硬编码枚举与字典种子值不一致</strong></td><td>constants/dict.ts 中设备形态（一体机 1 / 分体机 2 / 视频智能终端 4 等）与 09 种子 equipment_type（GNSS/DSM/ADAS/ALL_IN_ONE）语义 / 取值都不同；终端状态等也存在双份定义</td><td><span class="badge amber">未彻底解决</span> 旧常量文件已注释"F35 字典中心上线后迁移到字典表"；新页面要求一律 useDict；存量页面迁移列入待办，迁移前不得用字典种子直接覆盖旧码值</td></tr>
+        <tr><td>多节点缓存不一致</td><td>A 节点改参数，B 节点本地缓存仍旧值直到重启</td><td>当前按单节点部署；多节点前需引入缓存失效广播 / 短 TTL，本文显式登记</td></tr>
+        <tr><td>前端缓存无 TTL</td><td>管理员改字典后，在线用户标签页仍显示旧选项</td><td>重新进入页面 / 重登后生效；培训中说明；后续可加字典版本号 / 手动刷新按钮</td></tr>
+        <tr><td>误停用内置字典类型</td><td>风险等级、工单状态被停用后大量页面标签 / 下拉异常</td><td>仅 dict:edit 可操作且有审计；服务无 is_system 保护是缺口，建议补内置标记（见待核实）</td></tr>
+        <tr><td>JSON 参数被改成坏结构</td><td>消费方反序列化失败</td><td>写入 readTree 校验 + 读取 getJson 失败回落默认并不缓存坏对象 + log.warn</td></tr>
+        <tr><td>测试卡片在生产可见</td><td>误清空业务数据</td><td>依赖菜单 / 按钮权限与部署管理；建议生产环境显式隐藏整个卡片（代码当前同页共存）</td></tr>
+        <tr><td>sla.grace_ratio 配了不生效</td><td>运维改参数期待临期口径变化但无效果</td><td>代码临期阈值为写死 0.2 字面量；本文标注待核实，确认前不要在手册承诺可配</td></tr>
+        <tr><td>/value/{key} 鉴权语义偏差</td><td>注释"登录即可"与类级 view 注解实际不符</td><td>以代码实际（登录 + system:config:view）为准；业务系统直读需授予 view，或后续拆匿名 / 登录级只读端点</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p><strong>必须知晓的双轨枚举现状：</strong>09 脚本字典是"统一来源方向"，但 constants/dict.ts 里的旧硬编码枚举（PLATE_COLORS 字符串数组、设备形态数字码、labelOf / tagOf 工具）仍被存量页面使用，且两套取值并不等价（如设备类型：旧为 1/2/4 数字形态，字典为 GNSS/DSM/ADAS/ALL_IN_ONE）。任何"对齐"工作都必须逐页确认存储值含义，不能简单替换。</p>
+    </blockquote>
+
+    <h2 id="s14">14 与其他模块的关系</h2>
+    <table>
+      <thead><tr><th>关联模块</th><th>关系</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>几乎全部业务模块</td><td>字典被消费</td><td>risk_level、risk_event_code、order_status、close_result、plate_color、terminal_status 等驱动各页下拉 / 标签 / 颜色；画像 eventName 第一优先级即查字典</td></tr>
+        <tr><td>MOD-DBD-011 通知中心</td><td>参数 + 字典被消费</td><td>notify.popup.min_level / sound.enabled / 三渠道开关读 sys_config；notify_event_type 字典提供事件中文名</td></tr>
+        <tr><td>IAM / 登录认证</td><td>参数被消费</td><td>password.min_length/max_length、login.max_fail/lock_minutes 为密码与锁定策略来源</td></tr>
+        <tr><td>MOD-DBD-009 处置工单</td><td>参数疑似未接线</td><td>sla.grace_ratio 备注指向工单临期口径，但工单代码写死 0.2，未见读取该参数（待核实）</td></tr>
+        <tr><td>MOD-DBD-013 操作审计日志</td><td>审计落点</td><td>字典 / 参数全部写操作经 @AuditLog 记录到操作审计</td></tr>
+        <tr><td>实时监控 / 测试工具</td><td>页面入口承载</td><td>ConfigList 承载数据集加载 / 清空 / 模拟器开关，调用 @/api/traj，不属于配置后端能力</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s15">15 边界行为与常见问题</h2>
+    <div class="kvlist">
+      <div class="kv"><div class="k">数据字典菜单为什么在"系统管理"折叠组里找不到？</div><div class="v">它本来就不在 900 组内。920 数据字典与 921 系统参数都是 parent=0 的顶级单菜单，直接显示在侧栏；09 脚本注释"parent_id=0 即根菜单"的表述容易误导，以实际菜单层级为准。</div></div>
+      <div class="kv"><div class="k">字典项点了删除，历史数据还能显示中文吗？</div><div class="v">能。删除是停用（status=0），行仍在库；管理列表可见停用项，开放查询不再返回该选项（新数据不可选），历史值反查依赖缓存 / 库内仍存在的行，必要时可重新启用。</div></div>
+      <div class="kv"><div class="k">为什么修改字典类型编码时输入框是灰的？</div><div class="v">编辑态故意禁用 dictCode：编码是缓存键与所有前端 useDict(code) 的引用键，改码会让存量页面取不到字典。确需改码要在代码与种子中同步迁移。</div></div>
+      <div class="kv"><div class="k">参数保存 INT 报非法怎么办？</div><div class="v">该键 value_type=INT 时值必须是整数字符串；小数、带单位文本都会被校验拒绝。若业务需要存"0.2"这类比例，应使用 STRING 并由消费方自行解析（sla.grace_ratio 就是 STRING）。</div></div>
+      <div class="kv"><div class="k">内置参数为什么删不掉？</div><div class="v">is_system=1 的 5 个参数（密码 / 登录策略 / SLA 比例）前端不显示删除、后端拒绝删除；只能改值。这是防止登录与密码策略失效的保护。</div></div>
+      <div class="kv"><div class="k">改了字典为什么别人页面没变化？</div><div class="v">前端 useDict 是无 TTL 的模块级缓存，已打开的会话不会自动刷新；后端缓存会随保存立即更新，新登录 / 刷新页面后看到新值。</div></div>
+      <div class="kv"><div class="k">设备类型在字典里是英文码，为什么有些页面显示"一体机/分体机"？</div><div class="v">那是 constants/dict.ts 旧硬编码枚举（数字形态码）的页面，尚未迁移到字典中心。两套定义暂存，迁移完成前以各页实际代码为准（见第 13 节）。</div></div>
+      <div class="kv"><div class="k">系统参数页上面的"清空业务数据"是干什么的？</div><div class="v">测试 / 演示工具：加载标准或稠密测试集、清空演示数据、开关轨迹模拟器。生产环境应通过权限隐藏，避免误操作。</div></div>
+      <div class="kv"><div class="k">getJson 读参数时配错会导致启动失败吗？</div><div class="v">不会。读取时反序列化失败会回落调用方提供的默认值并打 warn 日志，不缓存坏结果；但写入时坏 JSON 会被直接拒绝保存。</div></div>
+      <div class="kv"><div class="k">role2 角色能改参数 / 字典吗？</div><div class="v">不能。role2 只有 920 / 921 的 view 只读权限；新增 / 编辑 / 停用按钮（922/923、system:*:edit）仅 role1 等管理角色拥有。</div></div>
+      <div class="kv"><div class="k">字典项的 cssClass 随便写会有样式注入风险吗？</div><div class="v">没有。cssClass 只是被 Element 标签类型逻辑选择使用的样式名字符串（白名单解释），不会作为 CSS / HTML 输出执行；未知样式名表现为默认样式。</div></div>
+      <div class="kv"><div class="k">服务重启后字典 / 参数会丢吗？</div><div class="v">不会。内存缓存只是查询加速，真相在 traj.sys_config 与字典表里；重启清空的只是缓存，首次访问重新加载。</div></div>
+      <div class="kv"><div class="k">11 个内置字典和通知模块的字典是什么关系？</div><div class="v">09 脚本先建 11 个基础类型；11-notify.sql 再补 notify_event_type（通知事件 5 项）与 5 个通知参数。它们同在字典 / 参数中心维护，通知页只是消费方。</div></div>
+      <div class="kv"><div class="k">停用的字典项要重新启用怎么做？</div><div class="v">在右栏字典项管理表中找到 status=0 的行（管理接口返回含停用项），编辑把状态切回启用并保存，evict 缓存后开放查询立即恢复该选项。</div></div>
+    </div>
+
+    <h2 id="s16">16 上线验收清单</h2>
+    <table>
+      <thead><tr><th>#</th><th>验收项</th><th>预期结果</th><th>验证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>菜单层级</td><td>920 / 921 为侧栏顶级单菜单，不在 900 折叠组内；role1 可编辑、role2 只读</td><td>两账号分别登录核对侧栏与按钮</td></tr>
+        <tr><td>2</td><td>种子完整性</td><td>11 个字典类型及选项、10 个参数（5 内置 + 5 通知）齐全；脚本重复执行不产生重复行</td><td>查表 count 与重复执行 09/11 脚本</td></tr>
+        <tr><td>3</td><td>字典类型 CRUD</td><td>编码唯一；编辑时编码禁用；停用后开放查询不返回；审计记 DICT_TYPE</td><td>页面操作 + 查 status 与审计</td></tr>
+        <tr><td>4</td><td>字典项 CRUD</td><td>同类型存储值重复被拒；sort 升序生效；停用不物理删；审计 DICT_ITEM</td><td>重复值保存 + 查库</td></tr>
+        <tr><td>5</td><td>参数类型校验</td><td>INT 写"abc"、BOOL 写"yes"、JSON 写"{," 均被拒；STRING 任意文本可存</td><td>弹窗保存逐项试</td></tr>
+        <tr><td>6</td><td>内置保护</td><td>5 个 is_system=1 参数无删除按钮且接口拒绝；改值成功</td><td>UI + 直调 DELETE 复核</td></tr>
+        <tr><td>7</td><td>缓存与读取</td><td>改参数后同节点立即按新值；getInt/getBool/getJson 缺键 / 脏值回落默认</td><td>改值后触发消费功能；构造脏值重启读取</td></tr>
+        <tr><td>8</td><td>useDict 行为</td><td>同 code 全局只请求一次；失败后再次调用会重试；toMap 反查正确</td><td>浏览器网络面板与页面展示</td></tr>
+        <tr><td>9</td><td>开放接口权限</td><td>无 system:dict:view / config:view 的账号访问被拒；/value/{key} 同样需 view</td><td>低权账号直调接口</td></tr>
+        <tr><td>10</td><td>测试卡片</td><td>标准 / 稠密集加载、清空、模拟器启停可用；2s/5s 轮询与状态一致</td><td>在测试环境完整点一遍</td></tr>
+        <tr><td>11</td><td>生产安全</td><td>生产账号看不到或不可操作测试卡片（按部署权限方案）</td><td>生产环境账号截图留证</td></tr>
+        <tr><td>12</td><td>业务联动</td><td>通知弹窗级别随 notify.popup.min_level 变化；风险 / 工单页标签与字典一致</td><td>改参数 / 字典后走业务流程</td></tr>
+        <tr><td>13</td><td>停用恢复</td><td>类型 / 项停用后开放查询消失；重新启用后无需重启即恢复</td><td>停用 → 查询 → 启用 → 再查询</td></tr>
+        <tr><td>14</td><td>审计可查</td><td>CREATE/UPDATE/DELETE CONFIG 与 DICT_TYPE/DICT_ITEM 操作均在审计日志留痕</td><td>操作后查 MOD-DBD-013 审计</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s17">17 待核实项</h2>
+    <blockquote class="warn">
+      <p>下列条目在本期代码 / 脚本中未能闭环确认：</p>
+    </blockquote>
+    <ul>
+      <li><strong>sla.grace_ratio 消费方缺失</strong>：09 种子备注"工单剩余时限低于该比例视为临期"，但工单代码临期判断使用写死的 ×0.2 字面量，未检索到读取该 config 的代码；需确认是应接线读取参数，还是删除 / 修正参数说明。</li>
+      <li><strong>/value/{key} 鉴权口径</strong>：方法注释"业务读取参数值（登录即可）"与类级 system:config:view 冲突；需确认期望是登录可读还是必须有 view，必要时拆分为独立端点。</li>
+      <li><strong>旧枚举迁移计划</strong>：constants/dict.ts 设备形态（1/2/4）、PLATE_COLORS 等与字典种子不等价，迁移批次、存储值映射、历史数据兼容方案未定。</li>
+      <li><strong>内置字典保护</strong>：字典类型 / 项无 is_system 标记，误停用 risk_level 等核心类型只靠权限与审计；是否加内置锁定待定。</li>
+      <li><strong>多节点缓存</strong>：前后端缓存均无失效广播；多实例部署的一致性方案与字典前端刷新机制（版本号 / 手动刷新）待设计。</li>
+      <li><strong>sys_file 预留用途</strong>：09 脚本已建文件元数据表但暂无业务读写，归属模块与上传 / 鉴权方案待明确。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>修订内容</th><th>编写 / 审核</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>首版：基于 ConfigController/DictController 源码、09-system-config.sql 与前端 dict 相关文件编写；澄清顶级菜单层级、停用语义、双缓存、内置保护，登记旧硬编码枚举不一致与 sla.grace_ratio 未接线等待核实项</td><td>平台文档组</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <p>北斗导航数据业务平台 · 功能模块文档 MOD-DBD-012｜本文技术结论均绑定类名 / 表名 / 菜单 ID / 配置键，可直接回溯源代码与 SQL 种子脚本。</p>
+      <p><a href="../index.html">← 返回文档中心</a></p>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

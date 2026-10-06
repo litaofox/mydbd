@@ -12,6 +12,7 @@ import com.mydbd.monitor.entity.WarnInfo;
 import com.mydbd.monitor.dashboard.mapper.DashboardMapper;
 import com.mydbd.monitor.mapper.RiskEventMapper;
 import com.mydbd.monitor.mapper.WarnInfoMapper;
+import com.mydbd.monitor.mapper.WarnMediaMapper;
 import com.mydbd.monitor.vo.AlarmVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class AlarmService {
     private final WarnInfoMapper warnInfoMapper;
     private final RiskEventMapper riskEventMapper;
     private final DashboardMapper dashboardMapper;
+    private final WarnMediaMapper warnMediaMapper;
 
     /** §4.1 分页：size 钳制 1~100，时间非法 40001；按当前用户数据范围过滤 */
     public PageData<AlarmVO> page(AlarmQuery q) {
@@ -98,7 +100,7 @@ public class AlarmService {
         return data;
     }
 
-    /** §4.5 详情：不存在或越权均 40401（不泄露存在性）；附带 ±30min 同车牌关联风险前 5 条 */
+    /** §4.5 详情：不存在或越权均 40401（不泄露存在性）；附带 ±30min 同车牌关联风险前 5 条 + 网关附件列表 */
     public AlarmVO detail(Long id) {
         AlarmVO vo = warnInfoMapper.selectDetail(id);
         if (vo == null || !canSee(vo.getPlateNo())) {
@@ -109,6 +111,7 @@ public class AlarmService {
         } else {
             vo.setRelatedRisks(List.of());
         }
+        vo.setAttachments(warnMediaMapper.selectByWarnInfoId(id));
         return vo;
     }
 
@@ -155,8 +158,8 @@ public class AlarmService {
         }
     }
 
-    /** 当前用户是否可见指定车牌（null 车牌对受限用户不可见） */
-    private boolean canSee(String plateNo) {
+    /** 当前用户是否可见指定车牌（null 车牌对受限用户不可见）；附件下载等场景复用同一归属校验 */
+    public boolean canSee(String plateNo) {
         List<String> plates = currentPlates();
         if (plates == null) {
             return true;

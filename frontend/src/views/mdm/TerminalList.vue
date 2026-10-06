@@ -3,6 +3,7 @@
     <el-card style="margin-bottom: 12px">
       <div class="toolbar">
         <el-input v-model="filters.keyword" placeholder="终端编号 / SIM 卡号" clearable style="width: 190px" @keyup.enter="search" />
+        <el-input v-model="filters.simAccount" placeholder="手机号" clearable style="width: 140px" @keyup.enter="search" />
         <el-select v-model="filters.protocolType" placeholder="通信协议" clearable style="width: 120px">
           <el-option v-for="p in PROTOCOL_TYPES" :key="p" :value="p" :label="p" />
         </el-select>
@@ -24,8 +25,21 @@
         <el-table-column label="厂商/型号" width="160">
           <template #default="{ row }">{{ [row.oemCode, row.tlModel].filter(Boolean).join(' / ') || '--' }}</template>
         </el-table-column>
-        <el-table-column prop="simAccount" label="SIM 卡号" width="140">
+        <el-table-column prop="simAccount" label="手机号(SIM)" width="140">
           <template #default="{ row }">{{ row.simAccount || '--' }}</template>
+        </el-table-column>
+        <el-table-column prop="gatewayTruckId" label="网关TruckId" width="130">
+          <template #default="{ row }">{{ row.gatewayTruckId || '--' }}</template>
+        </el-table-column>
+        <el-table-column label="在线状态" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.onlineStatus === 1" size="small" type="success">在线</el-tag>
+            <el-tag v-else-if="row.onlineStatus === 0" size="small" type="info">离线</el-tag>
+            <span v-else style="color: #9ca3af">--</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近心跳" width="160">
+          <template #default="{ row }">{{ fmt(row.lastHeartbeatTime) }}</template>
         </el-table-column>
         <el-table-column prop="protocolType" label="协议" width="90" />
         <el-table-column label="设备类型" width="110">
@@ -79,7 +93,10 @@
           <el-input v-model="form.tlMac" maxlength="16" />
         </el-form-item>
         <el-form-item label="SIM 卡号">
-          <el-input v-model="form.simAccount" maxlength="32" />
+          <el-input v-model="form.simAccount" maxlength="32" placeholder="手机号 / SIM 卡号" />
+        </el-form-item>
+        <el-form-item label="网关TruckId">
+          <el-input v-model="form.gatewayTruckId" maxlength="64" placeholder="网关侧 TruckId（可选）" />
         </el-form-item>
         <el-form-item label="通信协议">
           <el-select v-model="form.protocolType" style="width: 100%">
@@ -131,10 +148,15 @@ const filters = reactive({
   page: 1,
   size: 10,
   keyword: '',
+  simAccount: '',
   status: undefined as number | undefined,
   protocolType: '',
   equipmentType: ''
 })
+
+function fmt(v?: string | null) {
+  return v ? v.replace('T', ' ').slice(0, 19) : '--'
+}
 
 async function load() {
   loading.value = true
@@ -143,6 +165,7 @@ async function load() {
       page: filters.page,
       size: filters.size,
       keyword: filters.keyword || undefined,
+      simAccount: filters.simAccount || undefined,
       status: filters.status,
       protocolType: filters.protocolType || undefined,
       equipmentType: filters.equipmentType || undefined
@@ -161,6 +184,7 @@ function search() {
 
 function resetFilters() {
   filters.keyword = ''
+  filters.simAccount = ''
   filters.status = undefined
   filters.protocolType = ''
   filters.equipmentType = ''
@@ -179,6 +203,7 @@ const emptyForm = (): TerminalForm => ({
   oemCode: '',
   tlModel: '',
   simAccount: '',
+  gatewayTruckId: '',
   protocolType: 'JT808',
   equipmentType: '4',
   videoChannel: 4,
@@ -205,6 +230,7 @@ function openEdit(row: Terminal) {
     oemCode: row.oemCode || '',
     tlModel: row.tlModel || '',
     simAccount: row.simAccount || '',
+    gatewayTruckId: row.gatewayTruckId || '',
     protocolType: row.protocolType || 'JT808',
     equipmentType: row.equipmentType ?? '4',
     videoChannel: row.videoChannel ?? 0,

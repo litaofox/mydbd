@@ -15,6 +15,10 @@ import java.util.Date;
  * JWT 签发与解析。
  * access：业务访问令牌（8h，claims uid + purpose=access）
  * mfa：二次验证中间令牌（5min，purpose=mfa，仅可用于 /api/auth/mfa/verify）
+ *
+ * 算法固定 HS256：signWith 不显式传算法时 JJWT 会按密钥长度自选（≥48 字节选 HS384），
+ * 曾导致 processing 侧 PyJWT 仅放行 HS256 时误判 401、前端被踢回登录页（2026-10-06 修复）。
+ * 解析侧仍接受该密钥可用的同族 HMAC 算法，保证切换前签发的 HS384 存量令牌平滑过渡。
  */
 @Component
 public class JwtUtil {
@@ -46,7 +50,7 @@ public class JwtUtil {
                 .claim("purpose", purpose)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + ttl.toMillis()))
-                .signWith(key)
+                .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FUNC-REF-001 交信北斗平台分析功能对标 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">FUNC-REF-001 交信北斗平台「分析」模块产品功能对标</div>
+  <div class="right"><a href="../index.html">返回文档中心</a></div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#ch0">文档说明（取证边界）</a></li>
+      <li><a href="#ch1">0. 模块总览</a>
+        <ul>
+          <li><a href="#ch1-1">19 个功能节点清单</a></li>
+          <li><a href="#ch1-2">通用交互约定</a></li>
+        </ul>
+      </li>
+      <li><a href="#ch2">一、报表查询（13 项）</a>
+        <ul>
+          <li><a href="#r1">1. 轨迹报表</a></li>
+          <li><a href="#r2">2. 里程报表</a></li>
+          <li><a href="#r3">3. 行驶报表</a></li>
+          <li><a href="#r4">4. 停车报表</a></li>
+          <li><a href="#r5">5. 怠速报表</a></li>
+          <li><a href="#r6">6. 司机驾驶报表</a></li>
+          <li><a href="#r7">7. 离线报表</a></li>
+          <li><a href="#r8">8. 故障车报表</a></li>
+          <li><a href="#r9">9. 油耗报表</a></li>
+          <li><a href="#r10">10. 加油报表</a></li>
+          <li><a href="#r11">11. 实时在线率</a></li>
+          <li><a href="#r12">12. 车辆工作情况</a></li>
+          <li><a href="#r13">13. 服务费报表</a></li>
+        </ul>
+      </li>
+      <li><a href="#ch3">二、统计分析（6 项）</a>
+        <ul>
+          <li><a href="#s14">14. 车辆分析</a></li>
+          <li><a href="#s15">15. 企业分析</a></li>
+          <li><a href="#s16">16. 企业安全分析</a></li>
+          <li><a href="#s17">17. 司机分析</a></li>
+          <li><a href="#s18">18. 车辆商机分析</a></li>
+          <li><a href="#s19">19. 轨迹完整率</a></li>
+        </ul>
+      </li>
+      <li><a href="#ch4">三、与 mydbd 对照与建设启示</a></li>
+      <li><a href="#ch5">四、修订记录</a></li>
+    </ul>
+  </div></aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>交信北斗平台「分析」模块产品功能对标</h1>
+    <p class="cover-meta">文档编号：FUNC-REF-001<span class="sep">|</span>版本：v1.0.0<span class="sep">|</span>原始勘察：2026-10-04<span class="sep">|</span>转入正式文档库：2026-10-05</p>
+
+    <blockquote>
+      <p><strong>资料性质：</strong>本文为<strong>外部平台只读勘察资料</strong>（2026-10-05 整理入库），是本系统分析类功能 <strong>F41 ~ F59</strong> 的对标输入，不代表本系统当前已具备这些功能。</p>
+      <p><strong>对象平台：</strong>交信北斗「智慧驾驶车联网大数据平台」（https://gbc.cttic-beidou.com ）。勘察账号 langdi0422（角色：企业车队管理员，所属租户：安徽朗迪）；<strong>登录凭证不在文档中留存</strong>。</p>
+      <p><strong>取证方式：</strong>① 登录平台后对「分析」模块全部页面进行<strong>只读</strong>访问，未执行任何新增/保存/删除/导出/提交操作；② 统计分析类页面因自动聚合数据量过大导致自动化浏览器渲染器无响应，其界面文案依据该平台公开的前端组件资源（webpack chunk）静态提取，已在对应章节标注。</p>
+    </blockquote>
+
+    <h2 id="ch0">文档说明（取证边界）</h2>
+    <ul>
+      <li>本文记录的查询条件、按钮、结果列、业务规则均来自勘察时点的外部平台页面或其前端组件资源；外部平台后续改版可能造成差异。</li>
+      <li>本文仅用于本系统（mydbd）分析类功能建设的对标参考；功能规划与在本系统中的状态以 <a href="../guide/FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001 功能清单与建设规划</a> 及 <a href="../modules/MOD-DBD-017-分析与报表.html">MOD-DBD-017 分析与报表</a> 为准。</li>
+    </ul>
+
+    <h2 id="ch1">0. 模块总览</h2>
+    <p>「分析」为该平台顶部导航的一级菜单，进入后在左侧边栏展示两个功能分组，共 <strong>19 个功能节点</strong>：</p>
+    <pre><code>分析
+├── 报表查询（13 项）
+│   ├── 轨迹报表            ├── 怠速报表            ├── 油耗报表
+│   ├── 里程报表            ├── 司机驾驶报表        ├── 加油报表
+│   ├── 行驶报表            ├── 离线报表            ├── 实时在线率
+│   ├── 停车报表            ├── 故障车报表          ├── 车辆工作情况
+│   └────────────────────── 服务费报表 ─────────────┘
+└── 统计分析（6 项）
+    ├── 车辆分析            ├── 企业安全分析        ├── 车辆商机分析
+    └── 企业分析            └── 司机分析            └── 轨迹完整率</code></pre>
+
+    <h3 id="ch1-1">19 个功能节点清单</h3>
+    <table>
+      <thead><tr><th style="width:3em">#</th><th>功能节点</th><th>分组</th><th>路由（hash）</th><th>取证方式</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>轨迹报表</td><td>报表查询</td><td><code>dataAnalysis/historyTrackReport</code></td><td>页面只读</td></tr>
+        <tr><td>2</td><td>里程报表</td><td>报表查询</td><td><code>dataAnalysis/truckDistance</code></td><td>页面只读</td></tr>
+        <tr><td>3</td><td>行驶报表</td><td>报表查询</td><td><code>dataAnalysis/carTravel</code></td><td>页面只读</td></tr>
+        <tr><td>4</td><td>停车报表</td><td>报表查询</td><td><code>dataAnalysis/carPark</code></td><td>页面只读</td></tr>
+        <tr><td>5</td><td>怠速报表</td><td>报表查询</td><td><code>dataAnalysis/carIdle</code></td><td>页面只读</td></tr>
+        <tr><td>6</td><td>司机驾驶报表</td><td>报表查询</td><td><code>dataAnalysis/driverDriving</code></td><td>页面只读</td></tr>
+        <tr><td>7</td><td>离线报表</td><td>报表查询</td><td><code>dataAnalysis/offLineReport</code></td><td>页面只读</td></tr>
+        <tr><td>8</td><td>故障车报表</td><td>报表查询</td><td><code>dataAnalysis/faultyVehicle</code></td><td>页面只读</td></tr>
+        <tr><td>9</td><td>油耗报表</td><td>报表查询</td><td><code>dataAnalysis/consumption</code></td><td>页面只读</td></tr>
+        <tr><td>10</td><td>加油报表</td><td>报表查询</td><td><code>dataAnalysis/oil</code></td><td>页面只读</td></tr>
+        <tr><td>11</td><td>实时在线率</td><td>报表查询</td><td><code>dataAnalysis/truckOnlineRate</code></td><td>页面只读</td></tr>
+        <tr><td>12</td><td>车辆工作情况</td><td>报表查询</td><td><code>dataAnalysis/truckWork</code></td><td>页面只读</td></tr>
+        <tr><td>13</td><td>服务费报表</td><td>报表查询</td><td><code>dataAnalysis/serviceChargeReport</code></td><td>页面只读</td></tr>
+        <tr><td>14</td><td>车辆分析</td><td>统计分析</td><td><code>dataAnalysis/mongodbVehicleStatistics</code></td><td>页面只读 + 组件静态提取</td></tr>
+        <tr><td>15</td><td>企业分析</td><td>统计分析</td><td><code>dataAnalysis/mongodbEnterpriseStatistics</code></td><td>组件静态提取</td></tr>
+        <tr><td>16</td><td>企业安全分析</td><td>统计分析</td><td><code>dataAnalysis/mongodbEntSecurityStatistics</code></td><td>组件静态提取</td></tr>
+        <tr><td>17</td><td>司机分析</td><td>统计分析</td><td><code>dataAnalysis/mongodbDriverStatistics</code></td><td>组件静态提取</td></tr>
+        <tr><td>18</td><td>车辆商机分析</td><td>统计分析</td><td><code>dataAnalysis/businessTruck</code></td><td>组件静态提取</td></tr>
+        <tr><td>19</td><td>轨迹完整率</td><td>统计分析</td><td><code>dataAnalysis/carStatisFr</code></td><td>组件静态提取</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="ch1-2">通用交互约定（多个报表共用）</h3>
+    <ul>
+      <li><strong>查询对象切换：</strong>行驶 / 停车 / 怠速 / 司机驾驶 / 离线 / 故障 / 油耗 / 加油 / 工作 / 服务费报表及全部统计页，顶部均提供「车牌 / 司机 / 用户 / 企业」单选切换，切换后查询输入框按对象类型自适应（如选"企业"时为"请输入企业"）。</li>
+      <li><strong>快捷时间范围：</strong>当天、昨天、本周、上周、本月、上月、近 3 天、近 5 天、近 7 天、近 10 天、近 15 天、近 30 天。</li>
+      <li><strong>导出机制：</strong>多数报表支持导出；统计分析类页面导出后生成<strong>异步导出任务</strong>，提示"导出任务成功，请前往下载中心下载"。</li>
+      <li><strong>列设置：</strong>部分列表支持自定义显示列。</li>
+    </ul>
+
+    <h2 id="ch2">一、报表查询（13 项）</h2>
+
+    <h3 id="r1">1. 轨迹报表</h3>
+    <p>逐点呈现车辆历史定位明细，是粒度最细的轨迹数据报表。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询条件</div><div class="vv">车牌（可输入关键字的下拉搜索框）、开始日期、结束日期</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出、列设置</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 状态 ｜ 速度(km/h) ｜ 方向 ｜ 里程(km) ｜ 油量(L) ｜ 油量原始值 ｜ 定位时间 ｜ 上点时间 ｜ 经度 ｜ 纬度 ｜ 位置 ｜ 所属企业 ｜ 补点</div></div>
+    </div>
+    <ul>
+      <li>未查询时列表区显示"暂无数据"。</li>
+      <li><strong>业务要点：</strong>同时给出"定位时间 / 上点时间"便于识别上报时延，"补点"列标识终端补发数据，保留油量原始值便于核对油量异常。</li>
+    </ul>
+
+    <h3 id="r2">2. 里程报表</h3>
+    <p>按周统计每辆车的累计里程。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询条件</div><div class="vv">统计对象单选（车辆）、企业（请输入企业）、年（请选择年）、周（请选择周）</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 所属企业 ｜ 总里程(km)</div></div>
+    </div>
+
+    <h3 id="r3">3. 行驶报表</h3>
+    <p>统计时间范围内车辆的行驶汇总（里程、时长、趟次）。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含全部快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出汇总表、导出明细表</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 所属企业 ｜ 总时长 ｜ 总里程(km) ｜ 总次数</div></div>
+    </div>
+    <p><strong>业务要点：</strong>同时提供"汇总表 / 明细表"两类导出，"总次数"对应行驶趟次（行程段数）。</p>
+
+    <h3 id="r4">4. 停车报表</h3>
+    <p>统计车辆停车时长与停车次数。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出汇总表、导出明细表</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 所属企业 ｜ 总时长 ｜ 总次数</div></div>
+    </div>
+
+    <h3 id="r5">5. 怠速报表</h3>
+    <p>统计车辆怠速（发动机运转但车辆静止）时长与次数，用于油耗成本管理。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出汇总表、导出明细表</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 所属企业 ｜ 总时长 ｜ 总次数</div></div>
+    </div>
+
+    <h3 id="r6">6. 司机驾驶报表</h3>
+    <p>以司机为主体的驾驶登录段明细，反映每个司机在时间范围内的实际驾驶情况。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 司机姓名 ｜ 驾驶证 ｜ 登录时间 ｜ 登出时间 ｜ 驾驶时长 ｜ 驾驶里程(km) ｜ 所属企业 ｜ 开始位置 ｜ 结束位置</div></div>
+    </div>
+    <p><strong>业务要点：</strong>以司机登录 / 登出（插卡或身份识别）为一个驾驶段，起止位置均保留。</p>
+
+    <h3 id="r7">7. 离线报表</h3>
+    <p>按周呈现车辆离线情况及逐日在线状态。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、年（请选择年）、周（请选择周）</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 所属企业 ｜ 离线率 ｜ <strong>一周各日期列</strong>（如 10-05、10-06 … 10-11，单元格内为当日在线/离线状态）｜ 最后上点时间 ｜ 企业联系人信息 ｜ 车主信息</div></div>
+    </div>
+    <p><strong>业务要点：</strong>日期列随所选周动态生成；附带联系人和车主信息，便于离线设备召回。</p>
+
+    <h3 id="r8">8. 故障车报表</h3>
+    <p>呈现离线/故障车辆台账，辅助设备运维。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、故障类型</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 故障类型 ｜ 定位时间 ｜ 上点时间 ｜ 离线时长 ｜ 最后位置 ｜ 设备号 ｜ SIM 卡 ｜ 所属企业 ｜ 联系人</div></div>
+    </div>
+
+    <h3 id="r9">9. 油耗报表</h3>
+    <p>按日统计车辆油耗与百公里油耗。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索（页面未提供导出）</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 日期 ｜ 油耗(L) ｜ 里程(km) ｜ 百公里油耗(L) ｜ 所属企业</div></div>
+    </div>
+
+    <h3 id="r10">10. 加油报表</h3>
+    <p>记录加油事件明细。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索（页面未提供导出）</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 车牌颜色 ｜ 日期 ｜ 油量(L) ｜ 类型 ｜ 时间 ｜ 加油位置 ｜ 所属企业</div></div>
+    </div>
+
+    <h3 id="r11">11. 实时在线率</h3>
+    <p>按企业维度实时统计入网车辆的在线/离线/故障分布。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询条件</div><div class="vv">企业（请输入企业）、分组/区域（请选择）</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 企业名称 ｜ 上级企业名称 ｜ 入网数 ｜ 在线数 ｜ 离线数 ｜ 故障数 ｜ 在线率 ｜ 离线率 ｜ 故障率</div></div>
+    </div>
+    <p><strong>业务要点：</strong>按企业层级汇总，三个比率互为校验（在线率 + 离线率 + 故障率 = 100%）。</p>
+
+    <h3 id="r12">12. 车辆工作情况</h3>
+    <p>按日呈现车辆工作强度，并配有趋势图表。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">对象关键字、开始日期、结束日期；含快捷时间按钮</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 日期 ｜ 里程(km) ｜ 工作时长 ｜ 日均平均速度(km/h) ｜ 日最高速度(km/h) ｜ 日最高速度位置</div></div>
+      <div class="kv"><div class="k">图表</div><div class="vv">含 1 个趋势图（canvas）</div></div>
+    </div>
+
+    <h3 id="r13">13. 服务费报表</h3>
+    <p>车辆服务费缴纳与终端服务到期情况台账。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">查询对象</div><div class="vv">车牌 / 司机 / 用户 / 企业</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">车牌（请输入车牌）、设备号、服务到期状态（下拉选择）、设备类型（下拉选择）</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 服务到期状态 ｜ 服务到期日 ｜ 所属企业 ｜ 联系方式 ｜ 服务费(元) ｜ 设备类型 ｜ 终端型号 ｜ 终端厂商 ｜ SIM 卡号 ｜ 设备号 ｜ 车架号</div></div>
+    </div>
+    <p><strong>业务要点：</strong>首页快捷区亦提供"服务费（1 个月内到期）"提醒入口；该报表是续费运营的主要工作台。</p>
+
+    <h2 id="ch3">二、统计分析（6 项）</h2>
+    <blockquote class="warn"><p>本组页面进入时即按默认周期执行大范围聚合，数据量大，自动化浏览器在「企业分析」「企业安全分析」「司机分析」「车辆商机分析」「轨迹完整率」5 个页面上出现渲染器无响应，以下内容依据页面结构与前端组件中的界面文案整理；「车辆分析」同时经过实页核对。</p></blockquote>
+
+    <h3 id="s14">14. 车辆分析</h3>
+    <p>以车辆为主体的周期性安全运营分析。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">分析周期</div><div class="vv">周分析 / 月分析（单选切换）</div></div>
+      <div class="kv"><div class="k">查询条件</div><div class="vv">年（请选择年）、按周期选择周（请选择周）或月（请选择月）、对象关键字</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出（生成异步导出任务，前往下载中心下载）、查看报告</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 车牌号 ｜ 所属企业 ｜ 所属地区 ｜ 经营范围 ｜ 行驶里程（千米）｜ 行驶时长 ｜ 报警数量 ｜ 报警数量/百公里 ｜ 安全评分 ｜ 操作</div></div>
+    </div>
+    <p><strong>经营范围字典：</strong>道路旅客运输、道路普通货物运输、货物专用运输、道路危险货物运输、机动车维修、机动车驾驶员培训、公交运输、国际道路运输、出租运输、汽车租凭、其它领域。</p>
+    <p><strong>安全评分规则</strong>（页面悬浮说明原文整理）：</p>
+    <ol>
+      <li>参与评分条件：报警规则中统计类型为「标准统计」的规则（<strong>含已禁用规则</strong>）参与评分；统计类型为「内部统计」的规则不参与评分。</li>
+      <li>评分计算规则：<code>安全评分 = 100 − Σ（某类报警规则的百公里报警数量 × 该报警规则级别）</code>。</li>
+    </ol>
+
+    <h3 id="s15">15. 企业分析</h3>
+    <p>以企业为主体的周期性安全运营分析，结构与「车辆分析」同源。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">分析周期</div><div class="vv">周分析 / 月分析；年 + 周/月</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出（异步任务→下载中心）、查看报告</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 名称（企业名称）｜ 所属地区 ｜ 车辆数 ｜ 行驶里程（千米）｜ 行驶时长 ｜ 报警数量 ｜ 报警数量/百公里 ｜ 安全评分 ｜ 操作</div></div>
+    </div>
+    <p>经营范围字典、安全评分规则与「车辆分析」完全一致。</p>
+
+    <h3 id="s16">16. 企业安全分析</h3>
+    <p>面向企业的安全运行综合分析看板，是统计分析组中信息最丰富的页面。</p>
+    <ul>
+      <li><strong>分析周期：</strong>周分析 / 月分析；年 + 周/月。</li>
+      <li><strong>核心指标卡：</strong>入网车辆总数、车辆在线总数、总行驶里程、总行驶时长、日均行驶里程、日均行驶时长、报警事件次数、百公里报警次数、制动报警次数、百公里制动报警次数。</li>
+      <li><strong>报警分类统计：</strong>报警处理次数、抽烟报警、打电话、打哈欠、制动、疲劳驾驶、驾驶员异常、离线。</li>
+      <li><strong>图表：</strong>报警事件趋势、报警类型分布、高风险发生时段分布情况。</li>
+      <li><strong>看板板块：</strong>整体数据总览、子项明细、报警案例数据、设备健康情况、车辆安全排名。</li>
+    </ul>
+    <h4>安全分析报告（模板化报告）</h4>
+    <ul>
+      <li><strong>报告模板管理：</strong>新增模板、编辑模板、删除模板（删除时二次确认："此操作将永久删除该模板，是否继续"）。</li>
+      <li><strong>模板内容配置项：</strong>报告统计的报警事件设置（是否显示）、安全评价建议、车辆行驶数据、告警干预和护航分析、安全报警、车辆安全排名。</li>
+      <li><strong>模板列表列：</strong>序号 ｜ 报告模板名称 ｜ 创建人 ｜ 修改时间 ｜ 删除。</li>
+      <li><strong>报告输出：</strong>导出 PDF。</li>
+    </ul>
+    <p>页面含 AI 对话助手入口（组件中含"给我一…""时间"等提示语碎片，具体话术未能实页确认）。</p>
+
+    <h3 id="s17">17. 司机分析</h3>
+    <p>以驾驶员为主体的周期性安全运营分析。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">分析周期</div><div class="vv">周分析 / 月分析；年 + 周/月</div></div>
+      <div class="kv"><div class="k">操作按钮</div><div class="vv">搜索、导出（异步任务→下载中心）、查看报告</div></div>
+      <div class="kv"><div class="k">结果列</div><div class="vv">序号 ｜ 驾驶员 ｜ 从业资格证 ｜ 所属企业 ｜ 行驶里程（千米）｜ 行驶时长 ｜ 报警数量 ｜ 报警数量/百公里 ｜ 安全评分 ｜ 操作</div></div>
+    </div>
+    <p>安全评分规则与「车辆分析」一致；经营范围字典作为辅助分类存在。</p>
+
+    <h3 id="s18">18. 车辆商机分析</h3>
+    <p>面向保险、服务续费等商业机会的车辆价值分析页面，按车辆保险、运营强度、运营时空特征组织数据。</p>
+    <ul>
+      <li><strong>查询条件：</strong>安装日期、服务到期，以及基于下列字典的组合筛选（请选择）。</li>
+      <li><strong>结果列：</strong>序号 ｜ 车牌 ｜ 所属企业 ｜ 车辆类型 ｜ 保险公司 ｜ 保险金额(元) ｜ 险种 ｜ 线路 ｜ 出车率 ｜ 运营时段 ｜ 运营路段 ｜ 千公里事故次数 ｜ 千公里违章次数 ｜ 千公里违法次数。</li>
+      <li><strong>运营时段分类：</strong>夜间、凌晨、上午、下午、黄昏。</li>
+      <li><strong>运营路段分类：</strong>高速、省道。</li>
+      <li><strong>车辆状态字典：</strong>营运、停运、维修、拆机、欠费、启用、停用、过户、报废、其他；另有外部车辆 / 中转车辆 / 应急车辆标识，以及单驾 / 双驾 / 多驾标识。</li>
+      <li><strong>车辆类型字典（节选）：</strong>大型/中型/小型客车、大型卧铺客车、轿车、大型/中型/小型普通货车、重型厢式/半挂/特殊结构/自卸/栏板/仓栅式/罐式货车、集装箱车、大件运输车、保温冷藏车、罐车、牵引车、平板车、危险品运输车、混泥土搅拌运输车、散装物料车、校车、网约车、客运车、农用车、叉车、轮式/手扶/履带/特种拖拉机及其他专用车等。</li>
+      <li><strong>险种字典：</strong>交强险、商业险、自燃险、车损险、第三者责任险、玻璃险、精神损失险、涉水险。</li>
+      <li><strong>证件/影像资料项：</strong>行驶证正页、行驶证副页、道路运输证、车辆前/侧/后照片、交强险、商业险、线路安装前/后照片、终端安装后照片、前挡风玻璃原位置照片、已拆卸终端整体照片、码照片、车辆卫星定位装置等。</li>
+      <li><strong>过程状态标识：</strong>已导出、已上传、已完成。</li>
+    </ul>
+
+    <h3 id="s19">19. 轨迹完整率</h3>
+    <p>车辆轨迹数据质量分析，是数据治理类功能，包含连续里程、轨迹里程、完整率、合格率、漂移等指标及一套明确的判定规则。</p>
+    <ul>
+      <li><strong>查询条件：</strong>查询时间（日期范围，<strong>最多选择 10 天</strong>）；含全部快捷时间按钮；可按「完整率低于」「合格率低于」阈值过滤。</li>
+      <li><strong>执行方式：</strong>异步计算——页面明确提示"任务将异步执行，可能耗时较长，稍后请去下载中心下载结果文件"。</li>
+      <li><strong>操作按钮：</strong>确定（发起异步计算）、导出（异步任务→下载中心；无数据时提示"无可导出数据"）。</li>
+      <li><strong>结果列：</strong>序号 ｜ 车牌号 ｜ 所属企业 ｜ 车牌颜色 ｜ 开始日期 ｜ 结束日期 ｜ 连续里程 ｜ 轨迹里程 ｜ 轨迹完整率 ｜ 错误定位数 ｜ 定位总数 ｜ 错误定位占比 ｜ 数据合格率 ｜ 漂移总数。</li>
+      <li><strong>详情入口：</strong>错误定位详情、漂移详情、完整率详情；含上报时间、上报原因（支持问题数据上报）。</li>
+    </ul>
+    <h4>连续里程定义</h4>
+    <ol>
+      <li>连续两点间距离 <strong>≤ 2 km</strong>，记为连续里程。</li>
+      <li>若连续 5 段两点间距离 <strong>&gt; 2 km 且 ≤ 10 km</strong>，则从第 6 段起两点间里程视为不连续里程；但若下一段两点距离 <strong>&lt; 2 km</strong>，计数重新归 0。</li>
+      <li>两点间距离 <strong>&gt; 10 km</strong>，直接视为不连续里程。</li>
+    </ol>
+    <p><strong>轨迹里程定义：</strong>去除漂移点和不合格点之后，相邻定位点直线距离之和。</p>
+    <h4>错误定位判定规则（计算方法）</h4>
+    <table>
+      <thead><tr><th>错误类型</th><th>判定条件</th></tr></thead>
+      <tbody>
+        <tr><td>经纬度错误</td><td>经度不在规定范围之间，或纬度不在规定范围之间</td></tr>
+        <tr><td>海拔错误</td><td>海拔低于 −200 米，或高于 6000 米</td></tr>
+        <tr><td>速度错误</td><td>速度 &lt; 0 km/h，或 &gt; 160 km/h</td></tr>
+        <tr><td>方向错误</td><td>方向 &lt; 0，或 &gt; 360</td></tr>
+        <tr><td>定位时间错误</td><td>定位上传时间晚于平台接收时间 20 小时以上</td></tr>
+      </tbody>
+    </table>
+    <p><strong>漂移判定：</strong>若干个连续轨迹点按速度（距离 ÷ 时间）计算 <strong>&gt; 160 km/h</strong>，记为一次漂移。</p>
+    <p><strong>指标口径：</strong>数据合格率 = 合格定位数 ÷ 定位总数；轨迹完整率 = 轨迹连续里程 ÷ 轨迹总里程。</p>
+
+    <h2 id="ch4">三、与 mydbd 本系统的对照与建设启示</h2>
+    <table>
+      <thead><tr><th>外部平台功能</th><th>对标本系统功能项</th><th>本系统现状</th><th>可借鉴点</th></tr></thead>
+      <tbody>
+        <tr><td>轨迹报表</td><td>历史轨迹回放、车辆/轨迹查询接口</td><td><span class="badge green">已具备</span></td><td>明细级报表需补油量原始值、补点标识、定位/上点双时间</td></tr>
+        <tr><td>里程报表、行驶/停车/怠速报表</td><td>F12 里程与行驶统计</td><td><span class="badge red">待建设（第二波）</span></td><td>周/日期口径、汇总表+明细表双导出、总趟次统计</td></tr>
+        <tr><td>司机驾驶报表</td><td>F22 驾驶行为评分模型周边、司机档案（F30）</td><td><span class="badge amber">部分相关</span></td><td>以司机登录段为核心的驾驶段台账</td></tr>
+        <tr><td>离线报表、实时在线率</td><td>F02 终端在线状态管理</td><td><span class="badge red">待建设（第二波）</span></td><td>逐日在线状态矩阵、企业层级在线率三率互校</td></tr>
+        <tr><td>故障车报表</td><td>F02、设备管理（F29）</td><td><span class="badge amber">部分相关</span></td><td>故障类型 + 运维联系人一体化台账</td></tr>
+        <tr><td>油耗/加油报表</td><td>——</td><td><span class="badge gray">暂无规划</span></td><td>油量数据接入后的油耗成本管理（依赖 CAN/OBD，F05）</td></tr>
+        <tr><td>车辆工作情况</td><td>F12、监控大屏（F15）</td><td><span class="badge amber">部分相关</span></td><td>日均速度、日最高速度及其位置等强度指标</td></tr>
+        <tr><td>服务费报表</td><td>——</td><td><span class="badge gray">暂无规划</span></td><td>续费运营台账与到期提醒联动</td></tr>
+        <tr><td>车辆/企业/司机分析</td><td>F22 驾驶行为评分模型、F23 风险趋势与画像</td><td><span class="badge green">已上线</span></td><td><code>100 − Σ（百公里报警量 × 级别）</code>评分公式可直接对标；"标准统计/内部统计"口径值得引入</td></tr>
+        <tr><td>企业安全分析</td><td>F15 监控总览大屏、F23 风险趋势与画像</td><td><span class="badge green">已上线</span></td><td>指标卡 + 趋势/类型/时段三图 + 报告模板导出 PDF 的周报形态</td></tr>
+        <tr><td>车辆商机分析</td><td>——</td><td><span class="badge gray">暂无规划</span></td><td>出车率、千公里事故/违章/违法、保险信息等 UBI 与商机数据模型</td></tr>
+        <tr><td>轨迹完整率</td><td>F08 轨迹清洗、F36 数据质量监控与治理</td><td><span class="badge red">待建设（第二/三波）</span></td><td>连续里程、错误定位五规则、漂移判定、完整率/合格率双指标可作为数据治理模块的直接设计依据</td></tr>
+      </tbody>
+    </table>
+    <p>本系统功能状态与编号的权威出处：<a href="../guide/FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001 功能清单与建设规划</a>。</p>
+
+    <h2 id="ch5">四、修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>转入正式文档库 reference 分区：Markdown 原文全量转 HTML（表格、代码块、评分公式与判定规则无损迁移），补 TOC 与取证说明；内容与 2026-10-04 首次发布稿一致</td></tr>
+        <tr><td>v1.0</td><td>2026-10-04</td><td>首次发布：完成「分析」模块 2 个分组、19 个功能节点的只读勘察与文档化，含与本系统功能清单的对照</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>FUNC-REF-001 交信北斗平台分析功能对标 · v1.0.0 · 2026-10-05</span>
+      <span>外部平台只读勘察资料，未留存任何登录凭证</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

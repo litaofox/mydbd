@@ -63,6 +63,13 @@ services:
       SERVICE_TOKEN: ${SERVICE_TOKEN}
       STORAGE_ROOT: /data
       PYTHONUNBUFFERED: "1"
+      # vps 网关对接（三模式：simulator 默认 / mock 仿真验证 / gateway 正式）
+      GATEWAY_MODE: ${GATEWAY_MODE:-simulator}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-mydbd-ingest}
+      GATEWAY_FILE_BASE_URL: ${GATEWAY_FILE_BASE_URL:-}
+      GATEWAY_MEDIA_STRATEGY: ${GATEWAY_MEDIA_STRATEGY:-local}
+      MEDIA_STORE_DIR: /data/media
     volumes:
       - mydbd-data:/data
       - ./samples:/data/samples:ro
@@ -79,6 +86,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
+
+  # 本地联调用单节点 KRaft Kafka（仅 dev-infra profile 显式启用，不影响默认启动）
+  kafka:
+    image: apache/kafka:3.9.0
+    profiles: ["dev-infra"]
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: mydbd-dev-kafka-cluster-001
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: "0.5" }
     restart: unless-stopped
 
   portal-nginx:

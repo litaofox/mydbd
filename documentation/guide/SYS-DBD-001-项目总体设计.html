@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SYS-DBD-001 项目总体设计 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">SYS-DBD-001 项目总体设计 · 回答"系统是什么、为谁做、不做什么"</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">本页目录</p>
+      <ul>
+        <li><a href="#s1">1 项目背景</a></li>
+        <li><a href="#s2">2 项目定位与目标</a>
+          <ul>
+            <li><a href="#s2-1">2.1 项目定位</a></li>
+            <li><a href="#s2-2">2.2 业务目标</a></li>
+            <li><a href="#s2-3">2.3 技术目标</a></li>
+          </ul>
+        </li>
+        <li><a href="#s3">3 用户角色</a>
+          <ul>
+            <li><a href="#s3-1">3.1 内置角色</a></li>
+            <li><a href="#s3-2">3.2 四省测试用户</a></li>
+          </ul>
+        </li>
+        <li><a href="#s4">4 系统边界</a>
+          <ul>
+            <li><a href="#s4-1">4.1 做什么</a></li>
+            <li><a href="#s4-2">4.2 不做什么</a></li>
+            <li><a href="#s4-3">4.3 边缘触发与按需调阅</a></li>
+          </ul>
+        </li>
+        <li><a href="#s5">5 约束条件</a></li>
+        <li><a href="#s6">6 总体业务流程</a></li>
+        <li><a href="#s7">7 术语表</a></li>
+        <li><a href="#s8">8 数据权限强制规则</a>
+          <ul>
+            <li><a href="#s8-1">8.1 默认强制 fail-closed</a></li>
+            <li><a href="#s8-2">8.2 归属锚点与口径</a></li>
+            <li><a href="#s8-3">8.3 实时推送与异步任务</a></li>
+            <li><a href="#s8-4">8.4 一致性与准入</a></li>
+            <li><a href="#s8-5">8.5 代码实现映射</a></li>
+          </ul>
+        </li>
+        <li><a href="#s9">9 文档体系导读</a></li>
+        <li><a href="#rev">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>SYS-DBD-001 项目总体设计</h1>
+    <p class="cover-meta">文档编号 SYS-DBD-001<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>事实基准 2026-10-05 源代码</p>
+    <p>关联文档：<a href="ARC-DBD-001-系统架构设计.html">ARC-DBD-001 系统架构设计</a>　<a href="DDL-DBD-001-数据库设计.html">DDL-DBD-001 数据库设计</a>　<a href="DEP-DBD-001-部署与运维手册.html">DEP-DBD-001 部署与运维手册</a>　<a href="FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001 功能清单与建设规划</a></p>
+
+    <h2 id="s1">1 项目背景</h2>
+    <p>道路货运车辆正规模化换装"单北斗视频智能终端"。该类终端集成 GNSS 定位、CAN 总线读取、ADAS（高级驾驶辅助）与 DSM（驾驶员状态监控）能力，在行驶过程中持续产生定位轨迹与驾驶行为事件。行业主管部门、运输企业与保险机构需要基于这些数据掌握车辆运行状态、干预高风险驾驶行为，并以风险减量为目标开展安全管理与费率浮动。上述业务背景与数据量级的完整论述，见业务蓝图<a href="../reference/BLUEPRINT-001-导航系统数据采集与应用平台设计.html">BLUEPRINT-001 导航系统数据采集与应用平台设计</a>。</p>
+    <p>mydbd（北斗导航数据业务平台）是这一蓝图的数据底座在当前阶段的工程实现，承担三类职责：</p>
+    <ul>
+      <li><strong>接得住</strong>：接收终端上报的北斗定位点与 DSM/ADAS 预警信号，落入 PostgreSQL/PostGIS 持久化；</li>
+      <li><strong>看得见</strong>：在地图上实时呈现车辆位置与报警态势，支持历史轨迹回放与监控大屏；</li>
+      <li><strong>管得闭</strong>：预警信号经规则引擎定级形成风险事件，驱动处置工单、坐席干预、通知与驾驶评分，形成"感知—预警—干预"闭环。</li>
+    </ul>
+    <blockquote class="tip">
+      <p>口径说明：蓝图规划接入规模为试点 1 万辆 → 区域 10 万辆 → 百万级。当前版本（代码版本 0.1.0）为单节点内网演示/试点基线，终端接入以 HTTP 推送与内置模拟器为主，JT/T 808/1078 协议网关属于后续规划（见 <a href="../modules/MOD-DBD-014-终端通信网关（规划）.html">MOD-DBD-014</a>）。本文件严格区分"现状"与"规划"。</p>
+    </blockquote>
+
+    <h2 id="s2">2 项目定位与目标</h2>
+
+    <h3 id="s2-1">2.1 项目定位</h3>
+    <p>mydbd 是专注于北斗导航数据核心业务的独立平台，不依赖公司其他业务系统即可独立部署运行。平台对上服务于安全监控坐席、企业车队长与平台管理员；对下面向北斗车载终端与等价格式的数据推送方。平台本身不生产视频、不替代终端侧识别，也不是面向公众的互联网服务。</p>
+
+    <h3 id="s2-2">2.2 业务目标</h3>
+    <table>
+      <thead><tr><th>#</th><th>业务目标</th><th>说明与现状</th></tr></thead>
+      <tbody>
+        <tr><td>B1</td><td>车辆运行状态可视</td><td>实时位置、速度、在线状态、报警态势在地图与大屏呈现（现状已上线，<a href="../modules/MOD-DBD-005-实时监控与可视化.html">MOD-DBD-005</a>）</td></tr>
+        <tr><td>B2</td><td>历史轨迹可溯</td><td>按车辆与时间范围查询轨迹并多倍速回放（现状已上线，<a href="../modules/MOD-DBD-004-轨迹数据接入查询与回放.html">MOD-DBD-004</a>）</td></tr>
+        <tr><td>B3</td><td>风险行为可预警</td><td>DSM/ADAS 信号与北斗点经规则引擎分级产出风险事件，支持电子围栏（现状已上线，<a href="../modules/MOD-DBD-008-风控规则引擎.html">MOD-DBD-008</a>）</td></tr>
+        <tr><td>B4</td><td>预警处置可闭环</td><td>风险事件转处置工单，坐席分派、SLA 超时升级、干预动作留痕（现状已上线，<a href="../modules/MOD-DBD-009-处置工单与坐席干预.html">MOD-DBD-009</a>）</td></tr>
+        <tr><td>B5</td><td>驾驶风险可量化</td><td>0~100 安全分与风险画像，支撑企业管理与风险减量运营（评分/画像已上线，<a href="../modules/MOD-DBD-010-驾驶评分与风险画像.html">MOD-DBD-010</a>）</td></tr>
+        <tr><td>B6</td><td>多级组织数据可隔离</td><td>按企业/部门组织树隔离各运输企业数据，支持多省份并行测试（现状已上线，<a href="../modules/MOD-DBD-002-用户与权限IAM.html">MOD-DBD-002</a>，强制规则见本文 §8）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="s2-3">2.3 技术目标（可衡量）</h3>
+    <table>
+      <thead><tr><th>指标</th><th>目标口径</th><th>性质与现状依据</th></tr></thead>
+      <tbody>
+        <tr><td>事件端到端时延</td><td>终端触发预警 → 坐席界面弹窗 <strong>≤ 3 秒</strong></td><td>蓝图需求级基线。现状推送调度器每秒一个 tick（<code>@Scheduled(fixedDelay = 1000)</code>），事件按 id 游标增量推送，演示环境满足秒级</td></tr>
+        <tr><td>位置刷新周期</td><td>在线车辆位置快照 ≤ 1 秒</td><td>现状：<code>RealtimePushScheduler</code> 每 1 秒全量推送最新位置快照（按会话数据范围过滤）</td></tr>
+        <tr><td>接入频率</td><td>行驶 1Hz；熄火静止 0.02Hz；报警期间 2~4Hz</td><td>蓝图对终端的采集要求；现状模拟器与 HTTP 接入按样例数据频率演示</td></tr>
+        <tr><td>在线判定</td><td>可配置在线窗口，缺省 5 分钟</td><td>现状：大屏在线率实时读取 <code>sys_config</code>，键缺失或非法回落 5 分钟</td></tr>
+        <tr><td>登录会话有效期</td><td>访问令牌 8 小时；二次验证中间令牌 5 分钟</td><td>现状：<code>JwtUtil</code> 硬编码 TTL（access 8h / mfa 5min）</td></tr>
+        <tr><td>核心服务可用性</td><td>≥ 99.9%</td><td>蓝图规划目标。现状为单节点四容器部署，<code>restart: unless-stopped</code> 自愈，未做高可用</td></tr>
+        <tr><td>接入规模</td><td>试点 1 万 → 区域 10 万 → 百万级</td><td>规划目标。现状数据量为样例/标准测试数据集级别，未做水平扩展验证</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s3">3 用户角色</h2>
+    <p>角色与数据范围以 <code>infra/postgres/init/06-iam-tables.sql</code> 的内置种子为准，共 4 个内置角色（<code>built_in=1</code>，禁删、禁改编码与数据范围）。账号由后端首启初始化器创建，密码哈希不写入 SQL。</p>
+
+    <h3 id="s3-1">3.1 内置角色</h3>
+    <table>
+      <thead><tr><th>角色</th><th>role_code</th><th>数据范围</th><th>典型职责</th><th>功能权限要点（种子菜单）</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>超级管理员<br><span class="badge blue">admin</span></td>
+          <td><code>SUPER_ADMIN</code></td>
+          <td>1 = 全部数据（后端硬编码绕过权限校验）</td>
+          <td>平台级运维与全部数据查看；系统初始化与兜底管理</td>
+          <td>全部菜单与按钮权限点</td>
+        </tr>
+        <tr>
+          <td>安全管理员</td>
+          <td><code>SAFE_ADMIN</code></td>
+          <td>1 = 全部数据（仅管理域）</td>
+          <td>用户/角色管理、操作审计查阅；<strong>不参与车辆业务</strong>，无监控/风险/档案菜单</td>
+          <td>系统管理目录、用户维护、角色查看、操作审计；主数据目录下仅组织架构查看</td>
+        </tr>
+        <tr>
+          <td>调度监控员</td>
+          <td><code>DISPATCHER</code></td>
+          <td>3 = 本部门及以下</td>
+          <td>实时监控值守、轨迹回放、风险预警查看、档案只读核对</td>
+          <td>实时监控组全部（监控/回放/风险）；主数据组全部菜单只读，<strong>无任何维护按钮</strong></td>
+        </tr>
+        <tr>
+          <td>企业车队长</td>
+          <td><code>FLEET_CAPTAIN</code></td>
+          <td>2 = 本企业及以下</td>
+          <td>本企业车辆/终端/驾驶员档案维护；查看监控与风险，<strong>不含轨迹回放</strong></td>
+          <td>实时监控（不含回放）、风险查看；车辆/终端/驾驶员维护按钮；组织仅查看</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>数据范围五档口径由 <code>DataScopeService</code> 实现：1 全部、2 本企业及以下（沿组织父链找到 <code>dept_type=1</code> 的企业节点后取子树）、3 本部门及以下、4 仅本部门、5 自定义（角色-部门关系表）；用户持多角色时取并集，任一角色为"全部"即不限制。</p>
+
+    <h3 id="s3-2">3.2 四省测试用户</h3>
+    <p><code>16-province-test-data.sql</code> 创建上海、江苏、安徽、山东 4 个省级企业节点（<code>dept_type=1</code>），首启时 <code>ProvinceTestUserInitializer</code> 在每个省节点下创建 2 个测试用户，共 8 个，默认密码 <code>test123456</code>（配置键 <code>mydbd.bootstrap.test-password</code>）。登录页提供点击快捷填充。</p>
+    <table>
+      <thead><tr><th>省份（省码）</th><th>调度监控员（本部门及以下）</th><th>企业车队长（本企业及以下）</th></tr></thead>
+      <tbody>
+        <tr><td>上海市（310000）</td><td><code>shanghai_disp</code></td><td><code>shanghai_capt</code></td></tr>
+        <tr><td>江苏省（320000）</td><td><code>jiangsu_disp</code></td><td><code>jiangsu_capt</code></td></tr>
+        <tr><td>安徽省（340000）</td><td><code>anhui_disp</code></td><td><code>anhui_capt</code></td></tr>
+        <tr><td>山东省（370000）</td><td><code>shandong_disp</code></td><td><code>shandong_capt</code></td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn">
+      <p>实现备注：初始化器内的省份清单仍保留 31 个大陆省级行政区的拼音枚举，但 <code>16-province-test-data.sql</code> 仅建立 4 个省级部门节点；首启时其余 27 省因查不到 <code>PROV_xxxxxx</code> 部门而跳过并打印 warn 日志。因此环境中实际生效的测试账号为上表 8 个，账号清单以前端登录页与该 SQL 为准。</p>
+    </blockquote>
+
+    <h2 id="s4">4 系统边界</h2>
+
+    <h3 id="s4-1">4.1 做什么（系统职责内）</h3>
+    <ul>
+      <li>北斗定位数据的接入、解析与持久化：现状支持样例 CSV 批量导入、终端/第三方系统 HTTP 批量推送（<code>POST /api/ingest/traj</code>，服务令牌鉴权）与进程内模拟器；</li>
+      <li>轨迹查询、历史回放、最新位置与在线状态统计；</li>
+      <li>终端报警接入与报警中心：报警列表、808 报警位解析展示、确认/解除闭环；</li>
+      <li>DSM/ADAS <strong>预警信号</strong>接入：终端/处理服务上报"信号码 + 置信度 + 抓拍/片段引用"，平台按可配置规则完成定级、冷却去重并落风险事件；</li>
+      <li>电子围栏（圆形/多边形）的绘制、进出判定与告警；</li>
+      <li>风险事件 → 处置工单 → 坐席干预的流程管理，含 SLA 时限与超时升级；</li>
+      <li>站内消息与 WebSocket 实时推送，短信/语音/App 推送的通道接口预留；</li>
+      <li>驾驶安全分（T+1 全量计算 + 手动重算）、风险趋势与画像；</li>
+      <li>用户/角色/菜单/按钮权限与五级数据范围、操作审计、系统配置与数据字典。</li>
+    </ul>
+
+    <h3 id="s4-2">4.2 不做什么（明确排除）</h3>
+    <ul>
+      <li><strong>不做终端侧视觉识别</strong>：疲劳、分心、前向碰撞等 DSM/ADAS 识别发生在终端边缘侧；平台 <code>risk_engine</code> 只对上报的信号候选做规则分级，当前为占位实现；</li>
+      <li><strong>不做全量视频汇聚与全量视频分析</strong>：平台不接收、不存储全天候视频流，CEP 引擎不消费视频流；</li>
+      <li><strong>不做公网地图与导航消费服务</strong>：地图瓦片依赖高德/Leaflet 展示能力，平台不提供 C 端导航；</li>
+      <li><strong>现状不做 JT/T 808/1078 协议接入</strong>：不做终端 TCP 长连接、注册鉴权、心跳、指令下行与 1078 实时拉流（规划见 <a href="../modules/MOD-DBD-014-终端通信网关（规划）.html">MOD-DBD-014</a>、<a href="../modules/MOD-DBD-016-视频智能（规划）.html">MOD-DBD-016</a>）；</li>
+      <li><strong>不做轨迹深度加工</strong>：现状不做地图匹配、坐标转换、在线压缩、异常点剔除（规划见 <a href="../modules/MOD-DBD-015-轨迹实时处理（规划）.html">MOD-DBD-015</a>）；</li>
+      <li>不替代企业既有 OA/财务/保险核心系统，工单与评分数据仅通过接口/报表对外提供。</li>
+    </ul>
+
+    <h3 id="s4-3">4.3 边缘触发 + 按需调阅规则</h3>
+    <p>视频与图像数据遵循"<strong>边缘触发 + 按需调阅</strong>"（该原则在 <code>processing-service/app/services/risk_engine.py</code> 模块说明中明文确立），具体口径：</p>
+    <div class="branch">
+      <div class="arm">
+        <div class="arm-h">边缘侧（车载终端）</div>
+        <div class="arm-b">
+          <ul>
+            <li>持续运行 DSM/ADAS 识别，<strong>事件触发</strong>才上报，而非持续上报视频；</li>
+            <li>每条预警信号携带事件码、时间、位置、置信度与抓拍截图（蓝图要求 1~3 张）；</li>
+            <li>预警时刻前后约 10 秒的短视频片段仅在平台调阅/事件取证时上传（<code>samples/dashcam_clips.zip</code> 为该形态的演示素材）。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="arm alt">
+        <div class="arm-h">平台侧（mydbd）</div>
+        <div class="arm-b">
+          <ul>
+            <li>只接收信号、抓拍图与经授权调阅的短视频片段；</li>
+            <li>规则引擎（CEP）对结构化信号做分级与去重，<strong>不对视频做全量 AI 分析</strong>；</li>
+            <li>坐席按需调阅片段，调阅动作进入操作审计。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <blockquote class="warn">
+      <p>待核实：业务蓝图对"事件触发自动上传片段"的规划口径为<strong>前后各 15~30 秒</strong>（720P 起步），当前演示素材与界面按约 10 秒片段组织。正式接入真实终端时，片段时长以终端招标技术要求与 JT/T 1078 对接方案为准，本文不将演示口径等同于最终规格。</p>
+    </blockquote>
+
+    <h2 id="s5">5 约束条件</h2>
+    <table>
+      <thead><tr><th>类别</th><th>约束</th><th>性质</th></tr></thead>
+      <tbody>
+        <tr><td>行业协议</td><td>JT/T 808-2019《道路运输车辆卫星定位系统 终端通讯协议及数据格式》：定位/报警/指令方向；ADAS/DSM 扩展遵循地方补充协议（苏标、川标、粤标等）</td><td><span class="badge amber">规划合规方向</span> 现状为 HTTP 接入</td></tr>
+        <tr><td>视频协议</td><td>JT/T 1078-2016《道路运输车辆卫星定位系统 视频通信协议》：实时视频调阅与事件片段上传；设备标准另涉 JT/T 794、GB/T 19056</td><td><span class="badge amber">规划合规方向</span></td></tr>
+        <tr><td>空间数据</td><td>PostgreSQL 16 + PostGIS 3.4，轨迹点使用 geometry 与 GIST 空间索引；围栏判定依赖 PostGIS 空间函数</td><td><span class="badge green">现状已落地</span></td></tr>
+        <tr><td>部署形态</td><td>内网单机部署：数据库与后端端口仅绑定 <code>127.0.0.1</code>，仅门户 8090 对用户网段开放；无公网依赖（地图瓦片除外）</td><td><span class="badge green">现状已落地</span></td></tr>
+        <tr><td>浏览器</td><td>面向 Chromium 内核现代浏览器（含现场内嵌 Electron/工控浏览器）；前端为 Vue3 SPA，不兼容 IE</td><td><span class="badge blue">工程约束</span></td></tr>
+        <tr><td>安全合规</td><td>等保三级、《数据安全法》《个人信息保护法》方向：现状已具备 JWT、MFA(TOTP)、密码哈希、操作审计与登录失败锁定；分级防护、密评等为规划项</td><td><span class="badge amber">现状部分具备</span></td></tr>
+        <tr><td>运行资源</td><td>四容器内存上限合计约 2.2GB（pg 1G / app 768M / py 384M / nginx 64M），宿主机建议 4GB 以上内存</td><td><span class="badge blue">工程约束</span> 详见 <a href="DEP-DBD-001-部署与运维手册.html">DEP-DBD-001</a></td></tr>
+        <tr><td>弱网与补传</td><td>蓝图要求终端本地缓存 ≥72 小时、断网恢复断点续传；平台侧现状按入库即受理设计，补传识别为规划能力</td><td><span class="badge amber">规划</span></td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s6">6 总体业务流程</h2>
+    <p>主链路：终端采集 → 接入入库 → 规则定级 → 范围推送 → 坐席处置 → 闭环回写。</p>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">终端采集</div>
+        <div class="s-desc">1Hz 北斗定位点；DSM/ADAS 边缘识别命中时产生预警信号，带时间/位置/置信度/抓拍</div>
+      </div>
+      <div class="step">
+        <div class="s-title">接入与入库</div>
+        <div class="s-desc">现状：HTTP ingest / 模拟器写入 PostGIS；规划：JT/T 808 网关解码接入</div>
+      </div>
+      <div class="step">
+        <div class="s-title">CEP 规则定级</div>
+        <div class="s-desc">处理服务旁路评估启用规则与围栏，冷却去重后写风险事件；异常不阻断入库</div>
+      </div>
+      <div class="step">
+        <div class="s-title">按范围推送</div>
+        <div class="s-desc">WebSocket 每秒推位置、id 游标增量推风险/报警，按会话用户 deptScope 过滤</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">坐席接单</div>
+        <div class="s-desc">风险事件生成工单，调度器向在线坐席派发建单通知；SLA 时限起算</div>
+      </div>
+      <div class="step">
+        <div class="s-title">干预处置</div>
+        <div class="s-desc">电话提醒、安全教育、停运等动作留痕；必要时按需调阅事件片段取证</div>
+      </div>
+      <div class="step">
+        <div class="s-title">闭环与评分</div>
+        <div class="s-desc">工单闭环回写；每日 01:00 T+1 全量计算驾驶安全分，沉淀趋势与画像</div>
+      </div>
+      <div class="step">
+        <div class="s-title">统计与运营</div>
+        <div class="s-desc">大屏/报表按数据范围聚合，支撑企业安全管理与风险减量运营</div>
+      </div>
+    </div>
+
+    <h2 id="s7">7 术语表</h2>
+    <table>
+      <thead><tr><th style="width:150px">术语</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>风险事件</td><td>预警信号经规则引擎定级后落库的记录（<code>mon.risk_event</code>），含事件码、车牌、时间、位置、风险等级、规则来源；是工单生成的输入</td></tr>
+        <tr><td>预警信号（信号）</td><td>终端侧 DSM/ADAS 识别产出的原始事件候选（信号码 + 置信度），在平台侧是否落事件由启用规则与冷却窗口决定</td></tr>
+        <tr><td>终端报警</td><td>终端按 808 报警标志位上报的报警（<code>traj_warn_info</code>），报警中心对其确认/解除；与风险事件是两类数据</td></tr>
+        <tr><td>处置工单</td><td>风险事件达到建单条件后生成的派工记录（<code>risk_work_order</code>），有待处理/处理中/已闭环等状态与 SLA 时限</td></tr>
+        <tr><td>deptScope（数据范围）</td><td>登录用户可见数据的部门 ID 集合：<code>null</code>=全部，空集合=不可见任何数据，非空集合=范围内可见；随 <code>UserInfo</code> 在鉴权时装载</td></tr>
+        <tr><td>CEP</td><td>Complex Event Processing，复杂事件处理。本项目指处理服务中的风控规则引擎（<code>cep_engine</code>），对定位点/信号做规则匹配、分级与去重</td></tr>
+        <tr><td>电子围栏</td><td>在地图上划定的圆形或多边形区域，车辆进出区域触发判定与告警；基于 PostGIS 空间查询实现</td></tr>
+        <tr><td>在线率</td><td>在最近一个可配置时间窗口（缺省 5 分钟）内有定位点上报的车辆占比；窗口参数实时读 <code>sys_config</code></td></tr>
+        <tr><td>归属锚点</td><td>判定一条业务数据归属组织所用的唯一外键，本项目为 <code>traj_vehicle.dept_id</code>；所有车辆类数据经车牌关联车辆表取锚点过滤</td></tr>
+        <tr><td>fail-closed</td><td>无法确定用户身份或数据归属时按"不可见"处理的默认策略，与 fail-open（放行）相对</td></tr>
+        <tr><td>identityCode（身份码）</td><td>终端/设备身份标识，定位点以身份码关联终端与车辆；HTTP 接入的必填字段</td></tr>
+        <tr><td>DSM</td><td>Driver Status Monitoring，驾驶员状态监控：疲劳、分心、抽烟、接打电话等</td></tr>
+        <tr><td>ADAS</td><td>Advanced Driver Assistance Systems，高级驾驶辅助：前向碰撞 FCW、车道偏离 LDW、车距过近 HMW 等</td></tr>
+        <tr><td>JT/T 808-2019</td><td>道路运输车辆卫星定位系统终端通讯协议及数据格式，行业标准；平台协议网关的规划合规目标</td></tr>
+        <tr><td>JT/T 1078-2016</td><td>道路运输车辆卫星定位系统视频通信协议；实时视频调阅与事件片段上传的规划合规目标</td></tr>
+        <tr><td>PostGIS</td><td>PostgreSQL 的空间数据库扩展，提供 geometry 类型、GIST 空间索引与空间关系函数</td></tr>
+        <tr><td>雪花 ID</td><td>19 位长整型全局 ID。前端 JavaScript number 无法保真，后端 VO 统一用 <code>ToStringSerializer</code> 序列化为字符串</td></tr>
+        <tr><td>冷却窗口</td><td>同一规则同一车辆在设定秒数内重复命中只落一次事件的去重机制，避免信号风暴</td></tr>
+        <tr><td>SLA</td><td>Service Level Agreement，工单处置时限；超时由调度器每分钟扫描并物化超时/升级标记</td></tr>
+        <tr><td>服务令牌</td><td>内部服务调用密钥（<code>X-Service-Token</code> / <code>SERVICE_TOKEN</code>），用于 ingest、视频分析等机器对机器接口</td></tr>
+        <tr><td>T+1 评分</td><td>每日 01:00 对前一天数据全量重算驾驶安全分；与手动重算共用互斥锁</td></tr>
+        <tr><td>MFA / TOTP</td><td>多因子认证 / 基于时间的一次性密码。已开通账号登录需二次验证（中间令牌 5 分钟有效）</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s8">8 数据权限强制规则（总体规则）</h2>
+    <blockquote class="danger">
+      <p>本节为<strong>总体强制规则</strong>，效力覆盖全部模块与后续全部功能开发：查询、分析、报表、导出、实时推送、异步任务均适用。任何功能设计文档必须写明数据范围口径；任何代码评审必须核对数据权限是否落实。例外须在设计文档显式说明并经审批。</p>
+    </blockquote>
+
+    <h3 id="s8-1">8.1 默认强制，无一例外（fail-closed）</h3>
+    <ol>
+      <li>全部业务数据访问默认受登录用户 <code>UserInfo.deptScope</code> 约束：
+        <ul>
+          <li><code>null</code> = 全部数据（超级管理员，或角色数据范围=全部），不加部门条件；</li>
+          <li><strong>空集合 = 不可见任何数据</strong>（返回空列表、空页或计数 0）；</li>
+          <li>非空集合 = 按部门/车牌集合过滤。</li>
+        </ul>
+      </li>
+      <li>只有超级管理员与数据范围=全部的角色不受限；不存在"某个接口特殊、先不过滤"的默认许可。</li>
+      <li><strong>fail-closed</strong>：无法确定用户（如 WebSocket 握手未写入 uid）或归属缺失时，按"不可见"处理，而非放行。</li>
+      <li>功能权限（<code>@RequiresPerm</code>，能不能点这个按钮）与数据范围（<code>deptScope</code>，能看到谁的数据）是两道独立闸门，任一不通过即拒绝；功能权限通过不代表数据可见。</li>
+    </ol>
+
+    <h3 id="s8-2">8.2 归属锚点与过滤口径</h3>
+    <ol>
+      <li><strong>车辆类数据唯一锚点</strong>：轨迹、位置、里程、行驶/停车/怠速、油耗、报警、风险、统计、服务费等一切车辆类数据，以 <code>traj_vehicle.dept_id</code> 为唯一归属锚点；明细数据经车牌（或车辆绑定关系）以 <code>JOIN / EXISTS</code> 关联车辆表后按锚点过滤。</li>
+      <li><strong>司机数据经绑定映射</strong>：司机表不设 <code>dept_id</code>，统一经车-司机绑定关系（<code>traj_vehicle_driver</code>）映射车辆归属，不新增司机归属字段。</li>
+      <li><strong>组织聚合先裁剪后聚合</strong>：企业/组织维度的统计必须先按范围裁剪组织行、再在裁剪后的集合上聚合；禁止"全量聚合后过滤"，防止总指标越权。</li>
+      <li><strong>越权表现统一为"不存在"</strong>：越权访问详情一律表现为 404 或空结果，不提示"无权查看"，不泄露资源是否存在。</li>
+      <li><strong>禁止按车牌省份过滤</strong>：可见性一律以车辆归属组织为准，账号不与车牌的省份属性绑定。一个部门名下可以挂任意外省车牌的车辆——只要该车辆 <code>dept_id</code> 在用户数据范围内，其全部数据（轨迹、报警、风险、统计、推送等）即可见；反之，同省车牌但归属其他组织的车辆不可见。<code>province_code</code>、车牌首字仅作档案/展示信息，不得作为权限条件。<blockquote class="warn"><p>实现注意：种子数据中 <code>province_code/city_code</code> 列实际写入的是中文省/市名（如"山东省""济南市"）而非行政区划码，更不能将其用于权限判断。</p></blockquote></li>
+      <li><strong>过户口径</strong>：车辆过户（<code>dept_id</code> 变更）后，其历史数据随新归属可见，即"现状归属"口径。如需"历史按发生时归属隔离"，须另行设计时点归属表，并在设计文档显式说明后再实施。</li>
+    </ol>
+
+    <h3 id="s8-3">8.3 实时推送与异步任务</h3>
+    <ol>
+      <li><strong>实时通道按会话过滤</strong>：WebSocket/SSE 必须按会话所属用户的范围过滤后推送。握手时确定用户身份并写入会话属性；新连接首帧位置快照同样受限。禁止对所有会话无差别广播业务数据。</li>
+      <li><strong>游标只决定增量，不决定可见性</strong>：风险事件与终端报警以 id 游标增量扫描（不用时间窗口，避免漏推/重推），游标是全局的，但每条消息仍逐会话按范围过滤后才发送。</li>
+      <li><strong>异步任务固化范围快照</strong>：异步导出/异步计算在任务创建时固化执行人及其数据范围；任务与结果文件按人隔离；事后范围变更不回溯历史任务。现状定时任务（工单超时扫描、T+1 评分）为系统级维护任务，不面向个人数据交付；未来新增面向人的异步任务时适用本条。</li>
+      <li><strong>服务令牌不扩大读权限</strong>：ingest 等服务令牌调用只允许写入其被授权的数据，不借服务令牌绕过读取范围；处理服务直接读库属容器网络内的系统进程行为，不等同于终端拥有读权限。</li>
+    </ol>
+
+    <h3 id="s8-4">8.4 一致性与准入</h3>
+    <ol>
+      <li>同一数据在"屏幕显示、HTTP 接口、导出文件、实时推送"中的范围必须一致。</li>
+      <li>新功能准入清单：
+        <ul>
+          <li><strong>设计</strong>：列出功能涉及的数据实体、归属锚点、过滤口径与越权表现；</li>
+          <li><strong>开发</strong>：接入本规则，不新增绕过路径（不新写无范围条件的业务查询）；</li>
+          <li><strong>评审/测试</strong>：以受限角色（四省测试账号）实际验证"本范围可见、范围外不可见"，并验证空集合账号看到空数据而非全量。</li>
+        </ul>
+      </li>
+      <li>字段级脱敏、跨部门写校验等更细粒度要求随功能迭代另行补充，但其设计不得放宽本规则。</li>
+    </ol>
+
+    <h3 id="s8-5">8.5 规则在当前代码中的实现映射</h3>
+    <table>
+      <thead><tr><th>规则要点</th><th>现状实现位置</th></tr></thead>
+      <tbody>
+        <tr><td>登录主体与范围装载</td><td><code>JwtAuthFilter</code> 解析 JWT → <code>DbAuthRealm.loadByUserId</code> → <code>UserInfo(perms, deptScope)</code> 写入 <code>UserContext</code>（ThreadLocal）</td></tr>
+        <tr><td>五档范围与多角色并集</td><td><code>DataScopeService.compute(user, roles)</code>，组织树实时展开；任一角色 data_scope=1 返回 null</td></tr>
+        <tr><td>功能权限闸门</td><td><code>@RequiresPerm</code> + <code>PermAspect</code>，超管直通；支持 AND/OR 逻辑</td></tr>
+        <tr><td>查询范围注入</td><td>各 Service 取当前用户可见车牌/部门集合后传入 Mapper；空集合直接短路返回空页（如 <code>AlarmService.page</code>）</td></tr>
+        <tr><td>推送范围过滤</td><td><code>WsScopeResolver.allowedPlates</code>（null 全量 / 空集 fail-closed）+ <code>SessionRegistry.broadcastScoped</code> 逐会话过滤</td></tr>
+        <tr><td>权限变更收敛</td><td>HTTP 与 WS 共用 <code>PermissionCache</code>（TTL 120 秒），权限调整最迟 120 秒两侧同时生效</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="s9">9 文档体系导读</h2>
+    <p>正式文档库共收录 <strong>30 份文档</strong>，入口为<a href="../index.html">文档中心首页</a>（支持按编号、名称、功能编号检索）。历史 <code>docs/</code> 目录自 v1.0.0 起作为归档快照保留，不再更新。结构如下：</p>
+    <table>
+      <thead><tr><th>分区</th><th>数量</th><th>文档与阅读建议</th></tr></thead>
+      <tbody>
+        <tr><td><strong>总体文档</strong><br>guide/</td><td>5</td><td>新成员按序阅读前五份：<a href="SYS-DBD-001-项目总体设计.html">SYS-DBD-001</a>（本文，是什么/为谁/不做什么）→ <a href="ARC-DBD-001-系统架构设计.html">ARC-DBD-001</a>（怎么搭起来）→ <a href="DDL-DBD-001-数据库设计.html">DDL-DBD-001</a>（数据怎么存）→ <a href="DEP-DBD-001-部署与运维手册.html">DEP-DBD-001</a>（怎么跑起来/怎么发版）→ <a href="FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001</a>（71 个功能点状态与迭代规划）</td></tr>
+        <tr><td><strong>接口手册</strong><br>api/</td><td>1</td><td><a href="../api/API-DBD-001-平台接口手册.html">API-DBD-001 平台接口手册</a>：Java 全部 HTTP 端点、Python 处理服务接口与 WebSocket 事件，联调与二次开发的契约依据</td></tr>
+        <tr><td><strong>功能模块</strong><br>modules/</td><td>18</td><td>MOD-DBD-001~013 为已上线/部分具备功能（平台基础、IAM、主数据、轨迹、监控、报警、围栏、规则引擎、工单、评分画像、通知、系统配置、审计）；MOD-DBD-014~016、018 为规划（808/1078 网关、轨迹实时处理、视频智能、治理与运维）；MOD-DBD-017 分析报表为部分具备。按业务域选读</td></tr>
+        <tr><td><strong>参考资料</strong><br>reference/</td><td>6</td><td><a href="../reference/USER-DBD-001-系统功能使用手册.html">USER-DBD-001 使用手册</a>（业务用户）、<a href="../reference/BLUEPRINT-001-导航系统数据采集与应用平台设计.html">BLUEPRINT-001 业务蓝图</a>、交信北斗对标、vps 网关分析/对比/改造三份专题</td></tr>
+      </tbody>
+    </table>
+    <p>典型阅读路径：</p>
+    <ul>
+      <li><strong>新加入的后端开发</strong>：本文 → ARC → DDL → API → 所负责域的 MOD 文档；</li>
+      <li><strong>前端开发</strong>：本文第 3~4 章 → API 手册 → MOD-DBD-001（前端基座）→ 具体页面所属域文档；</li>
+      <li><strong>实施/运维</strong>：DEP 全文 → 本文第 5 章约束 → USER 手册；</li>
+      <li><strong>产品/业务</strong>：本文第 1~4、6、7 章 → FUNC 功能清单 → USER 手册 → 蓝图。</li>
+    </ul>
+
+    <h2 id="rev">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>正式文档库初版。吸收并扩写 <code>docs/design/sys/SYS-DBD-001-系统总体架构.md</code> v0.2.0 的 §8 数据权限强制规则；角色、账号、技术指标、约束、边界均按 2026-10-05 源代码与初始化 SQL 重新核对</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>SYS-DBD-001 项目总体设计 · v1.0.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

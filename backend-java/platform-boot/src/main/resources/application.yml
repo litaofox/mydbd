@@ -28,6 +28,9 @@ mydbd:
   jwt:
     secret: ${JWT_HMAC_SECRET:change-me-dev-secret}
   service-token: ${SERVICE_TOKEN:change-me-service-token}
+  # vps 网关 processing-service 内部接口（附件中转 / 接入状态代理）
+  processing:
+    base-url: ${PROCESSING_BASE_URL:http://processing-app:8000}
   # 高德地图 Web 服务（逆地理 / 地点检索）；空则对应接口返回 503
   amap:
     key: ${AMAP_KEY:}

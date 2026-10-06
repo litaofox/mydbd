@@ -3,11 +3,15 @@
 import threading
 import traceback
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.security import require_access
 from app.services import dataset_gen
 
 router = APIRouter(prefix="/api/ingest/dataset", tags=["dataset"])
+
+# 写操作三重校验：登录态 + 演示/测试模式（正式模式禁用）+ 参数编辑权限
+_guard = require_access(("simulator", "mock"), "正式模式禁止加载/清空测试数据")
 
 
 def _run(mode: str):
@@ -20,7 +24,7 @@ def _run(mode: str):
 
 
 @router.post("/load")
-def load(payload: dict | None = None):
+def load(payload: dict | None = None, _uid: int = Depends(_guard)):
     """后台异步生成并加载标准测试数据集。mode=standard|dense"""
     mode = (payload or {}).get("mode", "standard")
     if mode not in dataset_gen.MODES:
@@ -34,7 +38,7 @@ def load(payload: dict | None = None):
 
 
 @router.post("/clear")
-def clear():
+def clear(_uid: int = Depends(_guard)):
     """清空全部业务数据（保留 IAM/菜单/字典/配置/审计），用于重新加载"""
     st = dataset_gen.job_status()
     if st["running"]:
@@ -42,6 +46,15 @@ def clear():
     return dataset_gen.clear_business_data()
 
 
+@router.post("/clear-runtime")
+def clear_runtime(_uid: int = Depends(_guard)):
+    """清除模拟运行数据（轨迹/报警/事件/工单/评分/通知等），保留基础数据"""
+    st = dataset_gen.job_status()
+    if st["running"]:
+        raise HTTPException(status_code=409, detail="数据集任务运行中，禁止清除")
+    return dataset_gen.clear_runtime_data()
+
+
 @router.get("/status")
-def status():
+def status(_uid: int = Depends(require_access(perm=None))):
     return dataset_gen.job_status()

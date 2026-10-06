@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-013 操作审计日志 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-013 操作审计日志 ｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#part-product">产品篇</a>
+        <ul>
+          <li><a href="#p-purpose">1. 模块用途</a></li>
+          <li><a href="#p-term">2. 术语与概念</a></li>
+          <li><a href="#p-scenes">3. 典型场景</a></li>
+          <li><a href="#p-flow">4. 操作流程</a></li>
+          <li><a href="#p-value">5. 业务价值</a></li>
+          <li><a href="#p-rel">6. 与其他模块关系</a></li>
+          <li><a href="#p-shot">7. 页面截图</a></li>
+        </ul>
+      </li>
+      <li><a href="#part-tech">技术篇</a>
+        <ul>
+          <li><a href="#t-arch">8. 总体机制</a></li>
+          <li><a href="#t-components">9. 组件清单</a></li>
+          <li><a href="#t-props">10. 配置项</a></li>
+          <li><a href="#t-cut">11. 审计切点</a></li>
+          <li><a href="#t-collect">12. 采集与脱敏</a></li>
+          <li><a href="#t-async">13. 异步落库</a></li>
+          <li><a href="#t-dataflow">14. 数据流程图</a></li>
+          <li><a href="#t-datamodel">15. 数据模型</a></li>
+          <li><a href="#t-api">16. 接口清单</a></li>
+          <li><a href="#t-query">17. 检索与统计</a></li>
+          <li><a href="#t-frontend">18. 前端实现要点</a></li>
+          <li><a href="#t-jobs">19. 定时任务</a></li>
+          <li><a href="#t-tamper">20. 防篡改设计现状</a></li>
+          <li><a href="#t-edge">21. 边界行为与常见问题</a></li>
+          <li><a href="#t-why">22. 选型依据</a></li>
+          <li><a href="#t-risk">23. 风险与后续增强</a></li>
+          <li><a href="#t-accept">24. 上线验收清单</a></li>
+        </ul>
+      </li>
+      <li><a href="#todo">待核实项</a></li>
+      <li><a href="#revisions">修订记录</a></li>
+    </ul>
+  </div></aside>
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-013 操作审计日志</h1>
+    <div class="cover-meta">
+      编号：MOD-DBD-013<span class="sep">｜</span>版本：v1.0.0<span class="sep">｜</span>日期：2026-10-05<span class="sep">｜</span>
+      状态：<span class="badge green">已上线</span><span class="sep">｜</span>覆盖功能项：F34<span class="sep">｜</span>
+      代码锚点：module-audit、platform-common/audit、05-audit-tables.sql、AuditLog.vue、api/audit.ts
+    </div>
+
+    <span class="part-tag product" id="part-product">产品篇</span>
+
+    <h2 id="p-purpose">1. 模块用途</h2>
+    <p>操作审计日志模块对平台用户的关键操作进行<strong>自动、完整、不可由业务侧修改</strong>的留痕，回答四个问题：<strong>谁</strong>（userName / clientIp / userAgent）、<strong>在什么时间</strong>（createTime）、<strong>对什么对象做了什么</strong>（module / action / objectType / objectId）、<strong>结果如何</strong>（成功失败 / 业务码 / 错误信息 / 耗时）。</p>
+    <p>模块覆盖 F34「操作审计日志」的上线范围：登录（含失败登录）、退出登录、全部增删改写操作、业务处置动作的留痕，以及面向安全管理员的多维检索、区间统计与详情查看。检索页面本身只读，且默认不审计自身查询，避免审计噪声自循环。</p>
+    <div class="kvlist">
+      <div class="kv"><div class="k">使用角色</div><div class="vv">超级管理员、安全管理员（权限码 <code>audit:view</code>，类级注解强制）</div></div>
+      <div class="kv"><div class="k">菜单入口</div><div class="vv">系统管理 → 操作审计（前端 <code>views/system/AuditLog.vue</code>）</div></div>
+      <div class="kv"><div class="k">数据保留</div><div class="vv">只追加表 <code>traj.sys_audit_log</code>，应用层不提供修改、删除接口；保留策略与归档周期见 <a href="#t-risk">第 23 节</a></div></div>
+      <div class="kv"><div class="k">性能取向</div><div class="vv">业务请求只做"包装 + 发事件"，落库在独立单线程异步执行，审计故障不影响业务响应</div></div>
+      <div class="kv"><div class="k">基准说明</div><div class="vv">本文全部"已实现"表述以 2026-10-05 仓库源代码为事实基准；无代码证据的能力不做上线声明</div></div>
+    </div>
+
+    <h2 id="p-term">2. 术语与概念</h2>
+    <table>
+      <tr><th style="width:160px">术语</th><th>本文中的含义</th></tr>
+      <tr><td>审计事件（AuditEvent）</td><td>一次 HTTP 请求处理完毕后，由过滤器组装的 18 字段不可变记录（Java record），是采集端与落库端之间唯一的数据载体。</td></tr>
+      <tr><td>审计动作（action）</td><td>操作语义的大写英文编码，如 LOGIN、CREATE、HANDLE；同时落库中文动作名快照 action_name，避免字典变更影响历史可读性。</td></tr>
+      <tr><td>模块（module）</td><td>操作所属业务域编码，如 IAM、RISK、MDM、MONITOR；显式取注解值，兜底取 URI 第三段大写。</td></tr>
+      <tr><td>对象类型 / 对象 ID</td><td>被操作资源的类型（VEHICLE、USER、RISK_EVENT 等）与其主键字符串；对象 ID 有"SpEL → 响应体 → 路径末段"三级解析。</td></tr>
+      <tr><td>内容指纹（content_hash）</td><td>对关键字段规范化串计算的 SHA-256 十六进制摘要，用于逐行内容核对；不是哈希链。</td></tr>
+      <tr><td>追踪 ID（trace_id）</td><td>过滤器为每个请求生成的 32 位无横线 UUID，用于关联同一次请求的相关记录。</td></tr>
+      <tr><td>只追加（append-only）</td><td>应用层只有 INSERT 语义、无任何修改/删除入口的工程约束；当前不包含数据库账号级 REVOKE。</td></tr>
+      <tr><td>语义切面</td><td>AuditAspect 对 @AuditLog 做环绕，仅负责把 SpEL 解析出的对象 ID 经 request 属性转交给过滤器。</td></tr>
+      <tr><td>背压（CallerRunsPolicy）</td><td>审计队列满时由当前业务线程亲自执行落库任务，以拖慢请求为代价换取"审计不丢"。</td></tr>
+    </table>
+
+    <h2 id="p-scenes">3. 典型场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">安全管理员 · 事后追责</div>
+        <div class="sc-name">排查"谁改了这条风控规则"</div>
+        <div class="sc-desc">按对象 ID 或 URI 关键字检索，可定位到具体操作人、来源 IP、请求体（已脱敏）与操作结果，时间精确到毫秒。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全管理员 · 登录安全</div>
+        <div class="sc-name">暴力破解与异常登录发现</div>
+        <div class="sc-desc">概览卡直接展示区间登录失败次数；即使登录请求未通过鉴权过滤器，也会以请求体中的用户名留下失败记录。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">运维 / 审计岗 · 合规检查</div>
+        <div class="sc-name">导出周期内操作清单</div>
+        <div class="sc-desc">按时间区间（默认近 7 天，单次最大 90 天）、模块、动作、结果组合筛选，逐页核查处置、授权、配置变更是否合规。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">平台运营 · 操作态势</div>
+        <div class="sc-name">操作量与成功率概览</div>
+        <div class="sc-desc">区间操作总量、成功率、今日操作数、动作分布 Top5、高频操作人 Top10，辅助发现异常高频行为。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">业务坐席 · 处置留痕</div>
+        <div class="sc-name">报警确认、工单流转可回溯</div>
+        <div class="sc-desc">报警确认/解除、工单认领/分派/闭环、干预记录等 HANDLE 动作均带中文动作名与对象 ID 自动入库。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">系统管理员 · 配置变更审计</div>
+        <div class="sc-name">字典、参数、权限变更追踪</div>
+        <div class="sc-desc">用户/角色/字典/系统配置/电子围栏/风控规则的新增、修改、删除逐条可查，失败操作同样留痕。</div>
+      </div>
+    </div>
+
+    <h2 id="p-flow">4. 操作流程</h2>
+    <h3>4.1 一次被审计操作的端到端流程</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">① 发起请求</div>
+        <div class="s-desc">用户在前端执行登录、保存、删除、确认报警、分派工单等操作，HTTP 请求经 nginx 进入 platform-app。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② 审计过滤器包装</div>
+        <div class="s-desc">AuditFilter（order=0）用 ContentCaching 包装器包住请求/响应，生成 traceId，执行业务链。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ 切面补语义</div>
+        <div class="s-desc">命中 @AuditLog 注解时，AuditAspect 用 SpEL 从方法入参提取对象 ID，暂存 request 属性。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">④ 组装事件</div>
+        <div class="s-desc">请求返回后解析状态码与业务 code、脱敏请求体、解析操作人与对象，构造 AuditEvent 并发布。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑤ 异步落库</div>
+        <div class="s-desc">AuditLogListener 在 auditExecutor 单线程池中调用 Service，计算 SHA-256 行指纹后插入审计表。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">⑥ 检索核查</div>
+        <div class="s-desc">安全管理员在审计页组合筛选、查看统计与详情抽屉，含追踪 ID、脱敏报文与内容指纹。</div>
+      </div>
+    </div>
+
+    <h3>4.2 审计员检索操作流程</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="s-title">进入菜单</div>
+        <div class="s-desc">系统管理 → 操作审计；页面挂载即带"近 7 天"默认区间加载明细与概览。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">设置筛选</div>
+        <div class="s-desc">日期范围、操作人、模块、动作、结果、关键字（URI / 对象 ID / 错误信息）。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">浏览列表</div>
+        <div class="s-desc">按时间倒序分页；失败行红色底纹；列表只给请求体前 200 字预览。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">查看详情</div>
+        <div class="s-desc">抽屉中分基本信息、请求信息、结果信息、终端信息四组展示全字段。</div>
+      </div>
+    </div>
+
+    <h3>4.3 登录失败的留痕分支</h3>
+    <div class="branch">
+      <div class="arm">
+        <strong>登录成功：</strong>HTTP 200 且 code=0 → action=LOGIN、status=1，userName 取请求体 username，objectType=USER。
+      </div>
+      <div class="arm">
+        <strong>登录失败：</strong>密码错误 / 账号停用 / 验证码失败等 → action=LOGIN_FAIL、status=0、errorMsg 落业务消息。该请求在 JwtAuthFilter 之前短路也没关系——AuditFilter 包在最外层，登录路径强制记录不依赖鉴权上下文。
+      </div>
+    </div>
+
+    <h2 id="p-value">5. 业务价值</h2>
+    <ul>
+      <li><strong>无侵入留痕</strong>：业务 Controller 只需在需要细化语义的方法上加 <code>@AuditLog</code>，所有写操作默认已被过滤器覆盖，新增模块零额外埋点即自动纳入审计。</li>
+      <li><strong>失败也可查</strong>：鉴权短路、业务异常、参数校验失败的请求同样记录，登录失败可追溯尝试账号与来源 IP。</li>
+      <li><strong>敏感信息不泄露</strong>：密码、令牌、密钥、身份证、动态口令类字段在落库前统一打码；手机号前 3 后 4 脱敏，审计表自身不成为泄密源。</li>
+      <li><strong>业务零影响</strong>：异步单线程落库 + 调用方运行兜底策略，审计组件任何异常只输出错误日志，不改变业务响应。</li>
+      <li><strong>可核对指纹</strong>：每行携带规范化内容的 SHA-256 指纹，为后续哈希链、外部存证等增强预留核对锚点。</li>
+      <li><strong>查询不干扰</strong>：审计模块自身路径默认排除，安全管理员高频翻页检索不会制造审计噪声、不污染统计。</li>
+    </ul>
+
+    <h2 id="p-rel">6. 与其他模块关系</h2>
+    <table>
+      <tr><th style="width:200px">关联模块</th><th>关系</th></tr>
+      <tr><td>MOD-DBD-002 IAM（用户/角色/权限）</td><td>审计查询受权限 <code>audit:view</code> 控制；用户/角色管理是注解挂载最多的业务域（共 13 处）；操作人身份来自 JWT 解析的 UserInfo。</td></tr>
+      <tr><td>MOD-DBD-001 主数据（MDM）</td><td>车辆/终端/驾驶员等写接口未挂注解，依赖过滤器"写操作全记录 + URI 兜底"自动纳入，模块落库值为 MDM。</td></tr>
+      <tr><td>MOD-DBD-009 风控（RISK）</td><td>规则、围栏、工单、干预的全生命周期动作留痕，是审计密度最高的业务域之一。</td></tr>
+      <tr><td>MOD-DBD-010 实时监控（MONITOR）</td><td>报警确认/解除、风险事件处置留痕；未来视频调阅（VIDEO_VIEW）在本模块预留动作位。</td></tr>
+      <tr><td>MOD-DBD-017 分析与报表</td><td>驾驶评分手动重算已留痕（@AuditLog）；未来报表导出、异步下载应挂 EXPORT 动作。</td></tr>
+      <tr><td>MOD-DBD-018 治理开放与运维（F37）</td><td>哈希链、SM3 国密、留存销毁策略、日志 ≥6 个月合规、脱敏增强均在 F37 规划，本文第 20、23 节给出当前边界。</td></tr>
+    </table>
+
+    <h2 id="p-shot">7. 页面截图</h2>
+    <div class="shot">
+      <div class="sh-icon">📷</div>
+      <div class="sh-t">截图占位 1：审计日志检索页（筛选区 + 概览卡 + 明细表格）</div>
+      <div class="sh-p">对应 frontend/src/views/system/AuditLog.vue：日期范围、操作人、模块、动作、结果、关键字筛选；五张统计卡（区间总量/成功率/登录失败/今日操作/动作分布 Top5）；失败行红色高亮。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">📷</div>
+      <div class="sh-t">截图占位 2：审计详情抽屉</div>
+      <div class="sh-p">基本信息、请求信息（含已脱敏 JSON 请求体）、结果信息（业务码/错误消息/耗时）、终端信息（来源 IP、UA、SHA-256 内容指纹）。</div>
+    </div>
+
+    <span class="part-tag" id="part-tech">技术篇</span>
+
+    <h2 id="t-arch">8. 总体机制</h2>
+    <p>审计能力分两部分部署：<strong>采集端</strong>位于公共模块 <code>platform-common</code>（对所有业务模块生效，不依赖 module-audit），<strong>落库与查询端</strong>位于 <code>module-audit</code>。两端通过 Spring 的 <code>ApplicationEvent</code> 解耦——common 只发布不可变事件对象，不引用任何业务/审计模块的类。</p>
+    <div class="arch-stack">
+      <div class="arch-layer">
+        <div class="al-label">采集层<br>common</div>
+        <div class="al-body">
+          <span class="node"><b>AuditRegistrar</b> 注册过滤器 order=0</span>
+          <span class="node"><b>AuditFilter</b> 包装请求/响应、判定切点、脱敏、发事件</span>
+          <span class="node"><b>AuditAspect</b> SpEL 提取对象 ID</span>
+          <span class="node"><b>@AuditLog</b> 方法注解</span>
+          <span class="node"><b>AuditEvent</b> 不可变事件载体</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">解耦机制</div>
+        <div class="al-body">
+          <span class="node"><b>ApplicationEventPublisher</b> 进程内事件（非 MQ）</span>
+          <span class="node"><b>@EventListener + @Async("auditExecutor")</b></span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">落库层<br>module-audit</div>
+        <div class="al-body">
+          <span class="node"><b>AuditLogListener</b> 异步消费</span>
+          <span class="node"><b>AuditAsyncConfig</b> 单线程池/队列 2000/CALLER_RUNS</span>
+          <span class="node"><b>AuditLogService</b> 组装实体、SHA-256 指纹、检索、统计</span>
+          <span class="node"><b>SysAuditLogMapper</b> 只追加 Mapper</span>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="al-label">存储/展示</div>
+        <div class="al-body">
+          <span class="node"><b>PostgreSQL</b> traj.sys_audit_log（4 索引）</span>
+          <span class="node"><b>AuditLogController</b> /api/audit/**（audit:view）</span>
+          <span class="node"><b>AuditLog.vue</b> 检索/统计/详情</span>
+        </div>
+      </div>
+    </div>
+    <p>关键注册事实（代码确证）：</p>
+    <ul>
+      <li><code>AuditRegistrar</code> 与 <code>AuditAspect</code> 均带 <code>@ConditionalOnProperty(prefix="audit", name="enabled", havingValue="true", matchIfMissing=true)</code>：配置 <code>audit.enabled=false</code> 可整体关闭，默认开启。</li>
+      <li>过滤器 URL 模式 <code>/api/*</code>，order=<strong>0</strong>，位于 <code>JwtAuthFilter</code>（order=1）外层。因此即使鉴权过滤器短路（无 Token / Token 失效），审计过滤器仍能在链路返回后记录匿名/失败访问。</li>
+      <li>排除路径来自 <code>AuditProperties.excludePaths</code>，默认仅 <code>/api/audit/**</code>（Ant 模式），审计查询自身不再产生审计记录。</li>
+    </ul>
+
+    <h2 id="t-components">9. 组件清单</h2>
+    <h3>9.1 采集端（platform-common/audit）</h3>
+    <table>
+      <tr><th>组件</th><th>类型</th><th>职责（代码确证）</th></tr>
+      <tr><td><code>AuditLog</code></td><td>方法注解</td><td>声明 module / action / actionName / objectType / objectId（SpEL）；用于让 GET 留痕、细化语义、从入参取对象 ID。</td></tr>
+      <tr><td><code>AuditFilter</code></td><td>OncePerRequestFilter</td><td>核心采集器：切点判定、请求/响应缓存包装、语义解析、脱敏、截断、事件发布。</td></tr>
+      <tr><td><code>AuditAspect</code></td><td>@Aspect 环绕切面</td><td>切点 <code>@annotation(auditLog)</code>；解析 objectId SpEL（如 <code>#id</code>、<code>#req.vehicleId</code>），经 request attribute 传给过滤器。</td></tr>
+      <tr><td><code>AuditSemantic</code></td><td>record</td><td>切面→过滤器的补充语义载体，目前仅 objectId 一个字段。</td></tr>
+      <tr><td><code>AuditEvent</code></td><td>record（18 字段）</td><td>采集端到落库端的不可变事件对象。</td></tr>
+      <tr><td><code>AuditAction</code></td><td>常量类</td><td>动作字典：LOGIN、LOGIN_FAIL、CREATE、UPDATE、DELETE、EXPORT、VIDEO_VIEW、HANDLE、QUERY（私有构造，不可实例化）。</td></tr>
+      <tr><td><code>AuditProperties</code></td><td>配置属性</td><td><code>audit.enabled</code>（默认 true）、<code>audit.exclude-paths</code>（默认 /api/audit/**）。</td></tr>
+      <tr><td><code>AuditRegistrar</code></td><td>@Configuration</td><td>启用 AuditProperties；注册 AuditFilter（名称 auditFilter，order=0，/api/*）。</td></tr>
+    </table>
+    <h3>9.2 落库与查询端（module-audit）</h3>
+    <table>
+      <tr><th>组件</th><th>类型</th><th>职责</th></tr>
+      <tr><td><code>AuditLogController</code></td><td>@RestController</td><td>三个只读 GET 接口；类级 <code>@RequiresPerm("audit:view")</code>；无写入/修改/删除端点。</td></tr>
+      <tr><td><code>AuditLogService</code></td><td>@Service</td><td>saveEvent（含指纹计算）、page 分页检索、detail、stats 区间统计、时间范围规范化。</td></tr>
+      <tr><td><code>AuditLogListener</code></td><td>@Component</td><td><code>@Async("auditExecutor") @EventListener</code> 消费事件；落库异常仅 log.error，不重试、不影响业务。</td></tr>
+      <tr><td><code>AuditAsyncConfig</code></td><td>@Configuration</td><td><code>@EnableAsync</code>；auditExecutor：核心/最大线程均 1、队列 2000、CallerRunsPolicy、关闭等待 10 秒。</td></tr>
+      <tr><td><code>SysAuditLog</code></td><td>实体</td><td>映射 traj.sys_audit_log；不继承 BaseEntity（无更新人/更新时间/软删字段）；雪花 ID 序列化为字符串。</td></tr>
+      <tr><td><code>SysAuditLogMapper</code></td><td>Mapper</td><td>继承 BaseMapper；自定义 actionDist、topUsers 两个统计 SQL；本模块代码未调用任何更新/删除方法。</td></tr>
+      <tr><td><code>AuditLogQuery</code></td><td>record DTO</td><td>startTime/endTime/userName/module/action/status/keyword/page/size。</td></tr>
+      <tr><td><code>AuditLogVO</code></td><td>列表 VO</td><td>不含请求体全文，bodyPreview 最多 200 字符；ID 序列化为字符串。</td></tr>
+      <tr><td><code>AuditStatsVO</code> / <code>NameCount</code></td><td>统计 VO</td><td>总量/成功数/成功率/登录失败数/今日数/动作分布/高频操作人 Top10。</td></tr>
+    </table>
+    <h3>9.3 前端</h3>
+    <table>
+      <tr><th>文件</th><th>职责</th></tr>
+      <tr><td><code>frontend/src/views/system/AuditLog.vue</code></td><td>筛选区、5 张概览卡 + 动作分布、明细分页表格（失败行高亮）、详情抽屉四组信息。</td></tr>
+      <tr><td><code>frontend/src/api/audit.ts</code></td><td>pageAuditLogs / getAuditLog / getAuditStats 三个接口与 TS 类型；id 按 string 处理避免雪花数精度丢失。</td></tr>
+      <tr><td><code>frontend/src/constants/dict.ts</code></td><td>AUDIT_MODULES（9 项）、AUDIT_ACTIONS（含 LOGOUT 共 10 项）、AUDIT_STATUS 字典与 labelOf 文案映射。</td></tr>
+    </table>
+
+    <h2 id="t-props">10. 配置项</h2>
+    <p>审计相关配置均为可选，缺省即开箱可用：</p>
+    <table>
+      <tr><th>配置键</th><th>默认值</th><th>作用</th><th>生效组件</th></tr>
+      <tr><td><code>audit.enabled</code></td><td>true（matchIfMissing）</td><td>审计总开关；false 时不注册过滤器、切面不生效</td><td>AuditRegistrar、AuditAspect</td></tr>
+      <tr><td><code>audit.exclude-paths</code></td><td>["/api/audit/**"]</td><td>不审计的 Ant 路径模式列表；未来可把健康检查、大文件接口加入</td><td>AuditProperties → AuditFilter</td></tr>
+    </table>
+    <p>线程池参数当前在 <code>AuditAsyncConfig</code> 中以代码常量给出（核心 1、最大 1、队列 2000、等待 10 秒），<strong>未</strong>外置为 application.yml 配置项；调整需改代码重新发布。</p>
+
+    <h2 id="t-cut">11. 审计切点：哪些操作会被留痕</h2>
+    <p>是否记录由 <code>AuditFilter.shouldNotFilter()</code> 与 <code>record()</code> 两级决定，全部以代码为准：</p>
+    <table>
+      <tr><th>请求类型</th><th>是否记录</th><th>判定依据</th></tr>
+      <tr><td>HTTP 方法非 GET/POST/PUT/DELETE</td><td>不记录</td><td>RECORD_METHODS 白名单（HEAD/OPTIONS/PATCH 等直接跳过）</td></tr>
+      <tr><td>命中 excludePaths（默认 /api/audit/**）</td><td>不记录</td><td>AntPathMatcher 匹配</td></tr>
+      <tr><td><code>POST /api/auth/login</code></td><td><strong>始终记录</strong></td><td>登录特判；成功记 LOGIN，失败记 LOGIN_FAIL；用户名从请求体取（失败也记）</td></tr>
+      <tr><td>GET 请求</td><td>仅当方法标注 <code>@AuditLog</code> 时记录</td><td>设计用途：敏感查询 / 导出 / 视频调阅（EXPORT/QUERY/VIDEO_VIEW）</td></tr>
+      <tr><td>POST / PUT / DELETE</td><td><strong>全部记录</strong></td><td>含成功与失败；无语义注解时走 HTTP 方法与 URI 兜底映射</td></tr>
+    </table>
+
+    <h3>11.1 @AuditLog 注解的现有挂载（2026-10-05 代码实证）</h3>
+    <p>截至基准日，代码库中 <code>@AuditLog</code> 共 40 处，<strong>全部挂在写操作方法上</strong>；GET 类的 EXPORT / QUERY / VIDEO_VIEW 切点已在动作字典与前端下拉中预留，但尚无 GET 方法实际使用（导出、视频调阅功能建成后挂载）。分模块明细：</p>
+    <table>
+      <tr><th>module</th><th>Controller</th><th>动作名（actionName）</th><th>objectId 来源</th></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>新建用户（CREATE）</td><td>响应体 id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>编辑用户（UPDATE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>启用用户 / 停用用户（UPDATE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>重置密码（UPDATE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>分配角色（UPDATE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>解锁用户（HANDLE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>关闭动态口令（UPDATE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>删除用户（DELETE）</td><td>#id</td></tr>
+      <tr><td>IAM</td><td>IamUserController</td><td>退出登录（LOGOUT，AuthController 1 处）</td><td>—</td></tr>
+      <tr><td>IAM</td><td>IamRoleController</td><td>新建角色 / 编辑角色 / 删除角色（3 处）</td><td>#id</td></tr>
+      <tr><td>SYSTEM</td><td>DictController</td><td>新建字典类型 / 编辑 / 删除；新建字典项 / 编辑 / 删除（6 处）</td><td>#id</td></tr>
+      <tr><td>SYSTEM</td><td>ConfigController</td><td>新建参数 / 编辑 / 删除（3 处）</td><td>#id</td></tr>
+      <tr><td>RISK</td><td>RiskRuleController</td><td>新建规则 / 编辑 / 删除 / 启停（4 处）</td><td>#id</td></tr>
+      <tr><td>RISK</td><td>GeoFenceController</td><td>新建围栏 / 编辑 / 删除 / 启停（4 处）</td><td>#id</td></tr>
+      <tr><td>RISK</td><td>RiskOrderController</td><td>新增干预记录、认领、分派、转派、闭环、重开、SLA 配置修改（7 处）</td><td>#id / 工单 id</td></tr>
+      <tr><td>MONITOR</td><td>MonitorController</td><td>处置风险事件（HANDLE）</td><td>#id</td></tr>
+      <tr><td>MONITOR</td><td>AlarmController</td><td>确认报警 / 解除报警（HANDLE 2 处）</td><td>#id</td></tr>
+      <tr><td>ANALYSIS</td><td>ScoreController</td><td>驾驶评分重算（UPDATE / DRIVER_SCORE）</td><td>—</td></tr>
+    </table>
+
+    <h3>11.2 无注解写操作的兜底语义</h3>
+    <p>主数据模块（module-mdm 的车辆、终端、驾驶员、组织、绑定关系）的写方法<strong>未挂注解</strong>，但因 POST/PUT/DELETE 全记录规则仍被留痕，语义按以下兜底逻辑生成：</p>
+    <ul>
+      <li><strong>module</strong>：URI 第三段大写。如 <code>/api/mdm/vehicles</code> → <code>MDM</code>。</li>
+      <li><strong>action</strong>：按 HTTP 方法映射 POST→CREATE、PUT→UPDATE、DELETE→DELETE。</li>
+      <li><strong>objectType</strong>：路径资源段查固定映射表（vehicles→VEHICLE、terminals→TERMINAL、drivers→DRIVER、orgs/depts→DEPT、bindings→BINDING、users→USER、roles→ROLE、rules→RULE、events→RISK_EVENT、orders→WORK_ORDER）；末段为数字 ID 时取倒数第二段。</li>
+      <li><strong>actionName</strong>：取动作字典缺省中文名（新增/修改/删除）。</li>
+    </ul>
+    <blockquote class="tip"><p>设计取舍：显式注解优先（细化模块/动作/对象/中文名/SpEL 提取 ID），兜底映射保证"忘了加注解也不丢审计"，二者互补而非二选一。</p></blockquote>
+
+    <h3>11.3 登录与登出的两个细节</h3>
+    <ul>
+      <li>登出 <code>POST /api/auth/logout</code> 显式标注 <code>@AuditLog(module="AUTH", action="LOGOUT", actionName="退出登录")</code>。注意 <code>AuditAction</code> 常量类中<strong>没有</strong> LOGOUT 常量，LOGOUT 是以字面量直接使用的；过滤器动作名表也无 LOGOUT 项，其动作名完全依赖注解显式传入。前端 AUDIT_ACTIONS 字典含 LOGOUT 文案。</li>
+      <li>JWT 无状态，服务端不做令牌拉黑；登出仅有审计留痕意义（AuthController 注释明确）。</li>
+    </ul>
+
+    <h2 id="t-collect">12. 采集与脱敏细节</h2>
+    <h3>12.1 请求/响应包装</h3>
+    <p><code>AuditFilter.doFilterInternal()</code> 使用 Spring 的 <code>ContentCachingRequestWrapper</code> / <code>ContentCachingResponseWrapper</code> 包裹原始请求响应，在 finally 中执行 record()，并始终调用 <code>resp.copyBodyToResponse()</code> 保证响应体回写。审计组装自身的任何异常被 catch 后仅输出 error 日志。</p>
+    <h3>12.2 成功/失败判定</h3>
+    <ul>
+      <li>解析响应 JSON：读取 <code>code</code>（业务码）与 <code>message</code>；非 JSON 响应时 bizCode 为 null。</li>
+      <li><code>success = HTTP 状态码 &lt; 400 且（bizCode 为空 或 bizCode == 0）</code>；status 落库 1=成功 / 0=失败，失败时 errorMsg 取 message（截断 500 字符）。</li>
+    </ul>
+    <h3>12.3 对象 ID 三级解析</h3>
+    <div class="flow vertical">
+      <div class="step">
+        <div class="s-title">① AOP SpEL 结果</div>
+        <div class="s-desc">AuditAspect 解析 @AuditLog.objectId（如 "#id"），写入 request 属性 ATTR_SEMANTIC；过滤器优先采用。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">② 新增响应体</div>
+        <div class="s-desc">POST 请求且响应 Result.data 为数字/文本或含 id 字段时，从响应取新对象主键。</div>
+      </div>
+      <div class="step">
+        <div class="s-title">③ 路径末段数字</div>
+        <div class="s-desc">URI 末段匹配 1~19 位数字时直接作为对象 ID（覆盖雪花 ID 长度）。</div>
+      </div>
+    </div>
+    <h3>12.4 操作人解析</h3>
+    <ul>
+      <li>登录请求：从请求体 JSON 的 <code>username</code> 字段取（登录失败也要知道在试谁的账号）。</li>
+      <li>其他请求：取 request 属性 <code>ATTR_USER</code>（JwtAuthFilter 鉴权成功后写入的 UserInfo）的 username；未认证访问为 null，前端展示为"匿名"。</li>
+    </ul>
+    <h3>12.5 脱敏与截断规则（落库前执行）</h3>
+    <table>
+      <tr><th>处理</th><th>规则（代码确证）</th></tr>
+      <tr><td>整体打码键</td><td>键名小写命中 password / oldpassword / newpassword / token / secret / servicetoken / jwt / idcard / totpcode / mfacode / verificationcode → 值替换为 <code>***</code></td></tr>
+      <tr><td>包含型打码</td><td>任意键名包含 "token" 或 "secret"（如 accessToken、clientSecret）同样整体打码</td></tr>
+      <tr><td>手机号脱敏</td><td>键名含 phone / mobile 且为文本：长度 ≥7 时保留前 3 后 4（如 138****0001），否则 ***</td></tr>
+      <tr><td>递归处理</td><td>JSON 对象与数组递归遍历；只替换值、不增删键结构</td></tr>
+      <tr><td>请求体截断</td><td>脱敏后 JSON 最长 2000 字符（BODY_MAX）</td></tr>
+      <tr><td>查询串截断</td><td>最长 512 字符（QUERY_MAX）</td></tr>
+      <tr><td>UA / 错误信息</td><td>User-Agent 最长 256；errorMsg 最长 500</td></tr>
+    </table>
+    <h3>12.6 来源 IP 与追踪</h3>
+    <ul>
+      <li>clientIp：优先 <code>X-Forwarded-For</code> 首个逗号前地址，其次 <code>X-Real-IP</code>，最后 <code>request.getRemoteAddr()</code>。</li>
+      <li>traceId：过滤器为每次请求生成的 32 位无横线 UUID，可关联同一次请求产生的多条记录。</li>
+      <li>costMs：过滤器进入到链路返回的毫秒耗时。</li>
+    </ul>
+
+    <h3>12.7 AuditEvent 十八字段与落库列映射</h3>
+    <table>
+      <tr><th>#</th><th>AuditEvent 字段</th><th>落库列</th><th>来源</th></tr>
+      <tr><td>1</td><td>traceId</td><td>trace_id</td><td>过滤器生成</td></tr>
+      <tr><td>2</td><td>username</td><td>user_name</td><td>ATTR_USER / 登录请求体</td></tr>
+      <tr><td>3</td><td>module</td><td>module</td><td>注解 / URI 兜底</td></tr>
+      <tr><td>4</td><td>action</td><td>action</td><td>注解 / HTTP 方法兜底 / LOGIN 特判</td></tr>
+      <tr><td>5</td><td>actionName</td><td>action_name</td><td>注解显式值 / 动作字典中文名</td></tr>
+      <tr><td>6</td><td>objectType</td><td>object_type</td><td>注解 / 路径资源段映射</td></tr>
+      <tr><td>7</td><td>objectId</td><td>object_id</td><td>SpEL / 响应 id / 路径末段</td></tr>
+      <tr><td>8</td><td>method</td><td>request_method</td><td>HttpServletRequest</td></tr>
+      <tr><td>9</td><td>uri</td><td>request_uri</td><td>requestURI（不含 query）</td></tr>
+      <tr><td>10</td><td>query</td><td>query_string</td><td>原始查询串，截断 512</td></tr>
+      <tr><td>11</td><td>body</td><td>request_body</td><td>脱敏后 JSON，截断 2000</td></tr>
+      <tr><td>12</td><td>success</td><td>status</td><td>HTTP &lt;400 且业务码空或 0</td></tr>
+      <tr><td>13</td><td>resultCode</td><td>result_code</td><td>响应 JSON code</td></tr>
+      <tr><td>14</td><td>errorMsg</td><td>error_msg</td><td>响应 message，截断 500</td></tr>
+      <tr><td>15</td><td>costMs</td><td>cost_ms</td><td>过滤器计时</td></tr>
+      <tr><td>16</td><td>clientIp</td><td>client_ip</td><td>XFF / X-Real-IP / remoteAddr</td></tr>
+      <tr><td>17</td><td>userAgent</td><td>user_agent</td><td>请求头，截断 256</td></tr>
+      <tr><td>18</td><td>createTime</td><td>create_time（参与指纹）</td><td>组装事件时 LocalDateTime.now()</td></tr>
+    </table>
+
+    <h3>12.8 脱敏处理示例</h3>
+    <p>以下示例说明同一份请求体在"原始 → 落库"两个阶段的差异（键名比较一律先转小写）：</p>
+    <pre><code>// 原始请求体（PUT /api/iam/users/1001）
+{
+  "id": 1001,
+  "realName": "张三",
+  "phone": "13800000001",
+  "password": "Pa$$w0rd!",
+  "mfaCode": "483920",
+  "idCard": "3201**********1234",
+  "extra": { "accessToken": "eyJhbGci...", "contactMobile": "13900000002" }
+}
+
+// 落库 request_body（脱敏 + 截断后）
+{
+  "id": 1001,
+  "realName": "张三",
+  "phone": "138****0001",
+  "password": "***",
+  "mfaCode": "***",
+  "idCard": "***",
+  "extra": { "accessToken": "***", "contactMobile": "139****0002" }
+}</code></pre>
+    <ul>
+      <li><code>phone</code> / <code>contactMobile</code>：键名含 phone/mobile → 前 3 后 4。</li>
+      <li><code>password</code> / <code>mfaCode</code> / <code>idCard</code>：精确命中打码键 → ***。</li>
+      <li><code>accessToken</code>：键名包含 token → ***（嵌套对象递归生效）。</li>
+      <li><code>realName</code> 等普通业务字段原样保留，保证审计可读、可追责。</li>
+    </ul>
+
+    <h2 id="t-async">13. 异步落库机制</h2>
+    <p>事件发布与落库通过 Spring 容器内事件机制衔接（<strong>非消息队列</strong>）：</p>
+    <ol>
+      <li><code>AuditFilter</code> 构造 18 字段的 <code>AuditEvent</code> record，调用 <code>ApplicationEventPublisher.publishEvent()</code>；</li>
+      <li><code>AuditLogListener.onAuditEvent()</code> 以 <code>@EventListener</code> 订阅、<code>@Async("auditExecutor")</code> 异步执行；</li>
+      <li><code>AuditLogService.saveEvent()</code> 逐字段拷贝为 SysAuditLog，计算 contentHash 后 <code>auditLogMapper.insert()</code>。</li>
+    </ol>
+    <div class="kvlist">
+      <div class="kv"><div class="k">线程模型</div><div class="vv">auditExecutor 核心线程=最大线程=<strong>1</strong>：单实例内事件严格按发布顺序落库（同实例时间有序）</div></div>
+      <div class="kv"><div class="k">缓冲队列</div><div class="vv">有界队列容量 <strong>2000</strong>；突增流量先排队</div></div>
+      <div class="kv"><div class="k">拒绝策略</div><div class="vv"><strong>CallerRunsPolicy</strong>：队列满时由业务线程自己执行落库，退化为同步、牺牲响应时间但优先不丢审计</div></div>
+      <div class="kv"><div class="k">关停行为</div><div class="vv">waitForTasksToCompleteOnShutdown=true，awaitTerminationSeconds=10，优雅停机尽量排空队列</div></div>
+      <div class="kv"><div class="k">失败处理</div><div class="vv">Listener 内 catch 全部异常，仅 log.error（带 uri/action），<strong>不重试、不抛出</strong>；业务无感知</div></div>
+    </div>
+
+    <h2 id="t-dataflow">14. 数据流程图</h2>
+    <pre><code>浏览器/调用方
+   │  HTTP（GET/POST/PUT/DELETE /api/**）
+   ▼
+nginx 反代（附加 X-Forwarded-For）
+   │
+   ▼
+AuditFilter（order=0，包在 JwtAuthFilter 外层）
+   ├─ ContentCachingRequestWrapper / ContentCachingResponseWrapper
+   ├─ chain.doFilter ──► JwtAuthFilter（鉴权，写 ATTR_USER）
+   │                     └─ Controller 方法
+   │                          └─ @AuditLog 命中 → AuditAspect（SpEL objectId → ATTR_SEMANTIC）
+   └─ finally：record()
+        ├─ 切点判定（登录特判 / GET 需注解 / 写操作全记 / excludePaths）
+        ├─ 语义解析（注解 → URI 兜底；objectId 三级解析；userName 解析）
+        ├─ 脱敏 + 截断 + IP/UA + traceId + costMs
+        └─ publisher.publishEvent(AuditEvent)
+                              │ 进程内事件
+                              ▼
+                  AuditLogListener @Async(auditExecutor：单线程/队列2000/CALLER_RUNS)
+                              │
+                              ▼
+                  AuditLogService.saveEvent
+                    ├─ 规范化字段串 → SHA-256 → content_hash
+                    └─ INSERT traj.sys_audit_log（只追加）
+                              │
+                              ▼
+        AuditLogController（audit:view）→ AuditLog.vue 检索/统计/详情</code></pre>
+
+    <h2 id="t-datamodel">15. 数据模型</h2>
+    <p>表结构权威定义见数据库设计文档：<a href="../guide/DDL-DBD-001-数据库设计.html#tbl-traj_sys_audit_log">traj.sys_audit_log</a>（初始化脚本 <code>infra/postgres/init/05-audit-tables.sql</code>）。要点：</p>
+    <table>
+      <tr><th>列</th><th>类型</th><th>说明</th></tr>
+      <tr><td>id</td><td>bigint PK</td><td>应用雪花 ID（非数据库序列）；前端按字符串处理</td></tr>
+      <tr><td>trace_id</td><td>varchar(48)</td><td>单次请求追踪 ID</td></tr>
+      <tr><td>user_name</td><td>varchar(64)</td><td>操作人；登录失败为请求中用户名；匿名为 NULL</td></tr>
+      <tr><td>module / action / action_name</td><td>varchar</td><td>模块编码 / 动作编码 / 动作中文名快照</td></tr>
+      <tr><td>object_type / object_id</td><td>varchar</td><td>对象类型（VEHICLE/USER…）与主键（字符串存储）</td></tr>
+      <tr><td>request_method / request_uri</td><td>varchar</td><td>GET/POST/PUT/DELETE；URI 不含 query</td></tr>
+      <tr><td>query_string</td><td>varchar(512)</td><td>查询串截断 512</td></tr>
+      <tr><td>request_body</td><td>text</td><td>脱敏后 JSON 截断 2000 字符</td></tr>
+      <tr><td>status</td><td>smallint</td><td>1 成功 / 0 失败</td></tr>
+      <tr><td>result_code</td><td>integer</td><td>业务响应 code（非 JSON 响应为 NULL）</td></tr>
+      <tr><td>error_msg</td><td>varchar(500)</td><td>失败消息截断</td></tr>
+      <tr><td>cost_ms</td><td>integer</td><td>请求耗时毫秒</td></tr>
+      <tr><td>client_ip</td><td>varchar(45)</td><td>兼容 IPv4/IPv6 长度</td></tr>
+      <tr><td>user_agent</td><td>varchar(256)</td><td>UA 截断</td></tr>
+      <tr><td>content_hash</td><td>varchar(64)</td><td>行级 SHA-256 指纹（见第 20 节）</td></tr>
+      <tr><td>create_time</td><td>timestamp</td><td>事件产生时刻（应用 LocalDateTime.now()，实体显式赋值，非 DB 默认）</td></tr>
+    </table>
+    <p>索引（4 个，均为查询模式服务）：</p>
+    <ul>
+      <li><code>idx_audit_time</code>（create_time DESC）：默认时间倒序浏览</li>
+      <li><code>idx_audit_user_time</code>（user_name, create_time DESC）：按人筛选</li>
+      <li><code>idx_audit_module_act</code>（module, action, create_time DESC）：按模块/动作筛选</li>
+      <li><code>idx_audit_object</code>（object_type, object_id）：按对象反查全部操作历史</li>
+    </ul>
+    <p>与普通业务表的差异：<strong>不继承 BaseEntity</strong>，没有 creator/updater/create_date/update_date/valid_mark 等公共字段——审计行不可被"更新人"改写，也不参与软删除。脚本注释明示该表为"只追加表"。</p>
+
+    <h2 id="t-api">16. 接口清单</h2>
+    <p>完整接口定义见平台接口手册：<a href="../api/API-DBD-001-平台接口手册.html#grp-audit">审计日志接口组（grp-audit）</a>。三个端点均为 GET、类级 <code>@RequiresPerm("audit:view")</code>：</p>
+    <table>
+      <tr><th>方法/路径</th><th>参数</th><th>返回</th><th>规则</th></tr>
+      <tr><td>GET <code>/api/audit/logs</code></td><td>startTime、endTime（yyyy-MM-dd HH:mm:ss）、userName、module、action、status、keyword、page(默认1)、size(默认10)</td><td>PageData&lt;AuditLogVO&gt;</td><td>默认近 7 天；跨度上限 90 天；起止倒置报错；keyword 模糊匹配 URI / 对象 ID / 错误信息；按 create_time、id 双倒序</td></tr>
+      <tr><td>GET <code>/api/audit/logs/{id}</code></td><td>路径 id</td><td>SysAuditLog 全字段</td><td>不存在抛 404「审计日志不存在」</td></tr>
+      <tr><td>GET <code>/api/audit/stats</code></td><td>startTime、endTime</td><td>AuditStatsVO</td><td>与检索共用同一套时间范围规则（默认 7 天 / 上限 90 天）</td></tr>
+    </table>
+    <p>时间格式由 <code>@DateTimeFormat(pattern="yyyy-MM-dd HH:mm:ss")</code> 强制；区间规范化在 Service 的 resolveRange() 统一完成，检索与统计共用，保证口径一致。</p>
+
+    <h2 id="t-query">17. 检索与统计实现</h2>
+    <h3>17.1 分页检索</h3>
+    <p>使用 MyBatis-Plus LambdaQueryWrapper 动态拼装：between 时间区间；userName/module/action 为精确匹配（eq，空串不拼）；status 精确匹配；keyword 为 AND 嵌套 OR 的三字段 like；orderByDesc(createTime).orderByDesc(id)。AuditLogVO.from() 映射时将 requestBody 截为 200 字符 bodyPreview。</p>
+    <h3>17.2 区间统计</h3>
+    <ul>
+      <li>total：区间总量；success：status=1 数量；successRate：四舍五入保留 1 位小数（总量为 0 时返回 100.0）。</li>
+      <li>loginFailCount：action=LOGIN_FAIL 计数。</li>
+      <li>todayCount：当日 00:00 至当前时刻计数（不受传入区间影响）。</li>
+      <li>actionDist：Mapper 注解 SQL <code>GROUP BY action ORDER BY count DESC</code>。</li>
+      <li>topUsers：<code>GROUP BY user_name WHERE user_name IS NOT NULL ORDER BY count DESC LIMIT 10</code>。</li>
+    </ul>
+    <h3>17.3 统计 SQL 口径（Mapper 注解实现）</h3>
+    <pre><code>-- 动作分布
+SELECT action AS name, COUNT(*) AS count
+FROM traj.sys_audit_log
+WHERE create_time BETWEEN #{start} AND #{end}
+GROUP BY action
+ORDER BY count DESC;
+
+-- 高频操作人 Top10（排除匿名）
+SELECT user_name AS name, COUNT(*) AS count
+FROM traj.sys_audit_log
+WHERE create_time BETWEEN #{start} AND #{end}
+  AND user_name IS NOT NULL
+GROUP BY user_name
+ORDER BY count DESC
+LIMIT 10;</code></pre>
+    <p>其余统计项（total/success/loginFail/todayCount）由 Service 用 LambdaQueryWrapper 的 count 拼条件得到，成功率在 Java 侧计算并统一保留 1 位小数，避免 SQL 方言差异。</p>
+
+    <h2 id="t-frontend">18. 前端实现要点</h2>
+    <ul>
+      <li><strong>默认区间</strong>：页面初始化即取"今天 00:00 ~ 此刻"为结束、前推 7 天为开始，自动拉取明细与统计，与后端 resolveRange 默认值双保险。</li>
+      <li><strong>字典渲染</strong>：模块/动作/结果均通过 dict.ts 的 labelOf 映射中文；无匹配时原样显示编码（保证新模块上线后页面不空白）。</li>
+      <li><strong>失败行高亮</strong>：表格行依据 status=0 加红色底纹 class。</li>
+      <li><strong>ID 字符串化</strong>：api/audit.ts 中 id 类型为 string；详情请求与复制均按字符串处理，避免 JS number 丢失雪花 ID 精度。</li>
+      <li><strong>请求体预览</strong>：列表仅展示 bodyPreview（≤200 字）；完整请求体只在详情抽屉展示，且数据库侧本身已截断到 2000 字符。</li>
+      <li><strong>指纹展示</strong>：详情抽屉以等宽字体展示 content_hash（64 位十六进制），支持复制用于离线核对。</li>
+    </ul>
+    <h3>18.1 前端审计字典（dict.ts）</h3>
+    <table>
+      <tr><th>字典</th><th>编码项</th><th>说明</th></tr>
+      <tr><td>AUDIT_MODULES</td><td>AUTH、MDM、MONITOR、CEP、WORK_ORDER、VIDEO、AUDIT、IAM、CONFIG（9 项）</td><td>下拉筛选选项；与后端实际落库值存在差异，见 <a href="#todo">待核实项</a></td></tr>
+      <tr><td>AUDIT_ACTIONS</td><td>LOGIN、LOGOUT、LOGIN_FAIL、CREATE、UPDATE、DELETE、QUERY、EXPORT、HANDLE、VIDEO_VIEW（10 项）</td><td>含 LOGOUT；后端 AuditAction 常量无 LOGOUT（字面量使用）</td></tr>
+      <tr><td>AUDIT_STATUS</td><td>1=成功、0=失败</td><td>结果筛选与标签着色</td></tr>
+    </table>
+    <h3>18.2 概览卡片口径</h3>
+    <table>
+      <tr><th>卡片</th><th>取值口径</th></tr>
+      <tr><td>操作总量</td><td>所选区间 total</td></tr>
+      <tr><td>成功率</td><td>success / total，百分比保留 1 位小数；无数据展示 100.0%</td></tr>
+      <tr><td>登录失败</td><td>区间 action=LOGIN_FAIL 条数</td></tr>
+      <tr><td>今日操作</td><td>当日 00:00 起至今，独立于所选区间</td></tr>
+      <tr><td>动作分布 Top5</td><td>actionDist 前 5 项，剩余项不在卡片展开</td></tr>
+    </table>
+
+    <h2 id="t-jobs">19. 定时任务</h2>
+    <p><strong>无。</strong>审计为纯事件驱动链路：请求到达即采集、异步即落库；统计为查询时实时聚合，不做物化汇总；模块内没有任何 @Scheduled 任务，也不依赖 Redis/MQ。</p>
+    <blockquote class="tip"><p>留存与归档（如按月分区、历史转冷存、到期清理）当前在代码与脚本中<strong>均未实现</strong>，属后续合规增强项，不在 F34 上线范围内。</p></blockquote>
+
+    <h2 id="t-tamper">20. 防篡改设计现状（只陈述代码确证事实）</h2>
+    <h3>20.1 已具备</h3>
+    <ul>
+      <li><strong>只追加写入</strong>：AuditLogController 只有 GET 端点；module-audit 代码中不存在 update/delete 的业务调用；SysAuditLog 不继承公共实体、无软删字段；Mapper 注释明确"只追加，无 update/delete 方法"（指自定义方法；BaseMapper 框架能力仍在，但无业务入口）。</li>
+      <li><strong>行级内容指纹</strong>：落库前对规范化字符串计算 SHA-256（JDK 内置 MessageDigest，HexFormat 转十六进制），规范串以 "|" 连接 11 个字段：<code>traceId | userName | module | action | objectType | objectId | requestMethod | requestUri | status | resultCode | createTime(yyyy-MM-ddHH:mm:ss.SSS)</code>，null 统一转空串。</li>
+      <li><strong>失败也留痕</strong>：业务失败、鉴权失败均入库，无法通过"制造报错"绕过操作记录。</li>
+    </ul>
+    <h3>20.2 明确未做（不得在合规表述中夸大）</h3>
+    <ul>
+      <li><strong>没有哈希链</strong>：05-audit-tables.sql 对 content_hash 的注释原文为"行级防篡改指纹（本期不做哈希链）"。行间不首尾相接，单行被改后无法通过链校验自动发现，只能事后用相同算法重算比对。</li>
+      <li><strong>指纹覆盖范围有限</strong>：规范串<strong>不含</strong> queryString、requestBody、errorMsg、clientIp、userAgent、costMs、actionName；修改这些未入 hash 的列不会导致指纹变化。content_hash 的定位是"关键字段快照核对"，不是全行完整性证明。</li>
+      <li><strong>没有数据库账号级隔离脚本</strong>：初始化脚本中未见对审计表 REVOKE UPDATE/DELETE 的 GRANT 设计；拥有库写权限的账户技术上可直接改表，防护依赖运维侧 DB 权限管控（待核实：生产环境是否已配置 INSERT-only 账号）。</li>
+      <li>没有 WORM 存储、没有外部存证/上链、没有异地副本校验；create_time 取应用时钟，无防回拨措施。</li>
+      <li>Listener 落库失败仅记日志、不重试：极端情况下（DB 长时间不可用且队列溢出/进程重启）会丢失审计事件，没有 outbox 或本地落盘补偿。</li>
+    </ul>
+
+    <h2 id="t-edge">21. 边界行为与常见问题</h2>
+    <table>
+      <tr><th style="width:230px">情形</th><th>实际行为（代码确证）</th></tr>
+      <tr><td>不传时间参数</td><td>后端强制补为近 7 天，不允许全表扫描式查询</td></tr>
+      <tr><td>查询区间超过 90 天</td><td>Service 抛业务异常，前端提示区间上限，请求不落 SQL</td></tr>
+      <tr><td>startTime 晚于 endTime</td><td>抛"开始时间不能晚于结束时间"类业务异常</td></tr>
+      <tr><td>时间格式错误</td><td>Spring 转换层即拒绝（要求 yyyy-MM-dd HH:mm:ss）</td></tr>
+      <tr><td>未带 Token 访问业务写接口</td><td>鉴权短路返回 401；审计仍记录：userName=NULL、status=0</td></tr>
+      <tr><td>有 audit:view 之外权限的用户访问</td><td>类级 @RequiresPerm 拒绝；拒绝行为本身作用于 /api/audit/**，被 excludePaths 排除，不产生审计记录</td></tr>
+      <tr><td>GET 请求未加注解</td><td>不记录（绝大多数查询由此豁免，避免查询风暴）</td></tr>
+      <tr><td>POST 响应体不是统一 Result</td><td>按 HTTP 状态码判定成功，result_code 落 NULL</td></tr>
+      <tr><td>请求体是嵌套 JSON 且含密码</td><td>递归脱敏命中键即打码，其余结构原样落库（截断内）</td></tr>
+      <tr><td>multipart 文件上传</td><td>当前 /api/** 不存在该类接口；若未来新增应加入 excludePaths 或限定读取长度</td></tr>
+      <tr><td>审计落库数据库短暂不可用</td><td>Listener 报错记日志；队列积压；持续高压时 CALLER_RUNS 反压到业务线程</td></tr>
+      <tr><td>同一秒内多条事件排序</td><td>列表按 create_time DESC, id DESC 双键排序，同毫秒内以雪花 id 决定先后</td></tr>
+      <tr><td>processing-service（FastAPI）的接入请求</td><td>使用 X-Service-Token 的服务间调用若经 platform-app 的 /api/** 同样被过滤器记录；直发 FastAPI 的 /api/ingest/** 不经过本过滤器（规划在 F38 统一网关纳管）</td></tr>
+      <tr><td>Actuator 端点（/actuator/health）</td><td>路径不以 /api 开头，不匹配 /api/*，天然不记录；容器健康探针不产生噪声</td></tr>
+      <tr><td>分页 size 传超大值</td><td>沿用平台分页参数的统一上限约束；审计查询本身不做额外特殊处理</td></tr>
+      <tr><td>对象 ID 是 UUID/业务编号</td><td>三级解析的"路径末段"只认 1~19 位数字；非数字 ID 依赖注解 SpEL 或响应体提取，否则 object_id 留空但其余字段照常记录</td></tr>
+      <tr><td>批量操作（一次请求影响多行）</td><td>当前审计粒度为"一次请求一条"，批量删除/启停只落一条记录，对象 ID 取路径或响应，不逐行展开；需要逐对象留痕时须在业务侧改造为多次调用或在 request_body 中留存 ID 集合（截断内）</td></tr>
+      <tr><td>查询结果为空</td><td>正常返回空页 / 零值统计（成功率在无数据时给 100.0），不报错</td></tr>
+      <tr><td>动作/模块出现字典外的新值</td><td>后端不校验枚举字典，任意字符串可入库；前端回显原编码，统计接口照常 GROUP BY——保证审计记录不被字典演进阻塞</td></tr>
+    </table>
+
+    <h2 id="t-why">22. 选型依据</h2>
+    <table>
+      <tr><th>选择</th><th>理由</th><th>备选与取舍</th></tr>
+      <tr><td>Servlet Filter 作为主采集点</td><td>能包住整个请求链（含鉴权短路），可靠拿到响应状态与耗时；与业务代码完全解耦</td><td>纯 AOP 拿不到未进入 Controller 的请求、拿不到响应结果；纯拦截器对非 MVC 链路覆盖弱</td></tr>
+      <tr><td>AOP 切面补 SpEL 语义</td><td>过滤器层无法访问 Controller 方法入参，SpEL 可精确提取 #id、#req.vehicleId 等业务主键</td><td>在 Filter 用反射取参脆弱且随参数顺序失效；切面 + request attribute 传价是两层能力互补</td></tr>
+      <tr><td>Spring ApplicationEvent 解耦</td><td>零中间件依赖，common 不反向依赖业务模块；同步发布/异步监听切换只在注解</td><td>Kafka 可跨进程、可回放，但当前单体部署无必要；代价是应用崩溃丢失在途事件</td></tr>
+      <tr><td>单线程顺序消费</td><td>实现简单、同实例天然时间有序、无并发写竞争</td><td>多线程吞吐高但乱序；审计写量远低于业务峰值，单线程 + 2000 队列 + CALLER_RUNS 已够</td></tr>
+      <tr><td>CALLER_RUNS 拒绝策略</td><td>审计场景"不丢"优先于"快"：队列满时让业务线程同步落库，形成背压</td><td>DISCARD 会静默丢审计；AbortPolicy 会向业务抛异常，均不符合审计目标</td></tr>
+      <tr><td>SHA-256 行指纹</td><td>JDK 内置、无外部依赖、碰撞概率可忽略；为逐行核对与未来哈希链预留</td><td>国密 SM3 是等保/国密方向的可选替换（F37 规划），算法集中在单一私有方法，替换成本低</td></tr>
+    </table>
+
+    <h2 id="t-risk">23. 风险、约束与后续增强</h2>
+    <table>
+      <tr><th>项</th><th>说明（代码确证）</th><th>建议对策 / 关联规划</th></tr>
+      <tr><td>落库丢失窗口</td><td>@Async 事件仅存内存队列；DB 故障期间队列溢出走 CALLER_RUNS（不丢但拖慢），进程崩溃则在途事件丢失</td><td>关键审计升级 outbox 表/本地文件缓冲；纳入 F39 可观测告警（队列监控、落库失败计数）</td></tr>
+      <tr><td>大请求体内存开销</td><td>ContentCachingRequestWrapper 缓存被读取的请求体字节，超长 JSON 会占堆内存（落库虽截断到 2000，缓存本身不截断）</td><td>multipart/大 body 路由排除或限制；当前 /api/** 无文件上传接口，风险低</td></tr>
+      <tr><td>多实例顺序</td><td>单线程只保证单实例内有序；多副本部署后全局顺序需以 create_time+id 或服务端时钟为准</td><td>时钟 NTP 同步；需要严格全序时引入号段或入库序列</td></tr>
+      <tr><td>IP 可伪造</td><td>X-Forwarded-For 由代理链写入，若客户端可直连应用端口可伪造该头</td><td>应用端口仅对 nginx 开放（compose 已绑 127.0.0.1）；nginx 覆写而非追加 XFF</td></tr>
+      <tr><td>成功判定依赖统一响应</td><td>业务码识别依赖响应体为 {"code":...} 的统一 Result 结构；非 JSON 端点只按 HTTP 状态判成功</td><td>新接口遵循统一响应规范；流媒体/网关类非 JSON 入口单独评估</td></tr>
+      <tr><td>指纹不覆盖全行</td><td>requestBody、IP、UA 等未参与 hash（见 20.2）</td><td>合规增强时扩展规范串并引入前一行 hash 形成哈希链（F37 数据安全方向）</td></tr>
+      <tr><td>预留动作未挂载</td><td>EXPORT / QUERY / VIDEO_VIEW 字典已有但无 GET 切点使用</td><td>报表导出（MOD-017 异步导出）、视频调阅（F06/F25）上线时在对应 GET 方法挂 @AuditLog</td></tr>
+      <tr><td>保留策略缺失</td><td>无分区、无归档、无到期清理</td><td>按日志 ≥6 个月、重要日志按年留存的合规要求（F37）制定分区与归档方案</td></tr>
+    </table>
+
+    <h2 id="t-accept">24. 上线验收清单</h2>
+    <ol>
+      <li>无权限账号访问 <code>/api/audit/logs</code> 返回 403；有权限账号可正常分页。</li>
+      <li>任意 POST/PUT/DELETE 业务请求后，审计表新增一条记录，字段与请求实际一致（含耗时、IP、UA）。</li>
+      <li>错误密码登录产生 LOGIN_FAIL 记录，user_name 为请求中用户名，status=0，error_msg 有值。</li>
+      <li>GET 请求在无 @AuditLog 时不产生记录；<code>/api/audit/**</code> 自身查询不产生记录。</li>
+      <li>请求体含 password/newPassword/token/idCard 等键时，落库值为 ***；手机号形如 138****0001。</li>
+      <li>每条新记录 content_hash 为 64 位十六进制；用相同规范化算法离线重算结果一致。</li>
+      <li>检索默认区间为近 7 天；跨度 &gt;90 天、起止倒置均被后端拒绝。</li>
+      <li>统计接口返回总量、成功数、成功率、登录失败数、今日数、动作分布、Top10 用户，数值与 SQL 直查一致。</li>
+      <li>停止数据库后执行业务写操作：业务在队列未溢出时不受影响；恢复后队列排空（或高压期观察到 CALLER_RUNS 延迟）。</li>
+      <li>设置 audit.enabled=false 重启后不再产生任何审计记录；恢复默认（删除配置）后自动生效。</li>
+      <li>对象 ID 提取三路径分别验证：注解 SpEL 命中、POST 响应 data.id 命中、PUT/DELETE 路径末段命中，详情中对象类型与 ID 正确。</li>
+      <li>X-Forwarded-For 多级代理链场景下，client_ip 取首个地址；无该头时回退 X-Real-IP / remoteAddr。</li>
+    </ol>
+
+    <h2 id="todo">待核实项</h2>
+    <table>
+      <tr><th style="width:260px">事项</th><th>说明与建议核实路径</th></tr>
+      <tr><td>前端模块字典与实际落库值不一致</td><td>dict.ts 的 AUDIT_MODULES 为 AUTH/MDM/MONITOR/CEP/WORK_ORDER/VIDEO/AUDIT/IAM/CONFIG 9 项；后端实际还会落 RISK、SYSTEM、ANALYSIS（注解 module 值）与 MDM 兜底值。前端 labelOf 对未命中项回显原编码不致空白，但筛选下拉选不到这三项。需与前端确认是否补齐字典。</td></tr>
+      <tr><td>生产数据库账号权限</td><td>仓库脚本未见审计表 GRANT/REVOKE 语句；"只追加"目前仅是应用层约束。需核实生产部署是否为应用账号配置了 traj.sys_audit_log 的 INSERT-only 权限。</td></tr>
+      <tr><td>审计保留期限</td><td>无分区/归档/清理代码；需合规侧明确保留月数后在 F37 落地。</td></tr>
+      <tr><td>多实例部署下的时钟与顺序</td><td>当前 compose 为单 platform-app 实例；水平扩展时需核实 NTP 与顺序展示要求。</td></tr>
+    </table>
+
+    <h2 id="revisions">修订记录</h2>
+    <table>
+      <tr><th>版本</th><th>日期</th><th>修订人</th><th>说明</th></tr>
+      <tr><td>v1.0.0</td><td>2026-10-05</td><td>平台文档组</td><td>首次发布：以 2026-10-05 源代码为基准，记录 F34 操作审计日志的产品用法与"过滤器 + 切面 + ApplicationEvent 异步落库"技术实现，如实界定防篡改能力边界。</td></tr>
+    </table>
+    <div class="docfoot">
+      <span>北斗导航数据业务平台 mydbd · 功能模块文档</span>
+      <span>MOD-DBD-013 v1.0.0</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

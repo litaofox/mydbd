@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API-DBD-001 平台接口手册 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">API-DBD-001 平台接口手册 · Java REST / Python 处理服务 / WebSocket</div>
+</div>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-title">目录</p>
+      <ul>
+        <li><a href="#sec-conventions">1 通用约定</a>
+          <ul>
+            <li><a href="#conv-base">1.1 基址与路由分工</a></li>
+            <li><a href="#conv-result">1.2 统一响应结构</a></li>
+            <li><a href="#conv-page">1.3 分页结构</a></li>
+            <li><a href="#conv-auth">1.4 鉴权方式</a></li>
+            <li><a href="#conv-errcode">1.5 错误码表</a></li>
+            <li><a href="#conv-id">1.6 长整型 ID 序列化</a></li>
+          </ul>
+        </li>
+        <li><a href="#sec-java">2 Java 平台接口（139）</a>
+          <ul>
+            <li><a href="#grp-auth">认证 AuthController（9）</a></li>
+            <li><a href="#grp-iam-user">用户管理（10）</a></li>
+            <li><a href="#grp-iam-role">角色管理（6）</a></li>
+            <li><a href="#grp-iam-menu">菜单权限（1）</a></li>
+            <li><a href="#grp-mdm-vehicle">车辆档案（6）</a></li>
+            <li><a href="#grp-mdm-terminal">终端档案（6）</a></li>
+            <li><a href="#grp-mdm-driver">驾驶员档案（6）</a></li>
+            <li><a href="#grp-mdm-org">组织架构（5）</a></li>
+            <li><a href="#grp-mdm-binding">车辆绑定关系（5）</a></li>
+            <li><a href="#grp-traj">轨迹查询（4）</a></li>
+            <li><a href="#grp-monitor">实时监控（6）</a></li>
+            <li><a href="#grp-dashboard">监控大屏（1）</a></li>
+            <li><a href="#grp-panel">车辆聚合面板（1）</a></li>
+            <li><a href="#grp-alarm">终端报警中心（7）</a></li>
+            <li><a href="#grp-geocode">地理编码（2）</a></li>
+            <li><a href="#grp-risk-rule">风控规则（7）</a></li>
+            <li><a href="#grp-risk-order">处置工单（15）</a></li>
+            <li><a href="#grp-risk-engine">规则引擎概览（1）</a></li>
+            <li><a href="#grp-geofence">电子围栏（7）</a></li>
+            <li><a href="#grp-score">驾驶评分（4）</a></li>
+            <li><a href="#grp-profile">风险趋势画像（4）</a></li>
+            <li><a href="#grp-audit">审计日志（3）</a></li>
+            <li><a href="#grp-dict">数据字典（10）</a></li>
+            <li><a href="#grp-config">系统参数（5）</a></li>
+            <li><a href="#grp-notify">站内消息（7）</a></li>
+            <li><a href="#grp-health">健康检查（1）</a></li>
+            <li><a href="#grp-gateway">vps 网关运行模式状态与报警附件（3）</a></li>
+          </ul>
+        </li>
+        <li><a href="#sec-python">3 Python 处理服务（17）</a>
+          <ul>
+            <li><a href="#grp-py-ingest">数据接入（2）</a></li>
+            <li><a href="#grp-py-simulator">模拟器控制（6）</a></li>
+            <li><a href="#grp-py-analysis">视频分析（1）</a></li>
+            <li><a href="#grp-py-dataset">标准测试数据集（4）</a></li>
+            <li><a href="#grp-py-health">健康检查（1）</a></li>
+            <li><a href="#grp-py-gateway">网关接入内部接口（3）</a></li>
+          </ul>
+        </li>
+        <li><a href="#grp-ws">4 WebSocket 实时通道</a></li>
+        <li><a href="#sec-tips">5 联调提示</a></li>
+        <li><a href="#sec-revision">修订记录</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>平台接口手册</h1>
+    <p class="cover-meta">编号 API-DBD-001<span class="sep">|</span>版本 v1.3.0<span class="sep">|</span>发布日期 2026-10-06<span class="sep">|</span>事实基准：2026-10-06 源代码</p>
+    <p>本手册覆盖平台全部对外 HTTP 端点与 WebSocket 实时通道：Java 平台 <strong>28 个 Controller 共 142 个端点</strong>、Python 处理服务 <strong>6 组共 17 个端点</strong>、WebSocket <strong>1 个通道 4 类消息</strong>。每个端点的方法、路径、权限标识与参数均逐字取自控制器源码，分组标题下给出源码文件与类级 <code>@RequestMapping</code> 路径。阅读前请先看第 1 章通用约定。</p>
+
+    <h2 id="sec-conventions">1 通用约定</h2>
+
+    <h3 id="conv-base">1.1 基址与 /api 前缀路由分工</h3>
+    <p>Java 控制器的路径全部以 <code>/api</code> 开头（健康检查 <code>/health</code> 除外），应用本身<strong>没有配置 servlet context-path</strong>（见 <code>platform-boot/src/main/resources/application.yml</code>，仅设 <code>server.port: 8080</code>）。<code>/api</code> 前缀逐字写在每个控制器的 <code>@RequestMapping</code> 上。三端端口与分工如下（事实源 <code>infra/nginx/portal.conf</code>、<code>docker-compose.yml</code>）：</p>
+    <table>
+      <thead><tr><th>入口</th><th>端口</th><th>location 前缀（portal.conf 逐字）</th><th>转发目标</th></tr></thead>
+      <tbody>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/</code>（Vue3 SPA 静态资源，<code>try_files</code> 回退 index.html）</td><td>本地 <code>/usr/share/nginx/html</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/api/simulator/</code>、<code>/api/ingest/</code></td><td><code>http://processing-app:8000</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/api/analysis/score/</code>、<code>/api/analysis/profile/</code>（更长前缀，优先匹配）</td><td><code>http://platform-app:8080</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/api/analysis/</code>（其余）</td><td><code>http://processing-app:8000</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/api/gateway/</code>（网关状态/媒体内部接口，X-Service-Token 鉴权，供服务间/运维直连；前端经 Java /api/monitor 中转）</td><td><code>http://processing-app:8000</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/ws/</code>（HTTP/1.1 Upgrade 长连接，<code>proxy_read_timeout 3600s</code>）</td><td><code>http://platform-app:8080</code></td></tr>
+        <tr><td>门户 nginx</td><td><code>8090</code></td><td><code>/api/</code>（兜底）</td><td><code>http://platform-app:8080</code></td></tr>
+        <tr><td>Java 平台直连</td><td><code>8080</code></td><td colspan="2">Spring Boot 单体（platform-app），承载除上述 Python 前缀外的全部 <code>/api/**</code> 与 <code>/ws/realtime</code></td></tr>
+        <tr><td>Python 服务直连</td><td><code>8000</code></td><td colspan="2">FastAPI（processing-app），路由前缀 <code>/api/simulator</code>、<code>/api/ingest</code>、<code>/api/analysis</code>、<code>/api/gateway</code>（后两者服务令牌鉴权），另有裸路径 <code>/health</code></td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip"><p>本地开发时前端跑在 Vite <code>5173</code>，<code>frontend/vite.config.ts</code> 的代理顺序与 nginx 一致：<code>/api/simulator</code>、<code>/api/ingest</code>、<code>/api/analysis</code> → <code>localhost:8000</code>，其余 <code>/api</code> → <code>localhost:8080</code>。</p></blockquote>
+    <blockquote class="warn"><p>nginx <code>client_max_body_size 220m</code>；<code>/api/simulator/</code>、<code>/api/ingest/</code>、<code>/api/analysis/</code> 的 <code>proxy_read_timeout</code> 为 300s，Java 与 <code>/ws/</code> 分别为 120s / 3600s。</p></blockquote>
+
+    <h3 id="conv-result">1.2 统一响应结构（Java）</h3>
+    <p>Java 端除 <code>/health</code> 外全部返回 <code>Result&lt;T&gt;</code>（源码 <code>platform-common/.../api/Result.java</code>），实际字段只有三个：</p>
+    <pre><code>{
+  "code": 0,              // 0=成功；非 0 见 1.5 错误码表
+  "message": "success",   // 成功固定 "success"；失败为具体原因
+  "data": { }             // 业务数据；无返回数据时为 null
+}</code></pre>
+    <p>前端 <code>frontend/src/api/http.ts</code> 的 axios 响应拦截器按此解包：<code>code===0</code> 时直接把 <code>data</code> 作为 Promise 结果返回，<code>code!==0</code> 时弹 <code>message</code> 并 reject。前端请求<strong>不设 baseURL</strong>，全部使用相对路径（经 nginx / Vite 代理）。</p>
+    <blockquote class="warn"><p>Python 处理服务<strong>不使用</strong> Result 包装，成功直接返回业务 JSON（如 <code>{"inserted": 12}</code>），失败由 FastAPI 返回 <code>{"detail": "..."}</code>（服务令牌失败为 HTTP 401，请求体校验失败为 HTTP 422）。</p></blockquote>
+
+    <h3 id="conv-page">1.3 分页结构</h3>
+    <p>分页接口的 <code>data</code> 为 <code>PageData&lt;T&gt;</code>（源码 <code>platform-common/.../api/PageData.java</code>），字段固定为：</p>
+    <pre><code>{ "total": 123, "page": 1, "size": 10, "records": [ ... ] }</code></pre>
+    <ul>
+      <li>请求参数统一命名为 <code>page</code>、<code>size</code>；<code>page</code> 从 <strong>1</strong> 开始。</li>
+      <li>绝大多数接口默认 <code>page=1</code>、<code>size=10</code>；报警分页 <code>GET /api/alarm/page</code> 默认 <code>size=20</code>；<code>GET /api/notify/messages</code> 服务端把 size 截断为最大 100（<code>Math.min(size, 100)</code>）。</li>
+    </ul>
+
+    <h3 id="conv-auth">1.4 鉴权方式</h3>
+
+    <h4>方式一：登录 JWT（Bearer Token）</h4>
+    <p>除两个白名单接口外，所有 <code>/api/*</code> 请求都被 <code>JwtAuthFilter</code>（注册于 <code>WebConfig</code>，urlPattern <code>/api/*</code>）拦截：</p>
+    <ul>
+      <li>请求头：<code>Authorization: Bearer &lt;token&gt;</code>（前端从 <code>localStorage</code> 的 <code>mydbd-token</code> 读取后附加）。</li>
+      <li>登录接口：<code>POST /api/auth/login</code>，body <code>{"username","password"}</code>；成功返回 <code>LoginVO</code>：<code>{mfaRequired, token, mfaToken, userId, username, realName}</code>。</li>
+      <li>access 令牌由 <code>JwtUtil</code> 签发，<strong>算法显式固定 HS256</strong>（<code>signWith(key, Jwts.SIG.HS256)</code>，2026-10-06 前未指定算法时 JJWT 按密钥长度自选，50 字节密钥实际签发 HS384），claims 为 <code>uid</code> + <code>purpose=access</code>，有效期 <strong>8 小时</strong>，HMAC 密钥取 <code>mydbd.jwt.secret</code>（环境变量 <code>JWT_HMAC_SECRET</code>）。</li>
+      <li>processing-service 浏览器侧接口（<code>/api/simulator/*</code>、<code>/api/ingest/dataset/*</code>）由 <code>app/security.py require_access</code> 用 PyJWT 独立验签同一把 HMAC 密钥，算法白名单 <strong>HS256/HS384/HS512</strong>（兼容 2026-10-06 前签发的 HS384 存量令牌）；验签失败回 HTTP 401 <code>{"detail":"登录已过期，请重新登录"}</code>，前端拦截器收到 401 会清除令牌并硬跳 /login。</li>
+      <li>开启 MFA 时登录只拿到 <code>mfaToken</code>（claim <code>purpose=mfa</code>，5 分钟有效），须再调 <code>POST /api/auth/mfa/verify</code> 换取 access 令牌。</li>
+      <li>白名单（无令牌可访问）仅两个：<code>/api/auth/login</code>、<code>/api/auth/mfa/verify</code>。缺令牌、令牌过期、purpose 非 access、用户不存在/停用一律由过滤器直接回 HTTP 401，body 为 <code>{"code":40101,...}</code>。</li>
+    </ul>
+    <p>功能权限由 <code>@RequiresPerm</code> 注解 + <code>PermAspect</code> 切面校验（源码 <code>platform-common/.../security/</code>）：可标注在类或方法上，<strong>方法注解优先</strong>；<code>value</code> 支持多权限码，<code>logical</code> 取 <code>AND</code>（默认）或 <code>OR</code>；超级管理员恒放行；不通过抛 <code>40301</code>。本手册表格中：</p>
+    <ul>
+      <li>写权限码（如 <code>mdm:vehicle:edit</code>）表示必须持有该码；</li>
+      <li><strong>仅登录</strong>表示控制器/方法上没有 <code>@RequiresPerm</code>，只要 JWT 通过即可访问；</li>
+      <li><strong>免鉴权</strong>表示不在 JWT 过滤器范围内或位于白名单。</li>
+    </ul>
+
+    <h4>方式二：服务令牌 X-Service-Token（仅 Python 端）</h4>
+    <p>Python 端 <code>app/security.py</code> 校验请求头 <code>X-Service-Token</code>，与配置 <code>settings.service_token</code>（环境变量 <code>SERVICE_TOKEN</code>，默认 <code>change-me-service-token</code>）不等即返回 HTTP 401 <code>{"detail":"服务令牌无效"}</code>。实际挂载位置：</p>
+    <ul>
+      <li><code>POST /api/ingest/traj</code>：方法级依赖 <code>Depends(verify_service_token)</code>；</li>
+      <li><code>POST /api/analysis/video</code>：路由级依赖，覆盖整个 <code>/api/analysis</code> 路由器。</li>
+    </ul>
+    <blockquote class="warn"><p>模拟器控制（<code>/api/simulator/**</code>）、数据集（<code>/api/ingest/dataset/**</code>）与 <code>POST /api/ingest/load-sample</code>、<code>/health</code> <strong>均未挂任何鉴权依赖</strong>（simulator.py 代码注释："演示环境开放控制（容器网络边界内）；正式版本需登录态/服务令牌"）。Java 端 <code>application.yml</code> 虽声明了 <code>mydbd.service-token</code> 配置项，但当前没有任何 Java 代码读取或校验它。</p></blockquote>
+
+    <h4>方式三：WebSocket 握手带 token</h4>
+    <p>WebSocket 不能自定义请求头，token 放在连接 URL 的查询参数中：<code>ws://&lt;门户主机:8090&gt;/ws/realtime?token=&lt;access&nbsp;JWT&gt;</code>。<code>AuthHandshakeInterceptor</code> 解析 query 中的 <code>token</code>，校验签名且 <code>purpose=access</code>，通过后把 <code>uid</code>、<code>username</code> 写入会话属性；失败直接拒绝握手。详见第 4 章。</p>
+
+    <h3 id="conv-errcode">1.5 错误码表</h3>
+    <p>平台错误码枚举见 <code>platform-common/.../api/ErrorCode.java</code>，共 7 项：</p>
+    <table>
+      <thead><tr><th>code</th><th>枚举名</th><th>含义</th><th>典型触发点</th></tr></thead>
+      <tbody>
+        <tr><td><code>40001</code></td><td>BAD_REQUEST</td><td>请求参数错误</td><td>Bean Validation 校验失败（<code>GlobalExceptionHandler</code> 拼接"字段名 + 提示"）、车辆面板 id 非数字、画像参数格式错等</td></tr>
+        <tr><td><code>40101</code></td><td>UNAUTHORIZED</td><td>未认证或登录已失效</td><td>JWT 过滤器缺令牌/令牌无效过期/purpose 不符/用户不存在或停用</td></tr>
+        <tr><td><code>42301</code></td><td>LOCKED</td><td>账号已锁定</td><td>登录时账号锁定（枚举定义，认证业务使用）</td></tr>
+        <tr><td><code>40301</code></td><td>FORBIDDEN</td><td>无访问权限</td><td><code>PermAspect</code> 权限码不满足；评分重算角色不足</td></tr>
+        <tr><td><code>40401</code></td><td>NOT_FOUND</td><td>资源不存在</td><td>业务查询对象不存在；画像对象不存在也用此码</td></tr>
+        <tr><td><code>40901</code></td><td>CONFLICT</td><td>资源状态冲突</td><td>数据库唯一约束冲突（<code>DuplicateKeyException</code> 统一翻译为"数据已存在或绑定冲突…"）</td></tr>
+        <tr><td><code>50000</code></td><td>INTERNAL_ERROR</td><td>服务器内部错误</td><td>未捕获异常（HTTP 500）；高德服务返回失败/响应异常也复用此码</td></tr>
+      </tbody>
+    </table>
+    <p>以下业务码不在 <code>ErrorCode</code> 枚举中，由各控制器以字面量/模块常量抛出（<code>BizException(int,String)</code>），联调时同样按 body 中的 <code>code</code> 判断：</p>
+    <table>
+      <thead><tr><th>code</th><th>含义</th><th>出处</th></tr></thead>
+      <tbody>
+        <tr><td><code>46001</code></td><td>评分重算参数非法（日期格式、start 晚于 end、跨度超限、end 晚于今天、driverId 非数字）</td><td><code>ScoreController</code> 常量 <code>ERR_PARAM</code></td></tr>
+        <tr><td><code>46002</code></td><td>评分计算任务进行中（重算互斥）</td><td><code>ScoreController</code> 常量 <code>ERR_RUNNING</code></td></tr>
+        <tr><td><code>46101</code></td><td>画像时间范围非法（start 必须早于 end；跨度不得超过 366 天）</td><td><code>ProfileConstants.ERR_RANGE</code></td></tr>
+        <tr><td><code>46102</code></td><td>画像维度/粒度非法（dim、granularity、type、ranking dim 取值越界）</td><td><code>ProfileConstants.ERR_DIM</code></td></tr>
+        <tr><td><code>50301</code></td><td>高德地图 Key 未配置（<code>AMAP_KEY</code>）或高德服务暂时不可用</td><td><code>GeocodeController</code> 硬编码</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="conv-id">1.6 长整型 ID 的字符串序列化约定</h3>
+    <p>数据库主键为 <code>bigint</code>（实体 <code>Long</code>，MyBatis-Plus <code>IdType.AUTO</code>）。为避免 JavaScript Number 精度丢失，项目在<strong>对外 VO</strong>上用 Jackson <code>@JsonSerialize(using = ToStringSerializer.class)</code> 把 Long id 序列化为字符串，<code>LoginVO</code> 注释明确"userId 为雪花大数，统一以字符串输出"，<code>AlarmVO</code>/<code>VehiclePanelVO</code>/<code>DashboardSummaryVO</code> 注释要求前端全链路按 string 处理。已覆盖的类型包括：<code>LoginVO</code>、<code>UserListVO</code>、<code>UserDetailVO</code>、<code>UserProfile</code>、<code>RoleListVO</code>、<code>RoleDetailVO</code>、<code>OptionRoleVO</code>、<code>AlarmVO</code>、<code>AuditLogVO</code>、<code>SysAuditLog</code>、<code>VehiclePanelVO</code>、<code>DashboardSummaryVO</code>、<code>AssignableUserVO</code>、<code>DriverScore</code>、<code>RiskWorkOrder.id</code>、<code>RiskOrderLog</code> 等。</p>
+    <blockquote class="warn"><p>该约定<strong>不是全局 Jackson 配置</strong>，逐字段标注，存在以下需要注意的例外（代码现状）：</p>
+      <ul>
+        <li>MDM 新建接口 <code>POST /api/mdm/vehicles|terminals|drivers|depts</code> 的 <code>data</code> 直接返回 <code>Long</code>（数字）；IAM 用户/角色、风控规则/围栏新建返回 <code>String</code>。</li>
+        <li>直接返回实体的接口（<code>Vehicle</code>、<code>Terminal</code>、<code>Driver</code>、<code>Dept</code>、<code>RiskRule</code>、<code>RiskGeoFence</code>、<code>RiskEvent</code>、<code>WarnInfo</code>、<code>GpsPoint</code> 等）其 <code>id</code> 仍以 JSON 数字输出；WebSocket 推送的 <code>RISK</code>/<code>ALARM</code>/<code>POINTS</code> 载荷同样是实体序列化，id 为数字（前端 <code>useRealtime.ts</code> 中即按 <code>number</code> 接收）。</li>
+        <li>入参侧大 id 可用字符串传递（Spring 自动转为 <code>Long</code>）；评分重算的 <code>driverId</code> 设计为字符串并手动解析。</li>
+      </ul>
+    </blockquote>
+
+    <h2 id="sec-java">2 Java 平台接口</h2>
+    <p>共 26 个 Controller、139 个端点。表格列依次为 HTTP 方法、完整路径（与注解逐字一致）、权限标识、请求参数、<code>data</code> 概要。方法徽章颜色：<span class="badge green">GET</span> <span class="badge blue">POST</span> <span class="badge amber">PUT</span> <span class="badge red">DELETE</span>。</p>
+
+    <h3 id="grp-auth">2.1 认证与个人自助 <span class="badge gray">9 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-iam/.../iam/controller/AuthController.java</code>，类级 <code>@RequestMapping("/api/auth")</code>，无类级权限注解；login / mfa/verify 在 JWT 白名单内。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/auth/login</code></td><td>免鉴权（白名单）</td><td>body <code>{username, password}</code>（均必填）</td><td><code>LoginVO</code>：<code>mfaRequired, token, mfaToken, userId(字符串), username, realName</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/auth/mfa/verify</code></td><td>免鉴权（白名单）</td><td>body <code>{mfaToken, totpCode}</code>（均必填）</td><td><code>LoginVO</code>（二步验证通过后发 access token）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/auth/logout</code></td><td>仅登录</td><td>无（JWT 无状态，服务端不拉黑；动作写审计）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/auth/profile</code></td><td>仅登录</td><td>无</td><td><code>ProfileVO</code> 当前登录人资料</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/auth/profile</code></td><td>仅登录</td><td>body <code>{phone, email}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/auth/password</code></td><td>仅登录</td><td>body <code>{oldPassword, newPassword}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/auth/mfa/setup</code></td><td>仅登录</td><td>无</td><td><code>MfaSetupInfo</code>（TOTP 绑定信息）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/auth/mfa/enable</code></td><td>仅登录</td><td>body <code>{totpCode}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/auth/mfa/disable</code></td><td>仅登录</td><td>body <code>{password, totpCode}</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-iam-user">2.2 用户管理 <span class="badge gray">10 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-iam/.../iam/controller/IamUserController.java</code>，类级 <code>@RequestMapping("/api/iam/users")</code> + <code>@RequiresPerm("iam:user:view")</code>；写操作方法级覆盖为 <code>iam:user:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/users</code></td><td><code>iam:user:view</code></td><td>query <code>page, size, username, realName, status, deptId, roleId</code></td><td><code>PageData&lt;UserListVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/users/{id}</code></td><td><code>iam:user:view</code></td><td>path <code>id</code></td><td><code>UserDetailVO</code>（含角色 id 列表，字符串序列化）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/iam/users</code></td><td><code>iam:user:edit</code></td><td>body <code>UserSaveRequest</code>：<code>username, realName(必填), password, phone, email, deptId, status, remark, roleIds[]</code></td><td><code>String</code> 新用户 id</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}</code></td><td><code>iam:user:edit</code></td><td>path <code>id</code>；body 同 <code>UserSaveRequest</code>（password 空=不改密码）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}/status</code></td><td><code>iam:user:edit</code></td><td>path <code>id</code>；query <code>status</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}/reset-password</code></td><td><code>iam:user:edit</code></td><td>body <code>{newPassword}</code>（必填）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}/roles</code></td><td><code>iam:user:edit</code></td><td>body <code>{roleIds: Long[]}</code>（必填）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}/unlock</code></td><td><code>iam:user:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/users/{id}/mfa/disable</code></td><td><code>iam:user:edit</code></td><td>path <code>id</code>（管理员关闭他人动态口令）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/iam/users/{id}</code></td><td><code>iam:user:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-iam-role">2.3 角色管理 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-iam/.../iam/controller/IamRoleController.java</code>，类级 <code>@RequestMapping("/api/iam/roles")</code> + <code>iam:role:view</code>；写操作 <code>iam:role:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/roles</code></td><td><code>iam:role:view</code></td><td>query <code>page, size, keyword, status</code></td><td><code>PageData&lt;RoleListVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/roles/all</code></td><td><code>iam:role:view</code> 或 <code>iam:user:edit</code>（OR）</td><td>无（启用角色下拉）</td><td><code>List&lt;OptionRoleVO&gt;</code>：<code>id(字符串), roleCode, roleName, dataScope</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/roles/{id}</code></td><td><code>iam:role:view</code></td><td>path <code>id</code></td><td><code>RoleDetailVO</code>（含菜单/部门授权）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/iam/roles</code></td><td><code>iam:role:edit</code></td><td>body <code>RoleSaveRequest</code>：<code>roleCode, roleName(必填), dataScope(必填), status, remark, menuIds[], deptIds[]</code></td><td><code>String</code> 新角色 id</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/iam/roles/{id}</code></td><td><code>iam:role:edit</code></td><td>path <code>id</code>；body 同上</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/iam/roles/{id}</code></td><td><code>iam:role:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-iam-menu">2.4 菜单 / 权限点 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-iam/.../iam/controller/IamMenuController.java</code>，类级 <code>@RequestMapping("/api/iam/menus")</code>，无类级权限注解。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/iam/menus/tree</code></td><td><code>iam:role:view</code> 或 <code>iam:user:edit</code>（OR）</td><td>无（角色授权树/用户分配场景）</td><td><code>List&lt;MenuNode&gt;</code> 菜单权限树</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-mdm-vehicle">2.5 车辆档案 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-mdm/.../mdm/controller/VehicleController.java</code>，类级 <code>@RequestMapping("/api/mdm/vehicles")</code> + <code>mdm:vehicle:view</code>；写操作 <code>mdm:vehicle:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/vehicles</code></td><td><code>mdm:vehicle:view</code></td><td>query <code>page, size, keyword, deptId, plateColor, operationType</code></td><td><code>PageData&lt;Vehicle&gt;</code>（服务层按数据范围裁剪）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/vehicles/options</code></td><td>仅登录（方法级显式空权限码 <code>@RequiresPerm(value={})</code>，登录即放行）</td><td>无（多页面车辆下拉）</td><td><code>List&lt;OptionVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/vehicles/{id}</code></td><td><code>mdm:vehicle:view</code></td><td>path <code>id</code></td><td><code>Vehicle</code> 车辆档案实体</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/vehicles</code></td><td><code>mdm:vehicle:edit</code></td><td>body <code>VehicleSaveRequest</code>：<code>deptId, vehicleNo(必填), vehiclePlateColor(必填), vin(17位), vehicleType, operationType, vehicleIndustry, roadLicenseNo, provinceCode, cityCode, countyCode, vehicleColor, vehicleBrand, ownerName, ownerPhone, remark</code></td><td><code>Long</code> 新 id（数字）</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/mdm/vehicles/{id}</code></td><td><code>mdm:vehicle:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/mdm/vehicles/{id}</code></td><td><code>mdm:vehicle:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-mdm-terminal">2.6 终端档案 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-mdm/.../mdm/controller/TerminalController.java</code>，类级 <code>@RequestMapping("/api/mdm/terminals")</code> + <code>mdm:terminal:view</code>；写操作 <code>mdm:terminal:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/terminals</code></td><td><code>mdm:terminal:view</code></td><td>query <code>page, size, keyword, status, protocolType, equipmentType</code></td><td><code>PageData&lt;Terminal&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/terminals/options</code></td><td><code>mdm:terminal:view</code>（继承类级，无方法注解）</td><td>无</td><td><code>List&lt;OptionVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/terminals/{id}</code></td><td><code>mdm:terminal:view</code></td><td>path <code>id</code></td><td><code>Terminal</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/terminals</code></td><td><code>mdm:terminal:edit</code></td><td>body <code>TerminalSaveRequest</code>：<code>identityCode(必填), tlMac, oemCode, tlModel, simAccount, protocolType, equipmentType, videoChannel, status(必填), remark</code></td><td><code>Long</code> 新 id（数字）</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/mdm/terminals/{id}</code></td><td><code>mdm:terminal:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/mdm/terminals/{id}</code></td><td><code>mdm:terminal:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-mdm-driver">2.7 驾驶员档案 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-mdm/.../mdm/controller/DriverController.java</code>，类级 <code>@RequestMapping("/api/mdm/drivers")</code> + <code>mdm:driver:view</code>；写操作 <code>mdm:driver:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/drivers</code></td><td><code>mdm:driver:view</code></td><td>query <code>page, size, keyword, status</code></td><td><code>PageData&lt;Driver&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/drivers/options</code></td><td><code>mdm:driver:view</code>（继承类级）</td><td>无</td><td><code>List&lt;OptionVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/drivers/{id}</code></td><td><code>mdm:driver:view</code></td><td>path <code>id</code></td><td><code>Driver</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/drivers</code></td><td><code>mdm:driver:edit</code></td><td>body <code>DriverSaveRequest</code>：<code>driverName(必填), sex(必填), idcard, contactPhone, licenseCode(必填), licenceCategory, driverImg, status(必填), remark</code></td><td><code>Long</code> 新 id（数字）</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/mdm/drivers/{id}</code></td><td><code>mdm:driver:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/mdm/drivers/{id}</code></td><td><code>mdm:driver:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-mdm-org">2.8 组织架构 <span class="badge gray">5 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-mdm/.../mdm/controller/OrgController.java</code>，类级 <code>@RequestMapping("/api/mdm/depts")</code>，无类级权限注解。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/depts/tree</code></td><td><code>mdm:org:view</code> 或 <code>iam:user:edit</code>（OR）</td><td>无</td><td><code>List&lt;Dept&gt;</code> 组织树</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/depts/options</code></td><td><code>mdm:org:view</code> 或 <code>iam:user:edit</code>（OR）</td><td>无</td><td><code>List&lt;OptionVO&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/depts</code></td><td><code>mdm:org:edit</code></td><td>body <code>DeptSaveRequest</code>：<code>parentId(空/0=根), deptName(必填), deptCode, deptType(必填), contactPerson, contactPhone, provinceCode, cityCode, countyCode, address, sortNo</code></td><td><code>Long</code> 新 id（数字）</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/mdm/depts/{id}</code></td><td><code>mdm:org:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/mdm/depts/{id}</code></td><td><code>mdm:org:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-mdm-binding">2.9 车辆绑定关系（车-终端、车-司机） <span class="badge gray">5 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-mdm/.../mdm/controller/BindingController.java</code>，类级 <code>@RequestMapping("/api/mdm/vehicles/{vehicleId}")</code> + <code>mdm:vehicle:view</code>；写操作 <code>mdm:vehicle:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/mdm/vehicles/{vehicleId}/bindings</code></td><td><code>mdm:vehicle:view</code></td><td>path <code>vehicleId</code></td><td><code>VehicleBindingVO</code> 当前终端/司机绑定</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/vehicles/{vehicleId}/bind-terminal</code></td><td><code>mdm:vehicle:edit</code></td><td>body <code>{terminalId(必填), bindType, installer, remark}</code>（已绑定按换绑处理）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/vehicles/{vehicleId}/unbind-terminal</code></td><td><code>mdm:vehicle:edit</code></td><td>body 可空 <code>{remark}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/vehicles/{vehicleId}/bind-driver</code></td><td><code>mdm:vehicle:edit</code></td><td>body <code>{driverId(必填), driverType, remark}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/mdm/vehicles/{vehicleId}/unbind-driver</code></td><td><code>mdm:vehicle:edit</code></td><td>body <code>{driverId(必填), remark}</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-traj">2.10 轨迹查询 <span class="badge gray">4 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-trajectory/.../traj/controller/TrajectoryController.java</code>，类级 <code>@RequestMapping("/api/traj")</code>，无权限注解（全部仅登录）。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/traj/vehicles</code></td><td>仅登录</td><td>无（有轨迹的终端去重，在途车辆）</td><td><code>List&lt;VehicleOption&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/traj/vehicles/registered</code></td><td>仅登录</td><td>无（车辆台账）</td><td><code>List&lt;Vehicle&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/traj/latest</code></td><td>仅登录</td><td>无（各终端最新轨迹点）</td><td><code>List&lt;GpsPoint&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/traj/track</code></td><td>仅登录</td><td>query <code>identityCode, plateNo, start, end</code>（时间格式 <code>yyyy-MM-dd HH:mm:ss</code>，均可空）</td><td><code>List&lt;GpsPoint&gt;</code> 历史轨迹点</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-monitor">2.11 实时监控与风险预警 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-monitor/.../monitor/controller/MonitorController.java</code>，类级 <code>@RequestMapping("/api/monitor")</code>，无类级权限注解。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/overview</code></td><td>仅登录</td><td>无</td><td><code>Map&lt;String,Object&gt;</code> 监控总览指标</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/risks</code></td><td>仅登录</td><td>query <code>page, size, eventSource, riskLevel, handleStatus, ruleId, plateNo, cityCode</code></td><td><code>PageData&lt;RiskEvent&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/monitor/risks/{id}/handle</code></td><td><code>risk:order:handle</code></td><td>path <code>id</code>；body <code>{remark}</code>（内嵌 <code>HandleRequest</code>）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/risks/type-stats</code></td><td>仅登录</td><td>无（风险类型分布饼图）</td><td><code>List&lt;Map&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/warnings</code></td><td>仅登录</td><td>无</td><td><code>List&lt;WarnInfo&gt;</code> 终端报警</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/video-analyses</code></td><td>仅登录</td><td>无</td><td><code>List&lt;VideoAnalysis&gt;</code> 视频分析任务</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-dashboard">2.12 监控总览大屏 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-monitor/.../monitor/dashboard/controller/DashboardController.java</code>，类级 <code>@RequestMapping("/api/monitor/dashboard")</code> + <code>monitor:dashboard:view</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/dashboard/summary</code></td><td><code>monitor:dashboard:view</code></td><td>无（只读聚合，不做数据范围裁剪）</td><td><code>DashboardSummaryVO</code>：在线/里程/工单/车队/区域/热力六块一次返回；Long id 字符串序列化，比率字段分母为 0 时为 <code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-panel">2.13 车辆详情聚合面板 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-monitor/.../monitor/panel/controller/VehiclePanelController.java</code>，类级 <code>@RequestMapping("/api/monitor/vehicle-panel")</code> + <code>monitor:view</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/vehicle-panel/{vehicleId}</code></td><td><code>monitor:view</code></td><td>path <code>vehicleId</code>（按字符串接收后手动 <code>Long.parseLong</code>，非法数字抛 <code>40001</code>）</td><td><code>VehiclePanelVO</code>：档案 + 终端/司机绑定 + 最新点 + 当日轨迹 + 报警 Top5 + 当日计数；所有 Long id 字符串序列化</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-alarm">2.14 终端报警中心 <span class="badge gray">7 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-monitor/.../monitor/controller/AlarmController.java</code>，类级 <code>@RequestMapping("/api/alarm")</code> + <code>alarm:view</code>；确认/解除为 <code>alarm:handle</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/alarm/page</code></td><td><code>alarm:view</code></td><td>query 绑定 <code>AlarmQuery</code>：<code>page(默认1), size(默认20), plateNo, typeId, handleStatus(0/1/2), beginTime, endTime</code>（时间为字符串，服务层解析校验）</td><td><code>PageData&lt;AlarmVO&gt;</code>（id 字符串序列化）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/alarm/latest</code></td><td><code>alarm:view</code></td><td>query <code>limit</code>（可空）</td><td><code>List&lt;AlarmVO&gt;</code> 待处理滚动</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/alarm/stats</code></td><td><code>alarm:view</code></td><td>query <code>start, end</code>（缺省=今日）</td><td><code>Map&lt;String,Object&gt;</code> 统计</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/alarm/types</code></td><td><code>alarm:view</code></td><td>无（报警类型下拉）</td><td><code>List&lt;Map&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/alarm/{id}</code></td><td><code>alarm:view</code></td><td>path <code>id</code></td><td><code>AlarmVO</code>（附带 <code>relatedRisks</code>）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/alarm/{id}/confirm</code></td><td><code>alarm:handle</code></td><td>path <code>id</code>；无 body（状态 0→1）</td><td><code>AlarmVO</code> 更新后对象</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/alarm/{id}/resolve</code></td><td><code>alarm:handle</code></td><td>path <code>id</code>；body <code>{resultCode, resultMsg}</code>，<code>resultCode</code> ∈ <code>00</code>属实/<code>01</code>误报/<code>02</code>未知，<code>resultMsg</code> ≤200 字（状态 0/1→2，校验失败 <code>40001</code>）</td><td><code>AlarmVO</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-geocode">2.15 地理编码（高德代理） <span class="badge gray">2 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-monitor/.../monitor/geocode/GeocodeController.java</code>，类级 <code>@RequestMapping("/api/terminal/geocode")</code>，无权限注解（仅登录）。服务端代理高德 Web 服务，坐标口径 GCJ-02。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/terminal/geocode/reverse</code></td><td>仅登录</td><td>query <code>lng, lat</code>（double 必填，超合法范围抛 <code>40001</code>）</td><td><code>{address: string}</code>；未配 <code>AMAP_KEY</code> → <code>50301</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/terminal/geocode/search</code></td><td>仅登录</td><td>query <code>keyword</code>（必填，空串返回空列表）, <code>city</code>（可空，citylimit=true）</td><td><code>[{name, address, lng, lat}]</code> 候选点列表</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-risk-rule">2.16 风控规则配置 <span class="badge gray">7 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-risk/.../risk/controller/RiskRuleController.java</code>，类级 <code>@RequestMapping("/api/risk/rules")</code> + <code>risk:rule:view</code>；写操作 <code>risk:rule:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/rules</code></td><td><code>risk:rule:view</code></td><td>query <code>page, size, ruleCode, ruleName, ruleType, status</code></td><td><code>PageData&lt;RiskRule&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/rules/all</code></td><td><code>risk:rule:view</code></td><td>无（全量有效行，事件页筛选用）</td><td><code>List&lt;RiskRule&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/rules/{id}</code></td><td><code>risk:rule:view</code></td><td>path <code>id</code></td><td><code>RiskRule</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/rules</code></td><td><code>risk:rule:edit</code></td><td>body <code>RuleSaveRequest</code>：<code>ruleCode(3~40位大写字母数字下划线), ruleName, ruleType, riskLevel(1~3), params(Map), cooldownSec(0~86400), status, remark</code></td><td><code>String</code> 新规则 id</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/risk/rules/{id}</code></td><td><code>risk:rule:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/risk/rules/{id}/status</code></td><td><code>risk:rule:edit</code></td><td>body <code>{status}</code>（0 或 1）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/risk/rules/{id}</code></td><td><code>risk:rule:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-risk-order">2.17 处置工单流转 <span class="badge gray">15 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-risk/.../risk/controller/RiskOrderController.java</code>，类级 <code>@RequestMapping("/api/risk/orders")</code> + <code>risk:order:view</code>；处置动作为 <code>risk:order:handle</code>，分派/重开/SLA 改为 <code>risk:order:assign</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders</code></td><td><code>risk:order:view</code></td><td>query <code>page, size, keyword, status, riskLevel, closeResult, timeFlag, assigneeId, beginTime, endTime</code></td><td><code>PageData&lt;RiskWorkOrder&gt;</code>（<code>id</code> 字符串序列化）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/{id}</code></td><td><code>risk:order:view</code></td><td>path <code>id</code></td><td><code>OrderDetailVO</code>（工单 + 日志等明细）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/stats</code></td><td><code>risk:order:view</code></td><td>无</td><td><code>OrderStatsVO</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/funnel</code></td><td><code>risk:order:view</code></td><td>query <code>start, end</code>（必填，<code>@DateTimeFormat(iso=DATE_TIME)</code>，即 ISO 日期时间）</td><td><code>OrderFunnelVO</code> 感知-预警-干预-闭环漏斗</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/{id}/interventions</code></td><td><code>risk:order:view</code></td><td>path <code>id</code></td><td><code>List&lt;RiskIntervention&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/interventions</code></td><td><code>risk:order:handle</code></td><td>body 为 <code>RiskIntervention</code> 实体（含 <code>orderId</code>；审计 objectId 取 <code>#data.orderId</code>）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/assignable-users</code></td><td><code>risk:order:view</code></td><td>无（可分派人员下拉）</td><td><code>List&lt;AssignableUserVO&gt;</code>（id 字符串序列化）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/ensure/{eventId}</code></td><td><code>risk:order:handle</code></td><td>path <code>eventId</code>（无工单则补建）</td><td><code>RiskWorkOrder</code> 工单对象</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/{id}/claim</code></td><td><code>risk:order:handle</code></td><td>path <code>id</code>（认领）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/{id}/assign</code></td><td><code>risk:order:assign</code></td><td>body <code>{userId(必填), remark(≤255)}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/{id}/transfer</code></td><td><code>risk:order:handle</code></td><td>body <code>{userId(必填), remark(必填,5~255字)}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/{id}/close</code></td><td><code>risk:order:handle</code></td><td>body <code>{result(必填), remark(必填,10~255字)}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/orders/{id}/reopen</code></td><td><code>risk:order:assign</code></td><td>body <code>{remark(必填,5~255字)}</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/orders/sla</code></td><td><code>risk:order:view</code></td><td>无</td><td><code>List&lt;RiskOrderSla&gt;</code> 三级风险 SLA 配置</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/risk/orders/sla</code></td><td><code>risk:order:assign</code></td><td>body <code>{items:[{riskLevel(1~3), limitMin(1~10080), graceMin(0~1440)}]}</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-risk-engine">2.18 规则引擎运行概览 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-risk/.../risk/controller/EngineController.java</code>，类级 <code>@RequestMapping("/api/risk/engine")</code> + <code>risk:rule:view</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/engine/summary</code></td><td><code>risk:rule:view</code></td><td>无</td><td><code>EngineSummaryVO</code> 引擎概览统计</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-geofence">2.19 电子围栏配置 <span class="badge gray">7 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-risk/.../risk/controller/GeoFenceController.java</code>，类级 <code>@RequestMapping("/api/risk/fences")</code> + <code>risk:fence:view</code>；写操作 <code>risk:fence:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/fences</code></td><td><code>risk:fence:view</code></td><td>query <code>page, size, fenceName, fenceType, status</code></td><td><code>PageData&lt;RiskGeoFence&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/fences/all</code></td><td><code>risk:fence:view</code></td><td>无</td><td><code>List&lt;RiskGeoFence&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/risk/fences/{id}</code></td><td><code>risk:fence:view</code></td><td>path <code>id</code></td><td><code>RiskGeoFence</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/risk/fences</code></td><td><code>risk:fence:edit</code></td><td>body <code>FenceSaveRequest</code>：<code>fenceName, fenceType(圆形/多边形), centerLng, centerLat, radiusM, points([[lng,lat]...],首尾可不闭合), triggerDir(1~3), riskLevel(1~3), cooldownSec(0~86400), status, remark</code></td><td><code>String</code> 新围栏 id</td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/risk/fences/{id}</code></td><td><code>risk:fence:edit</code></td><td>path <code>id</code>；body 同新建</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/risk/fences/{id}/status</code></td><td><code>risk:fence:edit</code></td><td>body <code>{status}</code>（0 或 1）</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/risk/fences/{id}</code></td><td><code>risk:fence:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-score">2.20 驾驶行为评分 <span class="badge gray">4 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-analysis/.../analysis/controller/ScoreController.java</code>，类级 <code>@RequestMapping("/api/analysis/score")</code> + <code>analysis:score:view</code>。经 nginx 长前缀 <code>/api/analysis/score/</code> 路由到 Java（注意与 Python 的 <code>/api/analysis/</code> 区分）。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/score/page</code></td><td><code>analysis:score:view</code></td><td>query <code>page, size, startDate, endDate, driverId, plateNo, level</code>（日期 <code>yyyy-MM-dd</code>）</td><td><code>PageData&lt;ScoreVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/score/trend</code></td><td><code>analysis:score:view</code></td><td>query <code>driverId</code>（必填）, <code>startDate, endDate</code></td><td><code>List&lt;TrendVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/score/summary</code></td><td><code>analysis:score:view</code></td><td>query <code>startDate, endDate</code></td><td><code>SummaryVO</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/analysis/score/recalc</code></td><td><code>analysis:score:view</code> <strong>且</strong> 持有角色 <code>SUPER_ADMIN</code>/<code>SAFE_ADMIN</code> 或超管（方法内二次校验，不足抛 <code>40301</code>）</td><td>body <code>{start(yyyy-MM-dd,必填), end(必填), driverId(可选字符串)}</code>；跨度上限 <code>ScoreConstants.MAX_RECALC_DAYS</code>，end 不得晚于今天；异步单线程互斥</td><td><code>{accepted:true, start, end}</code>；参数错 <code>46001</code>，任务进行中 <code>46002</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-profile">2.21 风险趋势与画像 <span class="badge gray">4 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-analysis/.../analysis/profile/controller/ProfileController.java</code>，类级 <code>@RequestMapping("/api/analysis/profile")</code> + <code>analysis:profile:view</code>；全 GET 只读。时间入参格式 <code>yyyy-MM-dd'T'HH:mm:ss</code>，区间左闭右开、跨度 ≤366 天。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/profile/trend</code></td><td><code>analysis:profile:view</code></td><td>query <code>dim</code>(global/dept/driver/vehicle，默认 global), <code>id</code>(非 global 时用), <code>start, end</code>(必填), <code>granularity</code>(day/week/month，默认 day)</td><td><code>TrendVO</code>；维度非法 <code>46102</code>，范围非法 <code>46101</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/profile/object-card</code></td><td><code>analysis:profile:view</code></td><td>query <code>type</code>(vehicle/driver/dept), <code>id</code>(必填), <code>start, end</code></td><td><code>ObjectCardVO</code>；对象不存在 <code>40401</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/profile/hotspots</code></td><td><code>analysis:profile:view</code></td><td>query <code>start, end</code>, <code>radius_m</code>(仅 100/200/500，默认 200), <code>limit</code>(1~50，默认 20)</td><td><code>HotspotVO</code> 黑点路段</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/analysis/profile/ranking</code></td><td><code>analysis:profile:view</code></td><td>query <code>dim</code>(driver/vehicle), <code>start, end</code>, <code>limit</code>(1~50，默认 10)</td><td><code>RankingVO</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-audit">2.22 操作审计日志 <span class="badge gray">3 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-audit/.../audit/controller/AuditLogController.java</code>，类级 <code>@RequestMapping("/api/audit")</code> + <code>audit:view</code>；只读，无写入/删除。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/audit/logs</code></td><td><code>audit:view</code></td><td>query <code>startTime, endTime</code>(yyyy-MM-dd HH:mm:ss), <code>userName, module, action, status, keyword, page, size</code></td><td><code>PageData&lt;AuditLogVO&gt;</code>（id 字符串序列化）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/audit/logs/{id}</code></td><td><code>audit:view</code></td><td>path <code>id</code></td><td><code>SysAuditLog</code>（id 字符串序列化）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/audit/stats</code></td><td><code>audit:view</code></td><td>query <code>startTime, endTime</code>（默认近 7 天，跨度上限 90 天）</td><td><code>AuditStatsVO</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-dict">2.23 数据字典 <span class="badge gray">10 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-system/.../system/controller/DictController.java</code>，类级 <code>@RequestMapping("/api/system/dict")</code> + <code>system:dict:view</code>；写操作 <code>system:dict:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/dict/types</code></td><td><code>system:dict:view</code></td><td>query <code>page, size, keyword</code></td><td><code>PageData&lt;DictType&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/system/dict/types</code></td><td><code>system:dict:edit</code></td><td>body <code>DictType</code> 实体</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/system/dict/types/{id}</code></td><td><code>system:dict:edit</code></td><td>path <code>id</code>；body <code>DictType</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/system/dict/types/{id}</code></td><td><code>system:dict:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/dict/types/{typeId}/items</code></td><td><code>system:dict:view</code></td><td>path <code>typeId</code></td><td><code>List&lt;DictItem&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/system/dict/items</code></td><td><code>system:dict:edit</code></td><td>body <code>DictItem</code> 实体</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/system/dict/items/{id}</code></td><td><code>system:dict:edit</code></td><td>path <code>id</code>；body <code>DictItem</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/system/dict/items/{id}</code></td><td><code>system:dict:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/dict/items/{dictCode}</code></td><td><code>system:dict:view</code></td><td>path <code>dictCode</code>（按编码对外查字典项）</td><td><code>List&lt;DictItem&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/dict/all</code></td><td><code>system:dict:view</code></td><td>无</td><td><code>Map&lt;String, List&lt;DictItem&gt;&gt;</code> 全字典</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-config">2.24 系统参数 <span class="badge gray">5 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-system/.../system/controller/ConfigController.java</code>，类级 <code>@RequestMapping("/api/system/config")</code> + <code>system:config:view</code>；写操作 <code>system:config:edit</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/config</code></td><td><code>system:config:view</code></td><td>query <code>page, size, keyword</code></td><td><code>PageData&lt;SysConfig&gt;</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/system/config</code></td><td><code>system:config:edit</code></td><td>body <code>SysConfig</code> 实体</td><td><code>null</code></td></tr>
+        <tr><td><span class="badge amber">PUT</span></td><td><code>/api/system/config/{id}</code></td><td><code>system:config:edit</code></td><td>path <code>id</code>；body <code>SysConfig</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/system/config/{id}</code></td><td><code>system:config:edit</code></td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/system/config/value/{key}</code></td><td><code>system:config:view</code>（实际由类级注解决定，见下注）</td><td>path <code>key</code>；query <code>defaultValue</code>（可空）</td><td><code>String</code> 参数值</td></tr>
+      </tbody>
+    </table>
+    <blockquote class="warn"><p>代码与注释不一致提示：<code>getValue</code> 方法注释写"业务读取参数值（登录即可）"，但方法上没有 <code>@RequiresPerm</code>，按 <code>PermAspect</code>"类级注解在方法未显式标注时生效"的规则，实际仍要求 <code>system:config:view</code>。联调以代码实际行为为准。</p></blockquote>
+
+    <h3 id="grp-notify">2.25 站内消息中心 <span class="badge gray">7 个端点</span></h3>
+    <p class="cover-meta">源码：<code>module-notify/.../notify/controller/NotifyController.java</code>，类级 <code>@RequestMapping("/api/notify")</code>，无权限注解（全部仅登录）；所有查询强制按当前登录人 id 隔离。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/notify/messages</code></td><td>仅登录</td><td>query <code>page, size, unreadOnly</code>（默认 1/10/false；size 服务端截断 ≤100）</td><td><code>PageData&lt;MessageVO&gt;</code>（仅本人）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/notify/latest</code></td><td>仅登录</td><td>query <code>limit</code>（默认 10，铃铛下拉）</td><td><code>List&lt;MessageVO&gt;</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/notify/unread-count</code></td><td>仅登录</td><td>无</td><td><code>{count: long}</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/notify/messages/{id}/read</code></td><td>仅登录</td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/notify/messages/read-all</code></td><td>仅登录</td><td>无</td><td><code>{updated: int}</code></td></tr>
+        <tr><td><span class="badge red">DELETE</span></td><td><code>/api/notify/messages/{id}</code></td><td>仅登录</td><td>path <code>id</code></td><td><code>null</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/notify/settings</code></td><td>仅登录</td><td>无（坐席端弹窗阈值/提示音设置）</td><td><code>NotifySettingsVO</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-health">2.26 健康检查 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>platform-boot/.../boot/HealthController.java</code>。路径不在 <code>/api</code> 下，JWT 过滤器（urlPattern <code>/api/*</code>）不拦截。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/health</code></td><td>免鉴权</td><td>无</td><td>裸 JSON（<strong>非 Result 包装</strong>）：<code>{"status":"UP"}</code></td></tr>
+      </tbody>
+    </table>
+    <blockquote class="tip"><p>另有 Spring Boot Actuator 端点 <code>GET /actuator/health</code>（<code>application.yml</code> 仅暴露 <code>health</code>，<code>show-details: never</code>），同样免鉴权；docker-compose 中 platform-app 的健康检查即调用该端点。两者均无 <code>/api</code> 前缀，portal.conf 也未代理，经 8090 门户访问 <code>/health</code> 会被 SPA 的 <code>try_files</code> 兜底为 index.html，仅宜在容器内/直连 8080 使用。</p></blockquote>
+
+    <h3 id="grp-gateway">2.27 vps 网关运行模式状态与报警附件 <span class="badge gray">3 个端点</span></h3>
+    <p class="cover-meta">GATEWAY-PLAN-001 一期（2026-10-06）。状态类源码 <code>module-monitor/.../monitor/controller/GatewayStatusController.java</code>，类级 <code>@RequestMapping("/api/monitor/gateway")</code> + <code>@RequiresPerm("system:gateway:view")</code>；附件类 <code>controller/MediaController.java</code>，类级 <code>@RequestMapping("/api/monitor/alarm/media")</code> + <code>alarm:view</code>。processing 侧调用经 <code>gateway/ProcessingClient.java</code> 携带 X-Service-Token（connectTimeout 3s、readTimeout 30s，失败归一 50301）。前端封装见 <code>src/api/gateway.ts</code>、<code>src/composables/useAuthMedia.ts</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/gateway/status</code></td><td><code>system:gateway:view</code></td><td>无（Java 原样代理 processing <code>/api/gateway/status</code>）</td><td><code>{mode, enabled, running, startedAt, lastError, groupId, topics, stats:[{topic,msgCount,errCount,lastTime}], dlqCount, unknownCount}</code>；processing 不可用 → <code>50301</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/gateway/unknown-terminals</code></td><td><code>system:gateway:view</code></td><td>无（Java 直查 traj.gateway_unknown_terminal，最近活跃优先）</td><td><code>List&lt;Map&gt;</code>：<code>id, phoneNumber, truckId, plateNo, msgCount, firstSeen, lastSeen</code></td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/monitor/alarm/media/{id}</code></td><td><code>alarm:view</code></td><td>path <code>id</code>（traj_warn_media 主键）；先按附件查车牌做数据范围归属校验（canSee），再以 X-Service-Token 流式中转 processing <code>/api/gateway/media/{id}</code>，透传 Content-Type/Length</td><td>文件字节流（图片/音频/视频）；附件不存在 → <code>40401</code>，越权 → <code>40301</code>，上游不可用 → <code>50301</code>。前端因 &lt;img&gt; 无法带 Authorization，统一用 blob+objectURL 加载</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="sec-python">3 Python 处理服务接口</h2>
+    <p>FastAPI 应用（<code>processing-service/app/main.py</code>），直连端口 <code>8000</code>。成功响应为裸 JSON（无 <code>{code,message,data}</code> 包装）；服务令牌接口要求请求头 <code>X-Service-Token</code>。</p>
+
+    <h3 id="grp-py-ingest">3.1 轨迹数据接入 <span class="badge gray">2 个端点</span></h3>
+    <p class="cover-meta">源码：<code>processing-service/app/routes/ingest.py</code>，路由前缀 <code>/api/ingest</code>。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/ingest/traj</code></td><td><span class="badge purple">X-Service-Token</span></td><td>body <code>{identityCode(必填), plateNo, points(必填)}</code>；point 字段 <code>gpsTime, lng, lat, speed?, direction?, altitude?, alarmFlag?(默认0), mileage?</code>；每 5000 条一批入库，随后旁路触发 F18 CEP 评估（引擎异常不阻断入库）</td><td><code>{inserted: int}</code>；<code>identityCode/points</code> 空 → HTTP 400 <code>{"detail":...}</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/ingest/load-sample</code></td><td>无鉴权（未挂服务令牌依赖）</td><td>body 可空 <code>{file}</code>，默认 <code>vehicle_gps_20260901.csv</code>（仅取 <code>samples/</code> 下 basename）；幂等：重导前按设备+时间范围清旧点，并同步导入当日 <code>driver_events.json</code> 事件（同日仅一次）</td><td><code>{file, identityCode, timeRange:[start,end], insertedPoints, insertedEvents}</code>；文件不存在 → HTTP 404；CSV 空 → HTTP 400</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-py-simulator">3.2 模拟器控制 <span class="badge gray">6 个端点</span></h3>
+    <p class="cover-meta">源码：<code>processing-service/app/routes/simulator.py</code> + <code>services/simulator.py</code>，路由前缀 <code>/api/simulator</code>。鉴权统一经 <code>app/security.py require_access</code>：写操作要求 JWT 登录态 → 运行模式匹配 → 权限码 <code>system:config:edit</code>（不满足分别 401/403）；status 类仅要求登录态。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/simulator/start</code></td><td>登录 + 演示模式 + config:edit</td><td>无（启动进程内模拟器）</td><td rowspan="3">状态对象：<code>{running, startedAt, vehicleCount, ticks, demoEvents, vehicles:[{identityCode, plateNo, mode, city}]}</code></td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/simulator/stop</code></td><td>登录 + 演示模式 + config:edit</td><td>无</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/simulator/status</code></td><td>登录态</td><td>无</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/simulator/mock/start</code></td><td>登录 + 测试模式 + config:edit</td><td>无（运行时启动 mock 仿真投递线程，消费链路保持；成功后写回 sys_config 键 <code>gateway.mock-delivery-enabled=on</code>；runner 启动失败 → HTTP 409）</td><td rowspan="3">mock 投递状态：<code>{mockDeliveryEnabled, mockRunning, mockStartedAt, mockStoppedAt, mockStats:{ticks, warns}}</code>（同时并入 /api/monitor/gateway/status 网关状态返回）</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/simulator/mock/stop</code></td><td>登录 + 测试模式 + config:edit</td><td>无（停止 mock 投递并写回 <code>gateway.mock-delivery-enabled=off</code>，重启 processing 后保持停止）</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/simulator/mock/status</code></td><td>登录态</td><td>无</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-py-analysis">3.3 视频分析（DSM/ADAS 占位链路） <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>processing-service/app/routes/analysis.py</code>，路由前缀 <code>/api/analysis</code>，<strong>路由器级</strong>挂 <code>Depends(verify_service_token)</code>。经 nginx 时该路径走 Python（<code>/api/analysis/score|profile</code> 才走 Java）。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/analysis/video</code></td><td><span class="badge purple">X-Service-Token</span></td><td>body <code>{taskId?(缺省自动生成 VA-xxxx), plateNo, channel?(默认 DSM), clipUrl, eventCode, identityCode?, lng?, lat?, speed?}</code>；先 upsert 视频分析任务（RUNNING），识别信号交 cep_engine 按启用规则分级/去重/落事件，再置 SUCCESS</td><td><code>{taskId, status:"SUCCESS", eventCode, eventCount(0/1), summary}</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-py-dataset">3.4 标准测试数据集 <span class="badge gray">4 个端点</span></h3>
+    <p class="cover-meta">源码：<code>processing-service/app/routes/dataset.py</code> + <code>services/dataset_gen.py</code>，路由前缀 <code>/api/ingest/dataset</code>。鉴权经 <code>require_access</code>：写操作要求 JWT 登录态 + 演示/测试模式 + 权限码 <code>system:config:edit</code>；status 仅要求登录态。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/ingest/dataset/load</code></td><td>登录 + 演示/测试模式 + config:edit</td><td>body 可空 <code>{mode}</code>，<code>standard</code>（30s 一点）/ <code>dense</code>（15s 一点），默认 standard；后台线程异步生成，已有任务运行则拒绝</td><td>任务状态对象 <code>{running, mode, stage, percent, counts, error, started_at, finished_at}</code>；mode 非法 → HTTP 400；运行中 → HTTP 409</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/ingest/dataset/clear</code></td><td>登录 + 演示/测试模式 + config:edit</td><td>无（TRUNCATE mon/traj 业务表并重置序列；保留 IAM/菜单/字典/配置/审计；任务运行中禁止）</td><td><code>{cleared: true}</code>；运行中 → HTTP 409</td></tr>
+        <tr><td><span class="badge blue">POST</span></td><td><code>/api/ingest/dataset/clear-runtime</code></td><td>登录 + 演示/测试模式 + config:edit</td><td>无（TRUNCATE 运行数据：风险事件/工单/轨迹点/网关报警与附件/围栏状态/消费统计/站内消息 sys_message 与 notify_send_log 等，<strong>保留基础数据</strong>：组织/车队/车辆/终端/司机/规则/围栏/用户/系统参数；TRUNCATE 不回退序列，避免 WS 推送 id 游标回退丢消息；同时重置 mock 在途报警状态）</td><td><code>{cleared: true}</code>；数据集任务运行中 → HTTP 409</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/ingest/dataset/status</code></td><td>登录态</td><td>无</td><td>任务状态对象（同 load 返回）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-py-health">3.5 健康检查 <span class="badge gray">1 个端点</span></h3>
+    <p class="cover-meta">源码：<code>processing-service/app/routes/health.py</code>，裸路径，无前缀无鉴权。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/health</code>（8000 端口）</td><td>免鉴权</td><td>无</td><td><code>{"status":"UP"}</code>；docker-compose 中 processing-app 健康检查调用此端点</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="grp-py-gateway">3.6 vps 网关接入内部接口 <span class="badge gray">3 个端点</span></h3>
+    <p class="cover-meta">GATEWAY-PLAN-001 一期（2026-10-06）。源码：<code>processing-service/app/routes/gateway.py</code>，路由前缀 <code>/api/gateway</code>，<strong>路由器级</strong>挂 <code>Depends(verify_service_token)</code>（3 个端点均要求 X-Service-Token）。浏览器不直接访问，由 Java 平台鉴权后中转；nginx 已代理 <code>/api/gateway/</code> 供服务间/运维带令牌直连。</p>
+    <table>
+      <thead><tr><th>方法</th><th>完整路径</th><th>权限</th><th>请求参数</th><th>返回 data</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/gateway/status</code></td><td><span class="badge purple">X-Service-Token</span></td><td>无（runner 运行状态 + db 统计合并）</td><td><code>{mode, enabled, running, startedAt, lastError, groupId, topics, stats, dlqCount, unknownCount}</code> 裸 JSON</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/gateway/unknown-terminals</code></td><td><span class="badge purple">X-Service-Token</span></td><td>无</td><td><code>{"items":[...]}</code> 隔离区清单</td></tr>
+        <tr><td><span class="badge green">GET</span></td><td><code>/api/gateway/media/{media_id}</code></td><td><span class="badge purple">X-Service-Token</span></td><td>path <code>media_id</code></td><td>FileResponse 文件流（按 file_name 推断 Content-Type）；附件不存在或未转存 → HTTP 404 <code>{"detail":...}</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="grp-ws">4 WebSocket 实时通道</h2>
+    <p class="cover-meta">源码目录：<code>module-monitor/.../monitor/websocket/</code>（<code>RealtimeWebSocketConfig</code>、<code>AuthHandshakeInterceptor</code>、<code>RealtimeWebSocketHandler</code>、<code>RealtimePushScheduler</code>、<code>SessionRegistry</code>、<code>WsScopeResolver</code>）；前端消费侧 <code>frontend/src/composables/useRealtime.ts</code>。</p>
+
+    <h4>4.1 连接与握手鉴权</h4>
+    <ul>
+      <li>端点路径：<code>/ws/realtime</code>（<code>RealtimeWebSocketConfig</code> 注册，<code>setAllowedOriginPatterns("*")</code>）。</li>
+      <li>经门户连接：<code>ws://&lt;主机&gt;:8090/ws/realtime?token=&lt;JWT&gt;</code>（HTTPS 页面用 <code>wss://</code>）；直连 Java 为 <code>ws://&lt;主机&gt;:8080/ws/realtime?token=...</code>。nginx <code>/ws/</code> 已配 Upgrade 头。</li>
+      <li>token 为登录获得的 access JWT（<code>purpose=access</code>）；握手拦截器只解析 URL query 中的 <code>token</code> 参数，缺失/解析失败/purpose 不符均拒绝握手；通过后把 <code>uid</code>、<code>username</code> 写入会话属性。MFA 中间令牌（purpose=mfa）不能用于握手。</li>
+      <li>同一用户多标签页/多设备允许多会话（<code>SessionRegistry</code> 维护 uid → sessionId 集合）；会话注册为内存态，单机实现。</li>
+    </ul>
+
+    <h4>4.2 消息信封与推送类型</h4>
+    <p>所有推送统一信封：<code>{"type": "&lt;类型&gt;", "data": ...}</code>。服务端共推送 4 类消息：</p>
+    <table>
+      <thead><tr><th>type</th><th>方向/时机</th><th>data 结构与字段</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>POINTS</code></td>
+          <td>服务端 → 客户端；连接建立后<strong>立即推一帧</strong>位置快照；之后调度器每 <strong>1 秒</strong>推一次全量最新点（<code>@Scheduled(fixedDelay=1000, initialDelay=5000)</code>）</td>
+          <td><code>GpsPoint[]</code>，每项字段：<code>id, identityCode, plateNo, gpsTime, lng, lat, speed, direction, altitude, alarmFlag, mileage</code>（id 为 JSON 数字；时间按全局 <code>yyyy-MM-dd HH:mm:ss</code> 输出）</td>
+        </tr>
+        <tr>
+          <td><code>RISK</code></td>
+          <td>服务端 → 客户端；增量推送，按 <code>risk_event.id</code> 游标查询新增（每 tick 最多 50 条，升序）；游标在应用启动时初始化为当前最大 id，<strong>不回放历史</strong></td>
+          <td><code>RiskEvent[]</code>，字段：<code>id, eventCode, eventSource, ruleId, fenceId, title, plateNo, identityCode, eventTime, lng, lat, speed, riskLevel(1低/2中/3高), confidence, mediaUrl, handleStatus(0/1), handleRemark, createDate</code>（实体直接序列化，id 为数字）</td>
+        </tr>
+        <tr>
+          <td><code>ALARM</code></td>
+          <td>服务端 → 客户端；增量推送，按 <code>traj_warn_info.id</code> 游标（同样每 tick ≤50、启动初始化最大 id）</td>
+          <td><code>WarnInfo[]</code>，字段：<code>id, sourceId, plateNo, identityCode, startWarnTime, endWarnTime, startLng, startLat, endLng, endLat, startSpeed, endSpeed, typeId, warnContinueMark(0停止/1持续), ruleId, handleStatus(0/1/2), handleResultCode, handleResultMsg, handler, creator, createDate, updater, updateDate</code>（id 为数字）</td>
+        </tr>
+        <tr>
+          <td><code>NOTIFY</code></td>
+          <td>服务端 → 指定接收人<strong>定向单播</strong>（F19 站内消息落库时由 <code>NotifyService.pushWebsocket</code> 经 <code>RealtimePusher.sendToUsers</code> 推送，不在线记 SKIPPED 日志，不广播）</td>
+          <td>消息对象：<code>id(字符串), title, content, level, eventType, bizType, bizId(字符串), orderNo, plateNo, createDate(字符串)</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h4>4.3 客户端是否需要发消息</h4>
+    <p>不需要。<code>RealtimeWebSocketHandler.handleTextMessage</code> 方法体为空注释（"单向推送，忽略客户端消息；可扩展为 ping/pong 或订阅控制"）。客户端只需建立连接并接收。前端 <code>useRealtime.ts</code> 的策略：连接失败指数退避重连（上限 30s），断连期间降级为每 5 秒轮询 <code>GET /api/monitor/overview</code> + <code>GET /api/traj/latest</code>，恢复后停止轮询。</p>
+
+    <h4>4.4 按 deptScope 的数据范围过滤</h4>
+    <p>三类广播消息（POINTS/RISK/ALARM）均通过 <code>SessionRegistry.broadcastScoped</code> 按每个会话<strong>各自的范围</strong>过滤后发送，DB 全量只查一次；过滤键为车牌（POINTS 取 <code>GpsPoint.plateNo</code>，RISK 取 <code>RiskEvent.plateNo</code>，ALARM 取 <code>WarnInfo.plateNo</code>）。范围由 <code>WsScopeResolver.allowedPlates</code> 依据握手中的 uid 解析：</p>
+    <ul>
+      <li><code>allData=true</code>（全数据用户/超管）：返回 <code>null</code> = 不限制，发送全量；</li>
+      <li>有部门范围：把 <code>deptScope</code> 部门集合经 <code>DashboardMapper.selectVehicleNosByDeptScope</code> 换成可见车牌集合，仅发送集合内数据；</li>
+      <li>空集合 = 不可见任何数据，<strong>fail-closed 跳过该会话</strong>；uid 属性缺失、用户不存在/停用同样按空集合处理（停止推送）。</li>
+    </ul>
+    <p>WS 链路与 HTTP 链路共用 <code>PermissionCache</code>（TTL 120 秒兜底；用户/角色/授权写操作后主动 evict，权限调整实际立即收敛）。NOTIFY 不走范围过滤，本身按接收人 id 定向。</p>
+
+    <h2 id="sec-tips">5 联调提示</h2>
+    <p>以下各条均可在仓库代码中直接核实。</p>
+
+    <h4>5.1 401 / 403 / 404 的语义区分</h4>
+    <ul>
+      <li><strong>HTTP 401</strong>：只由 <code>JwtAuthFilter</code> 在缺 <code>Authorization</code> 头、令牌无效/过期、purpose 非 access、账号不存在/停用时返回，body 为 <code>{"code":40101,"message":...,"data":null}</code>（Content-Type 显式带 <code>charset=UTF-8</code>）。前端拦截器收到 401 会清除 token 并跳转 <code>/login</code>。</li>
+      <li><strong>业务码 40301 / 40401 / 40901 / 40001 等：HTTP 状态码是 200</strong>。<code>BizException</code> 经 <code>GlobalExceptionHandler</code> 翻译为 Result 且未设 <code>@ResponseStatus</code>；参数校验失败（40001）、唯一键冲突（40901）同为 HTTP 200。判断成败必须看 body 的 <code>code</code>，不能只看 HTTP 状态。</li>
+      <li><strong>HTTP 500</strong>：未捕获异常，body <code>code=50000</code>。</li>
+      <li><strong>真正的路径 404</strong>（请求了不存在的 URL）：项目没有为"No handler"配置全局 JSON 处理，命中 Spring/Servlet 容器默认 404 页，<strong>不是</strong> Result 结构；body 里的 <code>40401</code> 仅表示"业务资源不存在"。</li>
+      <li>Python 端服务令牌失败是<strong>真正的 HTTP 401</strong>（<code>{"detail":"服务令牌无效"}</code>）；请求体不符合类型注解时由 FastAPI 返回 <strong>HTTP 422</strong>；路由内主动抛的 400/404/409 同样为 <code>{"detail":...}</code>。</li>
+    </ul>
+
+    <h4>5.2 请求格式与参数命名</h4>
+    <ul>
+      <li>带 <code>@RequestBody</code> 的接口要求 <code>Content-Type: application/json</code>；query 参数直接拼接在 URL，注意中文值做 URL 编码。</li>
+      <li>分页参数固定 <code>page</code>（从 1 起）/ <code>size</code>，不要传 <code>pageNum/pageSize/current</code>。</li>
+      <li>各接口时间格式不统一，按目标接口传：<code>yyyy-MM-dd HH:mm:ss</code>（轨迹 track、审计日志）、ISO 日期时间（工单 funnel，<code>@DateTimeFormat(iso=DATE_TIME)</code>）、<code>yyyy-MM-dd'T'HH:mm:ss</code>（画像 4 接口）、<code>yyyy-MM-dd</code>（评分）；报警 <code>beginTime/endTime</code> 与工单分页 <code>beginTime/endTime</code> 为字符串，由服务层解析。Jackson 全局输出格式 <code>yyyy-MM-dd HH:mm:ss</code>、时区 <code>Asia/Shanghai</code>。</li>
+    </ul>
+
+    <h4>5.3 长整型 ID 精度</h4>
+    <ul>
+      <li>凡 VO 字段经 <code>ToStringSerializer</code> 输出的 id（登录 userId、用户/角色、报警、面板、大屏、审计、可分派人员、评分、工单等），前端一律按<strong>字符串</strong>存取与比较。</li>
+      <li>直接返回实体的接口与 WebSocket 实体载荷中 id 仍是 JSON 数字；新建 MDM 档案返回数字 <code>Long</code>，新建 IAM/风控配置返回字符串——跨模块传 id 前先核对本手册表格。</li>
+    </ul>
+
+    <h4>5.4 路由前缀与跨域</h4>
+    <ul>
+      <li>经门户联调时，<code>/api/analysis/score/**</code>、<code>/api/analysis/profile/**</code> 在 Java，其余 <code>/api/analysis/**</code>（如 <code>/video</code>）在 Python；新增 analysis 子路径若部署在 Java，必须在 portal.conf 中放在 <code>/api/analysis/</code> <strong>之前</strong>用更长前缀优先匹配。</li>
+      <li><code>/api/ingest/dataset/**</code> 被 <code>location /api/ingest/</code> 覆盖到 Python，无需额外配置。</li>
+      <li>Java 侧 CORS 对 <code>/api/**</code> 放开（<code>allowedOriginPatterns("*")</code> + <code>allowCredentials(true)</code>，方法 GET/POST/PUT/DELETE/OPTIONS，预检缓存 3600s）。</li>
+      <li>请求体上限受 nginx <code>client_max_body_size 220m</code> 约束；长耗时接入/分析接口代理读超时 300s。</li>
+    </ul>
+
+    <h4>5.5 令牌与会话</h4>
+    <ul>
+      <li>access JWT 有效期 8 小时，无服务端吊销名单（退出登录仅写审计）；令牌泄露在过期前始终有效，靠密钥（<code>JWT_HMAC_SECRET</code>）保密。</li>
+      <li>WebSocket 必须用 access 令牌拼 query；令牌过期后连接不会被服务端主动断开，但重连需取新令牌。</li>
+      <li>用户/角色/权限写操作会主动清 <code>PermissionCache</code>；其它情况下缓存最长 120 秒收敛。</li>
+    </ul>
+
+    <h4>5.6 脚本调用注意事项</h4>
+    <ul>
+      <li>用 PowerShell 调接口时建议显式指定：<code>Invoke-RestMethod -ContentType "charset=utf-8"</code> 并把 body 用 <code>[System.Text.Encoding]::UTF8</code> 编码后发送，避免中文（车牌、备注、闭环说明）以非 UTF-8 字节入库导致乱码；查询串中的中文先 <code>[uri]::EscapeDataString</code> 编码。</li>
+      <li>调用 Python 服务令牌接口示例头：<code>X-Service-Token: &lt;SERVICE_TOKEN&gt;</code>；令牌错误返回 HTTP 401，而不是 Java 风格的 200+错误码。</li>
+      <li>模拟器、数据集、样例导入接口当前无鉴权，生产暴露前需自行在网关层收口或补登录态/服务令牌（代码注释已声明这一边界假设）。</li>
+    </ul>
+
+    <h2 id="sec-revision">修订记录</h2>
+    <table>
+      <thead><tr><th>版本</th><th>日期</th><th>修订内容</th><th>修订人</th></tr></thead>
+      <tbody>
+        <tr><td>v1.0.0</td><td>2026-10-05</td><td>首次发布。基于 2026-10-05 源代码核对：Java 26 个 Controller 139 个端点、Python 5 组 10 个端点、WebSocket 1 通道 4 类消息全部收录。</td><td>平台文档组</td></tr>
+        <tr><td>v1.1.0</td><td>2026-10-06</td><td>GATEWAY-PLAN-001 一期：新增 Java §2.27 网关接入状态与报警附件 3 个端点（GatewayStatusController/MediaController）、Python §3.6 网关内部接口 3 个端点（/api/gateway/*，X-Service-Token）；§1.1 路由表补 nginx /api/gateway/ 转发；合计更正为 Java 28 Controller 142 端点、Python 6 组 13 端点。</td><td>平台文档组</td></tr>
+        <tr><td>v1.2.0</td><td>2026-10-06</td><td>测试模式治理二轮：§3.2 增 mock 仿真投递启停 3 个端点（/api/simulator/mock/start|stop|status，3→6）；§3.4 增清除模拟数据端点 /api/ingest/dataset/clear-runtime（3→4，清运行数据保留基础数据）；§3.2/§3.4 鉴权描述修正为 require_access 实际实现（登录态+运行模式+system:config:edit，status 类仅登录态）；§2.27 标题随菜单 925 更名对齐「运行模式」；合计更正为 Python 6 组 17 端点。</td><td>平台文档组</td></tr>
+        <tr><td>v1.3.0</td><td>2026-10-06</td><td>JWT 跨服务算法契约对齐修复（§1.4）：Java 签发显式固定 HS256；补记 processing 浏览器侧接口 PyJWT 验签算法白名单 HS256/HS384/HS512 及 401 行为。端点数量不变。方案存档见 <a href="plans/20261006-01-jwt-alg-401-fix.md">plans/20261006-01-jwt-alg-401-fix.md</a>。</td><td>平台文档组</td></tr>
+      </tbody>
+    </table>
+
+    <div class="docfoot">
+      <span>API-DBD-001 平台接口手册 · v1.3.0</span>
+      <span>事实基准 2026-10-06 源代码 · 随代码迭代同步维护</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

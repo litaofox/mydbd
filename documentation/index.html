@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>项目文档中心 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">mydbd 项目文档中心</a>
+  <div class="sub">北斗导航数据业务平台 · 正式文档库 v1.2.0</div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <h1>北斗导航数据业务平台 · 文档中心</h1>
+    <p>本中心是项目唯一正式文档库，覆盖总体设计、架构、数据库、部署运维、全部功能模块的产品说明与技术方案，以及接口手册和参考资料。所有结论以 2026-10-06 的源代码为核对基准。下方搜索支持文档编号、名称、关键字与功能编号（如 F20、工单、808）。</p>
+    <div class="meta-line">文档版本 v1.2.0 ｜ 更新日期 2026-10-06 ｜ 共收录 30 份文档 ｜ 历史文档目录 docs/ 自本版起作为归档快照保留，不再更新</div>
+  </div>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="搜索文档：如 F20、工单、电子围栏、808、部署、评分…" autocomplete="off">
+    <span class="count" id="count"></span>
+  </div>
+  <div class="filters">
+    <button class="on" data-filter="all">全部</button>
+    <button data-filter="live">已上线</button>
+    <button data-filter="part">部分具备</button>
+    <button data-filter="plan">规划中</button>
+    <button data-filter="ref">总体/参考</button>
+  </div>
+  <div class="navjump">
+    <a href="#guide">总体文档</a>
+    <a href="#api">接口手册</a>
+    <a href="#modules">功能模块（18）</a>
+    <a href="#roadmap">建设计划与里程碑</a>
+    <a href="#reference">参考资料</a>
+  </div>
+
+  <section data-section id="guide">
+    <h2>总体文档</h2>
+    <p class="desc">项目概述、架构、数据库、部署与功能总览，建议新成员按顺序阅读前五份。</p>
+    <div class="grid">
+      <a class="doc" data-status="ref" href="guide/SYS-DBD-001-项目总体设计.html"
+         data-k="SYS-DBD-001 总体设计 项目概述 设计目标 系统边界 约束 业务背景 角色 术语">
+        <div class="t"><span class="no">SYS-DBD-001</span>项目总体设计 <span class="badge blue">总体</span></div>
+        <div class="d">项目背景与定位、设计目标、用户角色、系统边界与约束、术语表。回答"这个系统是什么、为谁做、不做什么"。</div>
+        <div class="codes">v1.0.0 ｜ 2026-10-05</div>
+      </a>
+      <a class="doc" data-status="ref" href="guide/ARC-DBD-001-系统架构设计.html"
+         data-k="ARC-DBD-001 架构设计 技术栈 Spring Boot Vue FastAPI PostGIS 模块交互 部署拓扑 数据流">
+        <div class="t"><span class="no">ARC-DBD-001</span>系统架构设计 <span class="badge blue">总体</span></div>
+        <div class="d">分层架构与部署拓扑、10 个 Java 模块 + Python 服务 + 前端的职责边界与交互关系、技术选型依据、端到端数据流；v1.1 增补 Kafka 网关数据面通道与三模式说明，v1.2 补跨服务 JWT 算法契约（HS256/HS384/HS512）。</div>
+        <div class="codes">v1.2.0 ｜ 2026-10-06</div>
+      </a>
+      <a class="doc" data-status="ref" href="guide/DDL-DBD-001-数据库设计.html"
+         data-k="DDL-DBD-001 数据库设计 ER图 表结构 字段 索引 数据字典 traj mon schema 主键 外键">
+        <div class="t"><span class="no">DDL-DBD-001</span>数据库设计 <span class="badge blue">总体</span></div>
+        <div class="d">traj / mon 两个 schema 全量表结构（18 个初始化 SQL，38 张表）：ER 关系图、字段说明、索引设计、数据字典，含 v1.1 网关对接增量（5 张网关新表与扩列）。</div>
+        <div class="codes">v1.1.0 ｜ 2026-10-06</div>
+      </a>
+      <a class="doc" data-status="ref" href="guide/DEP-DBD-001-部署与运维手册.html"
+         data-k="DEP-DBD-001 部署 运维 docker compose 环境要求 配置 启动 发版 备份 常见问题 FAQ nginx JWT HS256 HS384 401 登录失效 运行模式">
+        <div class="t"><span class="no">DEP-DBD-001</span>部署与运维手册 <span class="badge blue">总体</span></div>
+        <div class="d">环境要求、docker compose 部署（含 Kafka dev-infra 可选基础设施）、配置项说明、首次启动、网关三模式运维、后端发版标准流程、备份恢复与常见问题排查（含运行模式页 401 排查 Q15）。</div>
+        <div class="codes">v1.3.0 ｜ 2026-10-06</div>
+      </a>
+      <a class="doc" data-status="ref" href="guide/FUNC-DBD-001-功能清单与建设规划.html"
+         data-k="FUNC-DBD-001 功能清单 71 项 状态 优先级 分批 迭代 时间规划 优化建议 代码实证 F01 F59 波次">
+        <div class="t"><span class="no">FUNC-DBD-001</span>功能清单与建设规划 <span class="badge blue">总体</span></div>
+        <div class="d">71 个功能点的代码实证状态（已上线 19/已具备 12/部分具备 8/待建设 32）、分域统计、五个迭代的任务分解与建议工期、存量功能优化方案，附三方对照核对表。</div>
+        <div class="codes">v1.1.0 ｜ 2026-10-06</div>
+      </a>
+    </div>
+  </section>
+
+  <section data-section id="api">
+    <h2>接口手册</h2>
+    <p class="desc">前后端联调与二次开发的接口依据。</p>
+    <div class="grid">
+      <a class="doc" data-status="ref" href="api/API-DBD-001-平台接口手册.html"
+         data-k="API-DBD-001 接口手册 REST API WebSocket HTTP 端点 JWT HS256 HS384 服务令牌 鉴权 401 风险 车辆 轨迹 工单">
+        <div class="t"><span class="no">API-DBD-001</span>平台接口手册 <span class="badge blue">接口</span></div>
+        <div class="d">Java 平台全部 HTTP 端点（28 Controller / 142 端点）、Python 处理服务接口（6 组 / 17 端点，含网关内部接口与运行模式治理接口）与 WebSocket 推送事件：方法、路径、鉴权方式、参数与返回结构，逐端点取自 Controller 代码。</div>
+        <div class="codes">v1.3.0 ｜ 2026-10-06</div>
+      </a>
+    </div>
+  </section>
+
+  <section data-section id="modules">
+    <h2>功能模块文档（18 个功能域）</h2>
+    <p class="desc">每份含产品篇（用途、场景、操作流程、价值）与技术篇（架构、算法、数据流程、选型、风险）。角标为模块整体状态。</p>
+    <div class="grid">
+      <a class="doc" data-status="live" href="modules/MOD-DBD-001-平台基础与通用能力.html"
+         data-k="MOD-DBD-001 平台基础 登录认证 JWT HS256 HS384 令牌算法 统一响应 全局异常 容器部署 前端基座 P01 P02 P03">
+        <div class="t"><span class="no">MOD-DBD-001</span>平台基础与通用能力 <span class="badge green">已上线</span></div>
+        <div class="d">登录与 JWT 令牌、统一响应结构与全局异常、容器编排基座、前端布局与标签页框架。</div>
+        <div class="codes">覆盖 P01 ~ P03</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-002-用户与权限IAM.html"
+         data-k="MOD-DBD-002 IAM 用户 角色 菜单 按钮权限 数据权限 deptScope 多因子认证 MFA F33">
+        <div class="t"><span class="no">MOD-DBD-002</span>用户与权限 IAM <span class="badge green">已上线</span></div>
+        <div class="d">用户、角色、菜单、按钮权限与五级数据范围（RBAC+ABAC），登录二次验证，数据权限 fail-closed 强制规则。</div>
+        <div class="codes">覆盖 F33</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-003-主数据管理.html"
+         data-k="MOD-DBD-003 主数据 车辆档案 终端 驾驶员 绑定关系 组织架构 车队 F28 F29 F30 F31 F32 MDM">
+        <div class="t"><span class="no">MOD-DBD-003</span>主数据管理 <span class="badge green">已上线</span></div>
+        <div class="d">车辆、终端、驾驶员档案，车-终端、车-司机绑定关系，多级企业组织树（数据归属锚点）。</div>
+        <div class="codes">覆盖 F28 ~ F32</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-004-轨迹数据接入查询与回放.html"
+         data-k="MOD-DBD-004 轨迹 接入 CSV 导入 HTTP 推送 模拟器 历史轨迹 回放 时间轴 P04 P05 P06 P08 P09">
+        <div class="t"><span class="no">MOD-DBD-004</span>轨迹数据：接入、查询与回放 <span class="badge green">已上线</span></div>
+        <div class="d">样例 CSV 批量导入、终端 HTTP 推送、进程内轨迹模拟器；历史轨迹查询与多倍速地图回放。</div>
+        <div class="codes">覆盖 P04 ~ P06、P08、P09</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-005-实时监控与可视化.html"
+         data-k="MOD-DBD-005 实时监控 大屏 WebSocket 推送 热力图 车辆详情 逆地理 高德 F14 F15 F16 P07">
+        <div class="t"><span class="no">MOD-DBD-005</span>实时监控与可视化 <span class="badge green">已上线</span></div>
+        <div class="d">秒级 WebSocket 位置推送、1920/4K 监控总览大屏、风险热力、车辆详情聚合面板与逆地理编码。</div>
+        <div class="codes">覆盖 F14 ~ F16、P07</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-006-终端报警中心.html"
+         data-k="MOD-DBD-006 报警中心 traj_warn_info 报警位解析 确认 解除 闭环 F17">
+        <div class="t"><span class="no">MOD-DBD-006</span>终端报警中心 <span class="badge green">已上线</span></div>
+        <div class="d">终端报警实时列表、808 报警位解析、报警确认与解除流程、按时间窗与等级筛选。</div>
+        <div class="codes">覆盖 F17</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-007-电子围栏.html"
+         data-k="MOD-DBD-007 电子围栏 圆形 多边形 进出围栏 空间查询 PostGIS F13">
+        <div class="t"><span class="no">MOD-DBD-007</span>电子围栏 <span class="badge green">已上线</span></div>
+        <div class="d">圆形/多边形围栏绘制与管理，车辆进出围栏判定与告警（基于 PostGIS 空间查询）。</div>
+        <div class="codes">覆盖 F13</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-008-风控规则引擎.html"
+         data-k="MOD-DBD-008 风控 规则引擎 CEP 风险事件 分级 疲劳 超速 组合事件 统计 F18">
+        <div class="t"><span class="no">MOD-DBD-008</span>风控规则引擎 <span class="badge green">已上线</span></div>
+        <div class="d">可配置规则（疲劳、超速、围栏进出、组合事件）实时产出分级风险事件，规则命中统计与引擎概览。</div>
+        <div class="codes">覆盖 F18</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-009-处置工单与坐席干预.html"
+         data-k="MOD-DBD-009 工单 处置 状态机 分派 SLA 超时升级 坐席 干预 电话提醒 停运 F20 F21">
+        <div class="t"><span class="no">MOD-DBD-009</span>处置工单与坐席干预 <span class="badge green">已上线</span></div>
+        <div class="d">待处理→处理中→已闭环工单流转、坐席分派、SLA 时限与超时升级，电话/教育/停运等干预动作留痕。</div>
+        <div class="codes">覆盖 F20、F21</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-010-驾驶评分与风险画像.html"
+         data-k="MOD-DBD-010 驾驶评分 安全分 0-100 风险等级 趋势 画像 黑点路段 UBI 定时计算 F22 F23">
+        <div class="t"><span class="no">MOD-DBD-010</span>驾驶评分与风险画像 <span class="badge green">已上线</span></div>
+        <div class="d">基于急加减速、超速、疲劳、分心等特征的 0~100 安全分与风险等级，按车/司机/企业的趋势与画像。</div>
+        <div class="codes">覆盖 F22、F23</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-011-通知中心与多渠道预警.html"
+         data-k="MOD-DBD-011 通知中心 站内消息 弹窗 短信 语音 App推送 通道 预警通知 F19 F35">
+        <div class="t"><span class="no">MOD-DBD-011</span>通知中心与多渠道预警 <span class="badge green">已上线</span></div>
+        <div class="d">站内消息与实时弹窗已上线，短信、语音、App 推送为通道接口预留，含发送日志与通知设置。</div>
+        <div class="codes">覆盖 F19、F35（通知部分）</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-012-系统配置与数据字典.html"
+         data-k="MOD-DBD-012 系统配置 参数 数据字典 字典类型 字典项 报警码 F35">
+        <div class="t"><span class="no">MOD-DBD-012</span>系统配置与数据字典 <span class="badge green">已上线</span></div>
+        <div class="d">系统参数键值配置、字典类型与字典项维护（含报警码、车辆颜色等业务枚举的统一来源）。</div>
+        <div class="codes">覆盖 F35（系统部分）</div>
+      </a>
+      <a class="doc" data-status="live" href="modules/MOD-DBD-013-操作审计日志.html"
+         data-k="MOD-DBD-013 操作审计 审计日志 登录 查询 导出 处置 留痕 防篡改 统计 F34">
+        <div class="t"><span class="no">MOD-DBD-013</span>操作审计日志 <span class="badge green">已上线</span></div>
+        <div class="d">登录、查询、导出、处置等操作的切面式自动留痕、多维检索与操作统计。</div>
+        <div class="codes">覆盖 F34</div>
+      </a>
+      <a class="doc" data-status="part" href="modules/MOD-DBD-014-终端通信网关（规划）.html"
+         data-k="MOD-DBD-014 808 JT/T 808-2019 网关 Netty TCP 注册 鉴权 心跳 0x0200 在线状态 指令下行 1078 弱网补传 CAN OBD F01 F02 F03 F04 F05 F06 F07 vps 网关 Kafka GATEWAY_MODE mock 仿真 29类报警 附件 JWT HS256 HS384 401 运行模式">
+        <div class="t"><span class="no">MOD-DBD-014</span>终端通信网关 <span class="badge amber">部分具备</span></div>
+        <div class="d">vps 网关 Kafka 数据面一期已上线（三模式、29 类报警建单、附件鉴权查看、在线态收口、接入状态页，mock 500 车验证通过）；指令下行、1078 视频、弱网补传、CAN/OBD 待二期，自建 Netty 为终态蓝图。</div>
+        <div class="codes">覆盖 F01 ~ F07 ｜ F01/F02/F07 部分具备，v1.3.0 2026-10-06</div>
+      </a>
+      <a class="doc" data-status="plan" href="modules/MOD-DBD-015-轨迹实时处理（规划）.html"
+         data-k="MOD-DBD-015 轨迹清洗 异常点 坐标转换 WGS84 GCJ-02 地图匹配 轨迹压缩 DP 里程统计 F08 F09 F10 F11 F12 卡尔曼">
+        <div class="t"><span class="no">MOD-DBD-015</span>轨迹实时处理 <span class="badge red">规划中</span></div>
+        <div class="d">轨迹清洗与异常点剔除、坐标系标准化、路网地图匹配、在线压缩、里程与行驶统计派生。</div>
+        <div class="codes">覆盖 F08 ~ F12（第二波核心）</div>
+      </a>
+      <a class="doc" data-status="plan" href="modules/MOD-DBD-016-视频智能（规划）.html"
+         data-k="MOD-DBD-016 视频智能 DSM ADAS 边缘识别 疲劳 分心 FCW LDW 视频审批 水印 证据保全 WORM MLOps OTA F24 F25 F26 F27 P12">
+        <div class="t"><span class="no">MOD-DBD-016</span>视频智能 <span class="badge red">规划中</span></div>
+        <div class="d">终端侧 DSM/ADAS 边缘识别（现仅有占位上报链路）、视频调阅审批与水印、证据保全生命周期、模型管理与 OTA。</div>
+        <div class="codes">覆盖 F24 ~ F27、P12（现状占位）</div>
+      </a>
+      <a class="doc" data-status="part" href="modules/MOD-DBD-017-分析与报表.html"
+         data-k="MOD-DBD-017 分析 报表 轨迹报表 里程 行驶 停车 怠速 油耗 在线率 安全分析 企业分析 司机分析 商机 轨迹完整率 F41 F42 F43 F44 F45 F46 F47 F48 F49 F50 F51 F52 F53 F54 F55 F56 F57 F58 F59">
+        <div class="t"><span class="no">MOD-DBD-017</span>分析与报表 <span class="badge amber">部分具备</span></div>
+        <div class="d">对标交信北斗的 13 项报表 + 6 项统计分析（19 个菜单已挂占位页），评分/画像能力已部分覆盖，其余按数据范围口径分批建设。</div>
+        <div class="codes">覆盖 F41 ~ F59（19 项）</div>
+      </a>
+      <a class="doc" data-status="plan" href="modules/MOD-DBD-018-数据治理开放与运维（规划）.html"
+         data-k="MOD-DBD-018 数据质量 治理 数据安全 脱敏 等保 开放API 监管上报 Prometheus Grafana 高可用 CI/CD 压测 F36 F37 F38 F39 F40">
+        <div class="t"><span class="no">MOD-DBD-018</span>数据治理、开放与运维 <span class="badge red">规划中</span></div>
+        <div class="d">数据质量监控治理、安全合规与分级、开放 API 与监管上报、可观测与高可用、测试交付流水线。</div>
+        <div class="codes">覆盖 F36 ~ F40（第三波）</div>
+      </a>
+    </div>
+  </section>
+
+  <section data-section id="reference">
+    <h2>参考资料</h2>
+    <p class="desc">用户手册、业务蓝图、外部平台对标与 vps 网关对接专题资料。</p>
+    <div class="grid">
+      <a class="doc" data-status="ref" href="reference/USER-DBD-001-系统功能使用手册.html"
+         data-k="USER-DBD-001 用户手册 使用说明 操作指南 登录 监控 报警 工单 档案 快速上手 常见问题">
+        <div class="t"><span class="no">USER-DBD-001</span>系统功能使用手册 <span class="badge blue">手册</span></div>
+        <div class="d">面向业务用户：登录、各页面操作步骤、角色差异说明与常见问题，覆盖当前全部已上线功能。</div>
+        <div class="codes">v1.0.0 ｜ 2026-10-05</div>
+      </a>
+      <a class="doc" data-status="ref" href="reference/FUNC-REF-001-交信北斗平台分析功能对标.html"
+         data-k="FUNC-REF-001 交信北斗 对标 报表查询 统计分析 外部平台 19 节点 安全评分 轨迹完整率">
+        <div class="t"><span class="no">FUNC-REF-001</span>交信北斗平台分析功能对标 <span class="badge gray">外部对标</span></div>
+        <div class="d">交信北斗「智慧驾驶车联网大数据平台」分析模块 19 个功能节点的只读勘察记录：查询条件、结果列、业务规则。</div>
+        <div class="codes">勘察日期 2026-10-05</div>
+      </a>
+      <a class="doc" data-status="ref" href="reference/BLUEPRINT-001-导航系统数据采集与应用平台设计.html"
+         data-k="BLUEPRINT-001 业务蓝图 导航系统 数据采集 应用平台设计 课题 标准 JT/T 808 1078 ADAS DSM 风险减量">
+        <div class="t"><span class="no">BLUEPRINT-001</span>导航系统数据采集与应用平台设计 <span class="badge gray">业务蓝图</span></div>
+        <div class="d">项目业务蓝图：北斗数据采集、终端接入、风险预警与运营应用的完整业务设计，是功能规划的源头依据。</div>
+        <div class="codes">历史资料迁移</div>
+      </a>
+      <a class="doc" data-status="ref" href="reference/GATEWAY-REF-001-vps车载网关功能接口与标准协议分析.html"
+         data-k="GATEWAY-REF-001 vps 车载网关 接口 标准协议 JT/T 808 1078 部署拓扑 Kafka 分析">
+        <div class="t"><span class="no">GATEWAY-REF-001</span>vps 车载网关功能接口与标准协议分析 <span class="badge gray">专题</span></div>
+        <div class="d">vps 网关程序代码与协议标准类的分析：服务部署拓扑、业务流程、五类接口清单与标准符合性。</div>
+        <div class="codes">2026-10-05</div>
+      </a>
+      <a class="doc" data-status="ref" href="reference/GATEWAY-CMP-001-mydbd与vps网关对接对比分析.html"
+         data-k="GATEWAY-CMP-001 对接对比 vps 字段映射 信息差距 范式不匹配 Kafka 适配层 定位 图片 视频 文本">
+        <div class="t"><span class="no">GATEWAY-CMP-001</span>mydbd 与 vps 网关对接对比分析 <span class="badge gray">专题</span></div>
+        <div class="d">两侧信息差距、字段映射、三种对接方案对比，结论与推荐路径（Kafka + 轻量接入适配层）。</div>
+        <div class="codes">2026-10-05</div>
+      </a>
+      <a class="doc" data-status="ref" href="reference/GATEWAY-PLAN-001-mydbd对接vps车载网关改造方案.html"
+         data-k="GATEWAY-PLAN-001 对接改造方案 GATEWAY_MODE simulator mock gateway 仿真 切换 实施步骤 P0 P1 数据面 Kafka 吞吐 184 死信 已实施">
+        <div class="t"><span class="no">GATEWAY-PLAN-001</span>mydbd 对接 vps 车载网关改造方案 <span class="badge green">已实施</span></div>
+        <div class="d">vps 网关对接产品与技术方案；P0 数据面 + P1 报警附件一期已实施并通过 500 车全链路验证（第 10 章含实施差异、吞吐优化 184 msg/s、死锁教训与遗留事项），P2/P3 指令面待建。</div>
+        <div class="codes">v1.1 已实施（P0+P1 一期）｜ 2026-10-06</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="roadmap">
+    <h2>未完成功能建议计划与里程碑</h2>
+    <p class="desc">
+      基于 2026-10-06 代码实证（详见 <a href="guide/FUNC-DBD-001-功能清单与建设规划.html">FUNC-DBD-001 v1.1.0</a>：
+      71 项功能中 <span class="badge green">已上线 19</span>
+      <span class="badge blue">已具备 12</span>
+      <span class="badge amber">部分具备 8</span>
+      <span class="badge red">待建设 32</span>）与
+      <a href="reference/GATEWAY-PLAN-001-mydbd对接vps车载网关改造方案.html#ch10">GATEWAY-PLAN-001 一期实施结果</a>，
+      建议按 5 个里程碑推进。工期为建议值（1 名后端 + 1 名前端），可随投入人数线性压缩；各里程碑的任务分解、前置依赖与验收标准以 FUNC-DBD-001 §5 五个迭代为准。
+    </p>
+    <table>
+      <thead>
+        <tr><th style="width:170px">里程碑</th><th style="width:90px">建议工期</th><th>建设范围（功能项）</th><th>出口标准（摘要）</th><th style="width:130px">依据文档</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>M1 网关联调二期</strong><br>真车闭环与指令面<br><span class="badge amber">建议下一步</span></td>
+          <td>约 8 周</td>
+          <td>
+            ① <code>GATEWAY_MODE=gateway</code> 小批量真车灰度→全量切流（外部集群、独立消费组、只读 ACL）；<br>
+            ② F02 在线超时兜底判定 + 在线率口径收口；<br>
+            ③ F03 指令下发（0x8103/0x8105）与应答回执跟踪；<br>
+            ④ F06 JT/T 1078 实时视频/回放/对讲（流媒体选型 ZLMediaKit/SRS 鉴权钩子验证，前端 flv.js）；<br>
+            ⑤ F07 事件片段按需调阅（协调网关补"拍照完成"事件出口）；F04 弱网补传、F05 CAN/OBD；<br>
+            ⑥ P3：TTS 语音下发、raw_hex 报文留存、接入监控告警；mock_producer 引导重连加固
+          </td>
+          <td>真车数据零死信、lag 持续为 0；视频首屏 ≤3s、延迟 ≤5s；指令回执界面可查；附件与在线口径经真车核对</td>
+          <td><a href="modules/MOD-DBD-014-终端通信网关（规划）.html">MOD-DBD-014</a><br><a href="reference/GATEWAY-PLAN-001-mydbd对接vps车载网关改造方案.html">GATEWAY-PLAN-001</a> P2/P3</td>
+        </tr>
+        <tr>
+          <td><strong>M2 轨迹实时处理</strong><br><span class="badge gray">第二波核心</span></td>
+          <td>约 8 周</td>
+          <td>F08 轨迹清洗与异常点剔除、F09 WGS84/CGCS2000↔GCJ-02 坐标标准化、F12 里程与行驶统计（P0 先行，约 4 周）；F10 路网地图匹配、F11 在线 DP/死区压缩（P1，约 4 周）</td>
+          <td>漂移/瞬移样本识别率与误杀率达标；里程与人工核算偏差 ≤2%；抽样匹配准确率 ≥95%；压缩率 50%~80% 且回放无可见失真</td>
+          <td><a href="modules/MOD-DBD-015-轨迹实时处理（规划）.html">MOD-DBD-015</a></td>
+        </tr>
+        <tr>
+          <td><strong>M3 分析报表群</strong><br><span class="badge gray">迭代③</span></td>
+          <td>约 6 周</td>
+          <td>F41~F49、F51、F52 共 11 张报表（报警/里程/行驶/停车/怠速/离线/故障/油耗/在线率等）；F54/F55/F57 周/月安全分析报表与异步导出；统一车辆归属过滤</td>
+          <td>对标交信北斗列结构与查询条件（FUNC-REF-001）；受限账号查询与导出结果一致且无越权行；周月评分与对标公式复算一致</td>
+          <td><a href="modules/MOD-DBD-017-分析与报表.html">MOD-DBD-017</a><br><a href="reference/FUNC-REF-001-交信北斗平台分析功能对标.html">FUNC-REF-001</a></td>
+        </tr>
+        <tr>
+          <td><strong>M4 视频智能化与深度报表</strong><br><span class="badge gray">迭代④</span></td>
+          <td>约 8 周</td>
+          <td>F24 真实 DSM/ADAS 信号接入（替换 P12 占位链路，依赖 M1）；F25 调阅审批与水印；F26 WORM 证据保全与生命周期；F27 MLOps 模型管理与 OTA；F50/F53/F56/F58/F59 加油/服务费/综合看板/商机/轨迹完整率</td>
+          <td>真实终端预警（含抓拍图）进入规则引擎分级；未审批不可调阅、导出水印可审计；保全片段不可删改；F59 任务固化执行人范围快照、按人交付</td>
+          <td><a href="modules/MOD-DBD-016-视频智能（规划）.html">MOD-DBD-016</a><br><a href="modules/MOD-DBD-017-分析与报表.html">MOD-DBD-017</a></td>
+        </tr>
+        <tr>
+          <td><strong>M5 治理、开放与运维</strong><br><span class="badge gray">迭代⑤</span></td>
+          <td>约 8 周</td>
+          <td>F36 数据质量监控与脏数据隔离；F37 加密脱敏/分类分级/等保合规；F38 开放 API 网关（鉴权限流计量、AppKey）与监管 808 转发；F39 Prometheus/Grafana、日志链路追踪、主从容灾；F40 CI/CD、协议一致性测试与压测</td>
+          <td>质量指标可下钻到车与小时；脱敏对受限角色生效、等保自查项清零；AppKey 调用可计量；P99 时延/错误率可视化；主干合并自动回归</td>
+          <td><a href="modules/MOD-DBD-018-数据治理开放与运维（规划）.html">MOD-DBD-018</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="desc"><strong>横向贯穿事项</strong>（不单独占里程碑，穿插 M1~M3，源自 FUNC-DBD-001 §6）：① 处置工单等存量模块数据范围收口（P0，2026-10-05 已收口 WebSocket/轨迹/监控/大屏/报警中心）；② 报警中心默认时间窗改为"最新数据时间向前 24 小时"口径；③ README 与发版脚本持续沉淀；④ 双语言服务边界（Java 管交易、Python 管接入与算法旁路）在 M1 后评估 ingest 退役。</p>
+    <blockquote class="tip" style="margin:0 0 28px;">
+      <p>里程碑顺序说明：M1 优先——真实车联网数据是 M2~M4 所有算法与报表口径的事实来源，且一期数据面已验证、边际投入最小；M2 是 M3 报表（里程/怠速/油耗口径）与 M4 边缘信号闭环的前置；M5 治理项可与前四个里程碑并行提前布局（尤其 CI/CD 与质量监控）。</p>
+    </blockquote>
+  </section>
+
+  <div class="empty" id="empty">没有找到匹配的文档，试试更短的关键字（如“工单”“F20”“部署”）。</div>
+
+  <footer>
+    北斗导航数据业务平台 mydbd · 文档中心 v1.2.0 · 2026-10-06<br>
+    本文档库随源代码维护；历史文档见仓库 docs/ 目录（归档快照）
+  </footer>
+</div>
+<script src="assets/portal.js"></script>
+</body>
+</html>

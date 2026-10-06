@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GATEWAY-CMP-001 mydbd 与 vps 车载网关对接对比分析 · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+<style>
+:root{
+  --primary:#1f5fbf; --primary-dark:#174a96; --bg:#f4f6fa; --card:#ffffff;
+  --text:#1f2733; --muted:#667085; --border:#e3e8f0; --code-bg:#1e2530;
+  --accent-bg:#eef4ff; --th-bg:#1f5fbf; --th-text:#fff;
+  --ok:#1a7f37; --warn:#b3541e; --bad:#c0392b;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.85;font-size:16px;}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--primary-dark);
+  color:#fff;display:flex;align-items:center;padding:0 20px;z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.topbar .home{color:#fff;text-decoration:none;font-size:14px;opacity:.85;margin-right:18px;white-space:nowrap;}
+.topbar .home:hover{opacity:1;}
+.topbar .title{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.layout{display:flex;max-width:1280px;margin:56px auto 0;}
+.toc{width:260px;flex-shrink:0;padding:24px 0 24px 20px;}
+.toc-inner{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 14px;}
+.toc-inner .toc-title{font-size:13px;font-weight:700;color:var(--muted);
+  letter-spacing:1px;margin:0 0 10px 4px;}
+.toc-inner ul{list-style:none;margin:0;padding:0;}
+.toc-inner ul ul{padding-left:14px;}
+.toc-inner li{margin:3px 0;}
+.toc-inner a{display:block;color:#44506a;text-decoration:none;font-size:13.5px;
+  line-height:1.5;padding:3px 8px;border-radius:6px;border-left:2px solid transparent;}
+.toc-inner a:hover{background:var(--accent-bg);color:var(--primary);}
+.content{flex:1;min-width:0;background:var(--card);margin:20px 24px 60px;padding:40px 52px;
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 1px 4px rgba(16,42,90,.05);}
+h1{font-size:28px;color:var(--primary-dark);border-bottom:3px solid var(--primary);
+  padding-bottom:14px;margin-top:0;}
+h2{font-size:22px;color:var(--primary-dark);margin-top:42px;
+  border-left:5px solid var(--primary);padding-left:12px;}
+h3{font-size:18px;color:#28456e;margin-top:32px;}
+h4{font-size:16px;color:#344054;margin-top:22px;}
+p{margin:14px 0;}
+blockquote{margin:18px 0;padding:12px 18px;background:var(--accent-bg);
+  border-left:4px solid var(--primary);color:#3d4a5c;border-radius:0 8px 8px 0;}
+blockquote p{margin:6px 0;}
+blockquote.warn{background:#fdf3e7;border-left-color:var(--warn);color:#6b431a;}
+blockquote.danger{background:#fdecea;border-left-color:var(--bad);color:#8a2b23;}
+a{color:var(--primary);}
+ul,ol{padding-left:26px;}
+li{margin:5px 0;}
+code{font-family:Consolas,"Courier New",monospace;font-size:13.5px;
+  background:#eef1f6;color:#b02a5e;padding:2px 6px;border-radius:4px;}
+pre{background:var(--code-bg);color:#d7e0ee;border-radius:10px;padding:18px 20px;
+  overflow-x:auto;line-height:1.55;font-size:13.5px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+pre code{background:none;color:inherit;padding:0;font-size:inherit;}
+table{border-collapse:collapse;width:100%;margin:20px 0;font-size:14px;
+  box-shadow:0 1px 3px rgba(16,42,90,.08);border-radius:8px;overflow:hidden;}
+th{background:var(--th-bg);color:var(--th-text);font-weight:600;padding:10px 12px;
+  text-align:left;border:1px solid var(--primary);white-space:nowrap;}
+td{padding:8px 12px;border:1px solid var(--border);vertical-align:top;}
+tbody tr:nth-child(even){background:#f7f9fd;}
+tbody tr:hover{background:var(--accent-bg);}
+hr{border:none;border-top:1px solid var(--border);margin:36px 0;}
+strong{color:#16345f;}
+h1 strong,h2 strong,h3 strong{color:inherit;}
+.meta{color:var(--muted);font-size:13.5px;margin-top:6px;}
+.tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;
+  vertical-align:middle;white-space:nowrap;}
+.tag-ok{background:#e7f4ec;color:var(--ok);}
+.tag-part{background:#fdf3e7;color:var(--warn);}
+.tag-no{background:#fdecea;color:var(--bad);}
+.tag-rec{background:#e8f0fe;color:var(--primary);}
+.effort{font-weight:700;color:var(--primary-dark);}
+.mono{font-family:Consolas,"Courier New",monospace;font-size:13px;}
+.score{background:linear-gradient(135deg,#1f5fbf,#2f7de0);color:#fff;border-radius:12px;
+  padding:22px 26px;margin:22px 0;}
+.score h3{color:#fff;margin:0 0 8px;}
+.score p{margin:6px 0;}
+.toc-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:6px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:12px;}
+@media (max-width:900px){
+  .toc{display:block;position:fixed;top:56px;left:0;bottom:0;width:280px;z-index:90;
+    padding:16px;background:var(--bg);transform:translateX(-100%);transition:transform .25s;
+    overflow-y:auto;}
+  .toc.open{transform:translateX(0);box-shadow:4px 0 16px rgba(0,0,0,.15);}
+  .toc-btn{display:inline-block;}
+  .content{margin:12px 10px 40px;padding:24px 18px;}
+  .topbar .title{font-size:13px;}
+  table{font-size:13px;display:block;overflow-x:auto;}
+}
+@media print{
+  .topbar,.toc{display:none;}
+  .layout{margin:0;}
+  .content{border:none;box-shadow:none;margin:0;padding:0;}
+  pre,table,blockquote{break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">GATEWAY-CMP-001 mydbd 与 vps 车载网关对接对比分析</div>
+  <div class="right"><a href="../index.html">返回文档中心</a></div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录导航</p>
+<ul>
+<li><a href="#ch0">0. 结论摘要（TL;DR）</a></li>
+<li><a href="#ch1">1. 分析对象与方法</a></li>
+<li><a href="#ch2">2. 总体架构与数据通道对比</a></li>
+<li><a href="#ch3">3. 逐类信息对比</a>
+<ul>
+<li><a href="#ch3-1">3.1 定位信息</a></li>
+<li><a href="#ch3-2">3.2 报警 / 主动安全预警</a></li>
+<li><a href="#ch3-3">3.3 图片</a></li>
+<li><a href="#ch3-4">3.4 视频</a></li>
+<li><a href="#ch3-5">3.5 文本</a></li>
+<li><a href="#ch3-6">3.6 心跳与在线/离线态</a></li>
+<li><a href="#ch3-7">3.7 原始报文（审计留痕）</a></li>
+</ul></li>
+<li><a href="#ch4">4. 字段级映射规格</a></li>
+<li><a href="#ch5">5. 差距矩阵总表</a></li>
+<li><a href="#ch6">6. 对接方案选项</a></li>
+<li><a href="#ch7">7. 推荐目标架构与分阶段实施</a></li>
+<li><a href="#ch8">8. 风险、合规与数据权限</a></li>
+<li><a href="#ch9">9. 待决策问题清单</a></li>
+</ul>
+  </div></aside>
+  <main class="content">
+
+<a class="backlink" href="../index.html">← 返回文档中心</a>
+<h1>mydbd 平台与 vps 车载网关对接对比分析</h1>
+<p class="meta">文档编号：GATEWAY-CMP-001 ｜ 平台侧：<span class="mono">D:\ProgramData\mytraeprojects\mydbd</span> ｜ 网关侧：<span class="mono">D:\ProgramData\mytraeprojects\vps</span> ｜ 用途：对接决策 ｜ 配套文档：GATEWAY-REF-001 网关功能接口与标准协议分析</p>
+<blockquote>
+<p><strong>迁移说明：</strong>本报告原编制于 2026-10-05，同日自 docs/html 归档迁入正式文档库 reference 分区（编号 GATEWAY-CMP-001）。迁移仅更换文档库统一顶栏/样式入口、补充本说明与页脚，正文、结论卡片、矩阵表及原有内嵌排版均保持原貌；文末对 GATEWAY-REF-001 的同目录相对链接保持有效。</p>
+</blockquote>
+
+<h2 id="ch0">0. 结论摘要（TL;DR）</h2>
+<div class="score">
+<h3>总体判断：协议语义“对得上”，传输范式“对不上”——不能直接对接，需要增加一个适配层（中等工作量，无需改造终端）</h3>
+<p>① <strong>传输范式不匹配（根因）：</strong>vps 网关对平台的输出是 <strong>Kafka 事件总线（8 个 Topic）+ 少量同步 HTTP 指令接口</strong>；mydbd 目前只有<strong>同步 HTTP JSON 批量推送</strong>（<code>POST /api/ingest/traj</code>），没有任何 MQ。</p>
+<p>② <strong>定位</strong>字段语义基本可对接，但必须做单位换算（速度 m/h→km/h、里程 m→km）、标识映射（手机号↔identity_code、truckId↔车辆）、报警位图扩容（32 位 Long vs smallint），且会丢失车辆状态/附加项等字段。</p>
+<p>③ <strong>报警/主动安全</strong>：编码体系不同（网关 101001/102001 数字码 vs 平台 DSM_FATIGUE/ADAS_FCW 字符串码），需要字典映射 + 开始/结束状态机 + warnId 附件关联。</p>
+<p>④ <strong>图片</strong>：<code>traj_gps_photo</code> 表结构已按网关同构预留，但<strong>无任何写入入口、无文件存储/服务能力</strong>；苏标附件有 Kafka 出口可订阅，立即拍照的照片元数据<strong>无 Kafka 出口</strong>（需网关侧小改或跨库读取）。</p>
+<p>⑤ <strong>视频</strong>：mydbd 完全没有 JT/T 1078 能力（无收流/信令/流媒体）；<strong>不需要自己收流</strong>——直接复用独立部署的 vps-video，平台只调 18001 信令拿 ws-flv 地址、前端 flv.js 播放即可，契合 F06/F07“边缘触发、按需调阅”。</p>
+<p>⑥ <strong>文本</strong>：网关只有“平台→终端”的 TTS 下行（0x8300），无终端上行文本；平台需在通知中心新增一个 JT808-TTS 通道。</p>
+<p><strong>推荐：方案 A —— 引入 Kafka，新增轻量“接入适配服务”（或 processing-service 内置 consumer）订阅网关 Topic，完成映射后复用现有入库与 CEP 链路；视频/拍照/文本经 platform-app 调用网关 18001 REST。</strong></p>
+</div>
+
+<h2 id="ch1">1. 分析对象与方法</h2>
+<table>
+<thead><tr><th>侧</th><th>对象</th><th>关键事实来源</th></tr></thead>
+<tbody>
+<tr><td>网关侧</td><td>vps：3 个服务（jt808 10808/18001、jt808-file 10818/18009、vps-video 10780-82/20780-82）+ MySQL + Kafka</td><td>网关源码静态分析，详见配套文档 GATEWAY-REF-001</td></tr>
+<tr><td>平台侧</td><td>mydbd：FastAPI processing-service（轨迹接入/CEP/视频分析占位）+ Spring Boot platform-app + PostgreSQL/PostGIS + Vue3；docker-compose 中无 Kafka/Redis/MQ</td><td>ingest.py、analysis.py、Postgres init DDL、nginx 路由、SYS-DBD-001 路线图</td></tr>
+</tbody>
+</table>
+<p>对比维度：传输协议、字段语义、单位、坐标系、标识体系、鉴权、实时性/吞吐、存储、事件模型、数据权限。</p>
+
+<h2 id="ch2">2. 总体架构与数据通道对比</h2>
+<table>
+<thead><tr><th>维度</th><th>vps 网关（对外）</th><th>mydbd（现状）</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td>北向数据通道</td><td>Kafka 推送（8 Topic，JSON）</td><td>HTTP 批量推送（1 个接口）</td><td><span class="tag tag-no">不匹配</span></td></tr>
+<tr><td>指令通道</td><td>HTTP REST 同步等终端应答（18001，9 个接口）</td><td>无对应集成</td><td><span class="tag tag-part">可直接调用，需服务间鉴权</span></td></tr>
+<tr><td>视频通道</td><td>独立媒体服务：RTP 收流 + ws-flv</td><td>无（F06 计划自建 1078/ZLMediaKit）</td><td><span class="tag tag-part">建议直接复用</span></td></tr>
+<tr><td>终端接入协议</td><td>JT/T 808/1078 + 苏标，完整</td><td>无 808/1078 代码（仅终端表 protocol_type 注释 JT808/JT1078/OTHER）</td><td><span class="tag tag-no">平台不直接接终端</span></td></tr>
+<tr><td>鉴权</td><td>Kafka 内网；REST 无应用层鉴权</td><td>HTTP 头 <code>X-Service-Token</code></td><td><span class="tag tag-part">适配层两侧各适配</span></td></tr>
+<tr><td>媒体存储</td><td>网关服务器本地磁盘 + /static HTTP</td><td>无</td><td><span class="tag tag-no">缺</span></td></tr>
+<tr><td>数据消费模型</td><td>事件流（可回放、削峰、多消费组）</td><td>同步写库 + 旁路 CEP</td><td><span class="tag tag-part">适配层转换即可衔接</span></td></tr>
+</tbody>
+</table>
+
+<pre><code>【现状】终端 ⇨ vps网关 ──Kafka Topics──✗── mydbd（无MQ，只有 HTTP /api/ingest/traj）
+                    └─REST 18001────────✗── mydbd（无调用方）
+                    └─ws-flv 2078x──────✗── 前端（无播放器集成）
+
+【推荐 方案A】
+终端 ⇨ vps 三服务 ──Kafka(gps/warn/warn_media/heartbeat/offline/raw)──▶ ①接入适配服务
+                                                                        │ 校验/映射/换算
+                          18001 REST ◀── ②platform-app 指令适配（视频/拍照/TTS）│
+                          2078x ws-flv ─────▶ ③前端播放器(flv.js，经反代+签名)   ▼
+                                          processing-service 既有入库/CEP/风险事件/通知</code></pre>
+
+<h2 id="ch3">3. 逐类信息对比</h2>
+
+<h3 id="ch3-1">3.1 定位信息</h3>
+<h4>网关侧契约</h4>
+<ul>
+<li>Topic <code>jt808_gps_topic</code>，key=truckId，载荷 <code>PositionInfo{GpsHead, GpsInfo}</code>，0x0200/0x0704/0x0801 均汇入；</li>
+<li>经纬度已为“度”；speed 单位 <strong>m/h（=1/100 km/h 数值×100）</strong>；mileage 单位<strong>米</strong>；时间 GMT+8；</li>
+<li>携带 alarmFlag（32 位位图 Long）、status（车辆状态位图）、recordSpeed、delay 补报、gpsType(10/11/12)、trackId、附加项数组等。</li>
+</ul>
+<h4>mydbd 现状</h4>
+<ul>
+<li>唯一入口 <code>POST /api/ingest/traj</code>（<code>X-Service-Token</code>）：<code>{identityCode, plateNo, points:[{gpsTime,lng,lat,speed,direction,altitude,alarmFlag,mileage}]}</code>，批量写 <code>traj.traj_gps_point</code>（5000/批），旁路 CEP（异常不阻断）；</li>
+<li>表列：speed integer（业务口径 <strong>km/h</strong>）、mileage numeric(12,2)（<strong>km</strong>）、alarm_flag <strong>smallint</strong>（实际当 0/1 用）、location geometry(Point,4326)；<strong>无</strong> status、recordSpeed、卫星数、信号、补报、gpsType、trackId、附加项列。</li>
+</ul>
+<h4>差距</h4>
+<ol>
+<li>传输方式：Kafka vs HTTP，需消费者；</li>
+<li>单位：speed、mileage 必须换算（否则速度放大 100 倍、里程放大 1000 倍）；</li>
+<li>报警：alarmFlag 32 位位图塞入 smallint 会<strong>溢出/丢语义</strong>，且平台目前仅 0/1；</li>
+<li>标识：网关 truckId(Integer 内部主键)/手机号 vs 平台 identity_code/plate_no，需绑定换算（见第 4 章）；</li>
+<li>信息损失：ACC/转向/制动等 status 位、附加项（里程/油耗/信号/苏标报警原始块）无处落。</li>
+</ol>
+<p><span class="tag tag-rec">建议</span> 适配层消费 Topic 后转换并调用现有入库逻辑（复用 <code>db.insert_gps_points</code> 与 <code>cep_engine.evaluate_points</code>）；<span class="effort">工作量 M</span>。alarm_flag 列建议升级为 bigint（或新增 status/alarm_raw 列保留位图，alarm_flag 保留 0/1 供旧逻辑）；是否补 status/附加项扩展列见第 9 章决策项。</p>
+
+<h3 id="ch3-2">3.2 报警 / 主动安全预警</h3>
+<h4>网关侧契约</h4>
+<ul>
+<li>Topic <code>jt808_warn_topic</code> 载荷 <code>WarnInfo</code>：warnId(32UUID)、typeId(101001 等数字码)、rawType(如 0x64_0x01)、alarmLevel(1一级/2二级)、开始/结束位置与状态、warnIdentity(16B hex)、附件数量/已收/已传、标志状态（开始 1/结束 2）；</li>
+<li>附件完成另有 <code>jt808_warn_media_topic</code>（MediaInfoDto，含 warnId、fileType、url、fileStatus）。</li>
+</ul>
+<h4>mydbd 现状</h4>
+<ul>
+<li><code>mon.risk_event</code>：event_code(字符串如 DSM_FATIGUE/ADAS_FCW)、event_source(ADAS/DSM/北斗/vendor)、risk_level(<strong>1低2中3高</strong>)、media_url 单字段、confidence、fence_id/rule_id 等；由 <code>POST /api/analysis/video</code> 占位接口（信号事件，无真实媒体）与样例导入写入；</li>
+<li><code>traj.traj_warn_info</code>：source_id、type_id(integer)、起止时间/位置/速度、warn_continue_mark、rule_id、handle_status；<strong>目前无生产代码写入</strong>（仅表与字典 base_warn_type 1–5）；</li>
+<li>无报警开始/结束状态机、无 warnId、无一事件多附件模型。</li>
+</ul>
+<h4>差距</h4>
+<ol>
+<li><strong>事件码字典不同</strong>：101001↔ADAS_FCW、102001↔DSM_FATIGUE 等需建映射表；rawType(外设字节) 建议原样保留；</li>
+<li><strong>级别方向相反</strong>：苏标 1 级为高（强制报警）、2 级为低；平台 1低/2中/3高——不能直接拷贝；</li>
+<li><strong>状态机缺失</strong>：网关有开始/持续/结束，平台为单点事件，需用 warnId 做开闭环合并（写 traj_warn_info 起止）；</li>
+<li><strong>附件关联缺失</strong>：risk_event.media_url 只有一个 URL，苏标一警多附件需新增子表或以 warnId 关联媒体表；</li>
+<li>平台 CEP 自产事件（SPEED/FATIGUE/围栏）与网关上报事件需用 event_source 区分（如 vendor/jt808），避免重复告警与重复扣分。</li>
+</ol>
+<p><span class="tag tag-rec">建议</span> 适配层按 warnId 落 <code>traj_warn_info</code>（source_id=warnId、type_id 存网关数字码），同时按映射字典生成 <code>mon.risk_event</code> 进入既有分级/通知/工单链；附件单独建 <code>mon.risk_event_media</code> 或复用照片表加 source/ warn_id 列。<span class="effort">工作量 M</span>（字典+状态机是主要工作）。</p>
+
+<h3 id="ch3-3">3.3 图片</h3>
+<p>网关存在<strong>两条互不相通</strong>的图片路径：</p>
+<table>
+<thead><tr><th>路径</th><th>网关行为</th><th>平台可见性</th></tr></thead>
+<tbody>
+<tr><td>① 平台主动拍照 0x8801→0x0805→0x0801</td><td>照片落网关本地盘 + MySQL <code>vps_gps_photo</code>；gps_topic 发 gpsType=11 关联点（<strong>不含 URL/文件名</strong>）</td><td><span class="tag tag-no">无 Kafka 出口</span>，平台拿不到照片元数据</td></tr>
+<tr><td>② 苏标报警附件 9208→1210/1211/码流/1212</td><td>文件服务落盘，完成发 <code>jt808_warn_media_topic</code>（含 url、fileType、fileSize、warnId）</td><td><span class="tag tag-ok">可直接订阅</span>，URL 指向 18009/static</td></tr>
+</tbody>
+</table>
+<h4>mydbd 现状</h4>
+<ul>
+<li><code>traj.traj_gps_photo</code> 字段（photo_id、truck_id、identity_code、channel_id、file_name、url、photo_size、track_id、task_id、req_source、cmd/gps/receive/create_time）<strong>几乎照搬 vps_gps_photo，已预留</strong>；</li>
+<li>但<strong>无任何写入接口/代码、无对象存储、无静态文件服务</strong>；<code>/api/analysis/video</code> 的 clipUrl 只是字符串占位，无真实上传能力。</li>
+</ul>
+<h4>差距与建议</h4>
+<ol>
+<li>苏标附件：适配层订阅 warn_media → 下载/转存文件（见下）→ 写照片/媒体表并以 warnId 回连 risk_event；<span class="effort">M</span></li>
+<li>主动拍照：需在网关侧做<strong>小改造</strong>（拍照入库后向 gps 或新增 media Topic 补发含 URL 的事件），或由平台适配层以只读账号轮询 vps_gps_photo（不推荐跨库耦合）；<span class="effort">S–M</span></li>
+<li>存储三选一：(a) 平台与网关共享挂载卷；(b) 适配层把文件转存 MinIO/OSS 并改写 url（推荐，解耦且利于备份/鉴权）；(c) 反代 18009/static 并加访问控制（最快）；</li>
+<li>URL 可达性、时效与数据权限（按车辆归属校验后才能取图）必须同步设计。</li>
+</ol>
+
+<h3 id="ch3-4">3.4 视频</h3>
+<table>
+<thead><tr><th>项</th><th>网关（vps-video + 18001）</th><th>mydbd</th></tr></thead>
+<tbody>
+<tr><td>终端收流</td><td>RTP over TCP 10780/10781/10782，H264/H265+多音频</td><td><span class="tag tag-no">无</span></td></tr>
+<tr><td>信令</td><td>9101/9102、9201/9202、9205/1205（经 REST 触发）</td><td><span class="tag tag-no">无</span></td></tr>
+<tr><td>浏览器播放</td><td>ws-flv 20780/20781/20782</td><td><span class="tag tag-no">无播放器集成</span></td></tr>
+<tr><td>建设规划</td><td>已实现并可用</td><td>SYS-DBD-001：F06（1078 接入，v0.3）、F07（截图片段按需调阅）“待建设”，原设想含 ZLMediaKit</td></tr>
+</tbody>
+</table>
+<p><strong>结论与建议：</strong>平台无需自建收流/转码（避免重复造轮子与 FFmpeg 运维成本）：</p>
+<ol>
+<li>独立部署 vps-video（与终端网络可达）；platform-app 新增“视频调阅服务”封装 18001 的 5 个视频 REST（实时/停止/回放/停止回放/资源列表），把返回的 ws 地址经<strong>平台反代 + 时效签名</strong>给前端（vps-video 的 ws 本身无鉴权，不可裸放）；</li>
+<li>前端集成 flv.js（H265 需支持网关私有增强 FLV 的播放器版本）；对讲页面走 20782（PCM 640B/帧）；</li>
+<li>与 F07 对齐：报警事件详情页提供“调阅实时/回放/拍照”按钮（边缘触发 + 按需调阅，终端不传全量视频，与既定业务规则一致）；调阅审批、水印（F25）在平台侧实现；</li>
+<li>若决策<strong>替换</strong> vps 改用 ZLMediaKit，则需在 mydbd 侧自建 808/1078 信令（等同 F01+F06 全量建设，<span class="effort">L</span>），不建议在已有可用网关时选择。</li>
+</ol>
+<p><span class="effort">推荐路径工作量 M–L</span>（主要在前端播放器、反代鉴权、调阅审批）。</p>
+
+<h3 id="ch3-5">3.5 文本</h3>
+<ul>
+<li><strong>网关：</strong>仅“平台→终端”方向：<code>POST /api/command/{phone}/tts</code> → 0x8300 文本信息下发（type 1 通知/2 服务、sign 标志位、content 文本）。终端→平台<strong>无</strong>独立文本通道（0x0900 透传仅编解码，业务未消费）。</li>
+<li><strong>mydbd：</strong>无任何文本下发功能；通知模块（module-notify）已有 SMS/Voice/Push 通道。</li>
+</ul>
+<p><span class="tag tag-rec">建议</span> 在通知中心新增 <strong>JT808-TTS 通道</strong>：通知规则命中后经 platform-app 调网关 /tts；通道参数为终端手机号、文本、类型。<span class="effort">工作量 S</span>。终端上行文本本期不支持（如确有需求，再评估 0x0900/0x0301）。</p>
+
+<h3 id="ch3-6">3.6 心跳与在线/离线态</h3>
+<ul>
+<li>网关：<code>jt808_heartbeat_topic</code>（0x0002）、<code>jt808_offline_topic</code>（断链 type=1，<strong>无上线消息</strong>）；</li>
+<li>mydbd：大屏以“最近 5 分钟有定位点”判定在线（refTime 口径），无接入侧连接事件。</li>
+</ul>
+<p><span class="tag tag-rec">建议</span> 适配层维护终端会话状态：消费 command_topic 的 0102（鉴权成功）视为上线、offline 立即置离线、心跳刷新存活；写终端在线状态供大屏精确展示，“最近有点”保留为兜底口径。<span class="effort">S</span>。</p>
+
+<h3 id="ch3-7">3.7 原始报文（审计留痕）</h3>
+<p>网关 <code>jt808_raw_hex_topic</code> 提供白名单车辆的原始 hex 报文（心跳除外，按 monitor 配置）。mydbd 有操作审计模块但无报文留痕。建议二期按需订阅落冷存储，供协议排障与争议追溯；<span class="effort">S</span>，非首期必需。</p>
+
+<h2 id="ch4">4. 字段级映射规格</h2>
+<h3>4.1 定位：PositionInfo → /api/ingest/traj · traj_gps_point</h3>
+<table>
+<thead><tr><th>网关字段（JSON）</th><th>平台字段</th><th>转换规则</th><th>备注</th></tr></thead>
+<tbody>
+<tr><td class="mono">gpsHead.phoneNumber</td><td class="mono">identityCode</td><td>直接映射（需统一口径，见 4.4）</td><td>手机号=终端鉴权码</td></tr>
+<tr><td class="mono">gpsHead.plateNo / plateColor</td><td class="mono">plateNo</td><td>直传；车牌颜色用于车辆匹配</td><td>truckId 不直接入平台库</td></tr>
+<tr><td class="mono">gpsInfo.longitude / latitude</td><td class="mono">lng / lat</td><td>已为度，直填 numeric(10,6)；同步生成 geometry(Point,4326)</td><td>坐标系见 4.5</td></tr>
+<tr><td class="mono">gpsInfo.speed</td><td class="mono">speed</td><td><strong>÷100</strong>（m/h → km/h），四舍五入取整</td><td>不换算会放大 100 倍</td></tr>
+<tr><td class="mono">gpsInfo.mileage</td><td class="mono">mileage</td><td><strong>÷1000</strong>（米 → km），保留 2 位小数</td><td>空值透传 NULL</td></tr>
+<tr><td class="mono">gpsInfo.direction</td><td class="mono">direction</td><td>直填 0–359</td><td></td></tr>
+<tr><td class="mono">gpsInfo.altitude</td><td class="mono">altitude</td><td>直填（米，integer）</td><td></td></tr>
+<tr><td class="mono">gpsInfo.gpsTime</td><td class="mono">gpsTime</td><td>字符串时间解析为 timestamp（GMT+8）</td><td>无显式时区，按 +08:00</td></tr>
+<tr><td class="mono">gpsInfo.alarmFlag(Long 位图)</td><td class="mono">alarm_flag</td><td><strong>列需扩 bigint</strong> 保留位图；旧 0/1 逻辑改为按位判断或冗余派生列</td><td>smallint 会溢出</td></tr>
+<tr><td class="mono">gpsInfo.status(Long)</td><td>—（无列）</td><td>决策：新增 status bigint 或存 JSON 扩展列</td><td>ACC/转向/制动/定位状态</td></tr>
+<tr><td class="mono">gpsHead.trackId / delay / gpsType</td><td>—（无列）</td><td>建议新增扩展列或 JSONB 列</td><td>幂等去重可用 trackId</td></tr>
+<tr><td class="mono">gpsInfo.additions[]</td><td>—（无列）</td><td>苏标 0x64–0x70 已被网关转成 warn 事件；其余按需提取</td><td>避免重复解析</td></tr>
+<tr><td class="mono">gpsInfo.recordSpeed</td><td>—</td><td>可选扩展</td><td>记录仪速度</td></tr>
+<tr><td>—（平台侧）</td><td class="mono">receive_time</td><td>取 gpsHead.receiveTime，缺省用消费时刻</td><td></td></tr>
+</tbody>
+</table>
+
+<h3>4.2 报警：WarnInfo → traj_warn_info / risk_event</h3>
+<table>
+<thead><tr><th>WarnInfo</th><th>目标</th><th>规则</th></tr></thead>
+<tbody>
+<tr><td class="mono">warnId</td><td>traj_warn_info.source_id；risk_event 关联键</td><td>32 位 UUID，附件靠它关联；幂等键</td></tr>
+<tr><td class="mono">typeId</td><td>traj_warn_info.type_id</td><td>直存数字码（101001…），字典另配</td></tr>
+<tr><td class="mono">typeId / rawType</td><td>risk_event.event_code / event_source</td><td>按字典映射：101001→ADAS_FCW、102001→DSM_FATIGUE、101002→ADAS_LDW …；event_source 取 ADAS/DSM/TPMS/BLIND/HARSH 或统一 vendor/jt808（需与现有规则引擎约定）</td></tr>
+<tr><td class="mono">alarmLevel</td><td>risk_event.risk_level</td><td>苏标 1级（高）→ 3，2级（低）→ 1 或 2；建议按事件类型矩阵细调</td></tr>
+<tr><td class="mono">标志状态（开始/结束）</td><td>traj_warn_info.warn_continue_mark / 起止字段</td><td>开始写 start_*；结束回填 end_* 与 handle 计时；risk_event 在开始时产生一条</td></tr>
+<tr><td class="mono">开始/结束经纬度、speed</td><td>start_lng/lat/speed、end_*</td><td>同 4.1 单位规则；注意 start_lng 列为 varchar</td></tr>
+<tr><td class="mono">plateNo / identityCode</td><td>plate_no / identity_code</td><td>按绑定表补齐</td></tr>
+<tr><td class="mono">warnIdentity(16B)</td><td>建议新增列/扩展字段</td><td>终端侧报警去重与附件核对依据</td></tr>
+</tbody>
+</table>
+
+<h3>4.3 媒体：MediaInfoDto / vps_gps_photo → traj_gps_photo（或新媒体表）</h3>
+<table>
+<thead><tr><th>网关字段</th><th>平台列</th><th>规则</th></tr></thead>
+<tbody>
+<tr><td class="mono">truckId / imei</td><td>truck_id / identity_code</td><td>按绑定换算 / 手机号即 imei</td></tr>
+<tr><td class="mono">fileName / fileSize / fileType</td><td>file_name / photo_size</td><td>0图/1音/2视/3文本：图片类写照片表，音视频建议新媒体表或同表加类型列</td></tr>
+<tr><td class="mono">url</td><td>url</td><td>转存 MinIO 后改写，或反代 18009 并带签名</td></tr>
+<tr><td class="mono">warnId</td><td>建议新增 warn_id 列</td><td>回连 traj_warn_info/risk_event（现表缺该列）</td></tr>
+<tr><td class="mono">taskId / trackId</td><td>task_id / track_id</td><td>拍照类直接对应</td></tr>
+<tr><td class="mono">各时间</td><td>cmd_time/gps_time/receive_time</td><td>按 GMT+8 解析</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 标识体系映射</h3>
+<blockquote class="warn">
+<p>网关以 <strong>手机号（phoneNumber=鉴权码）+ truckId（网关库自增整数）</strong>标识；mydbd 以 <strong>identity_code（终端唯一）+ 车辆/终端绑定</strong>标识。现状种子数据中 identity_code 为 <code>TERM_001</code> 一类编码，手机号在 <code>traj_terminal.sim_account</code>。</p>
+<p><strong>对接前必须统一</strong>（二选一）：① 将网关注册手机号写入/同步为 <code>traj_terminal.identity_code</code>（推荐，天然全局唯一、协议可见）；② 适配层以 sim_account 反查终端，再经 <code>traj_vehicle_terminal</code> 定位车辆与归属组织。同时需把网关 vps_base_truck 白名单与平台车辆档案做<strong>一次性同步</strong>，未登记车辆网关侧直接拒绝注册。</p>
+</blockquote>
+
+<h3>4.5 时间、坐标系与其他口径</h3>
+<ul>
+<li><strong>时间：</strong>网关全部 GMT+8、格式 <code>yyyy-MM-dd HH:mm:ss</code>/BCD；平台 timestamp，入库时统一带 +08:00 处理；</li>
+<li><strong>坐标：</strong>终端上报为原始卫星坐标（通常 WGS-84/北斗）。平台底图/逆地理用高德（GCJ-02，geocode 组件已配高德 key）。网关参考 StarRocks 表同时保留原始与高德(lon_g/lat_g)、百度(lon_b/lat_b)三列，说明<strong>纠偏责任在下游</strong>。建议平台入库保留原始坐标（4326 语义按 WGS-84 标注），出图时统一转 GCJ-02，避免重复转换（见决策项）；</li>
+<li><strong>速度精度：</strong>0x0200 原始速度为 1/10 km/h，网关 JSON 已乘 100 得 m/h；平台 integer km/h 会损失小数，如驾驶评分需要更高精度，可新增 numeric 列；</li>
+<li><strong>鉴权：</strong>适配层→processing-service 带 X-Service-Token；platform-app→网关 18001 目前无鉴权，走内网/网关白名单，建议要求网关侧加服务令牌校验。</li>
+</ul>
+
+<h2 id="ch5">5. 差距矩阵总表</h2>
+<table>
+<thead><tr><th>信息类</th><th>传输</th><th>字段/模型</th><th>单位/坐标</th><th>存储</th><th>综合结论</th></tr></thead>
+<tbody>
+<tr><td>定位</td><td><span class="tag tag-no">Kafka↔HTTP</span></td><td><span class="tag tag-part">位图/附加项缺失</span></td><td><span class="tag tag-part">速度里程必换算</span></td><td><span class="tag tag-ok">表已就绪</span></td><td>适配层转换即可入库，M</td></tr>
+<tr><td>报警/主动安全</td><td><span class="tag tag-no">Kafka 无消费方</span></td><td><span class="tag tag-no">码表/状态机/附件关联缺</span></td><td><span class="tag tag-part">级别需反转</span></td><td><span class="tag tag-part">表部分预留</span></td><td>需字典+开闭环，M</td></tr>
+<tr><td>图片（苏标附件）</td><td><span class="tag tag-ok">warn_media 可订阅</span></td><td><span class="tag tag-ok">照片表同构</span></td><td>—</td><td><span class="tag tag-no">无文件存储</span></td><td>转存+写表，M</td></tr>
+<tr><td>图片（主动拍照）</td><td><span class="tag tag-no">无 Kafka 出口</span></td><td><span class="tag tag-ok">表同构</span></td><td>—</td><td><span class="tag tag-no">在网关盘</span></td><td>需网关补事件或轮询，S–M</td></tr>
+<tr><td>视频（实时/回放/对讲）</td><td><span class="tag tag-part">REST 可调用/ws 无鉴权</span></td><td><span class="tag tag-no">平台零能力</span></td><td>—</td><td><span class="tag tag-ok">网关已具备</span></td><td>复用 vps-video+前端，M–L</td></tr>
+<tr><td>文本</td><td><span class="tag tag-ok">REST 可调用</span></td><td><span class="tag tag-part">仅下行 TTS</span></td><td>—</td><td>—</td><td>通知中心加通道，S</td></tr>
+<tr><td>在线态</td><td><span class="tag tag-no">无上线事件</span></td><td><span class="tag tag-part">平台按点估算</span></td><td>—</td><td>—</td><td>适配层维护会话，S</td></tr>
+<tr><td>原始报文</td><td><span class="tag tag-ok">raw topic 可订阅</span></td><td><span class="tag tag-no">无落库</span></td><td>—</td><td>冷存储</td><td>二期可选，S</td></tr>
+</tbody>
+</table>
+
+<h2 id="ch6">6. 对接方案选项</h2>
+<table>
+<thead><tr><th></th><th>方案 A：Kafka + 接入适配层（推荐）</th><th>方案 B：HTTP 适配（Topic 转 HTTP 推送）</th><th>方案 C：mydbd 自建 JT808/1078 网关</th></tr></thead>
+<tbody>
+<tr><td>做法</td><td>部署 Kafka；新增独立适配服务（或 processing-service 内置 consumer）订阅 6 个 Topic，映射后复用现有入库/CEP；指令走 REST 封装</td><td>在网关侧或旁路加 producer→HTTP 桥，把 Topic 载荷转成 /api/ingest/traj 等调用</td><td>按 F01/F06 在平台侧实现 808 TCP + 1078 + 苏标（或引入 ZLMediaKit）</td></tr>
+<tr><td>改动面</td><td>平台侧新增 1 个组件 + 少量表扩展；<strong>网关基本不改</strong></td><td>需改 Java 网关或维护脆弱的旁路桥；平台接口要扩展</td><td>平台侧大规模新建，终端割接</td></tr>
+<tr><td>可靠性</td><td><span class="tag tag-ok">高</span> 可回放、削峰、多消费组、不丢不重（trackId/warnId 幂等）</td><td><span class="tag tag-part">低</span> 需自行处理重试/乱序/积压，强耦合</td><td>取决于建设质量</td></tr>
+<tr><td>与现架构契合</td><td><span class="tag tag-ok">高</span> 与“边缘触发、按需调阅”及路线图 v0.2 兼容</td><td>中</td><td>重复投资，且 vps 已稳定运行</td></tr>
+<tr><td>工作量</td><td><span class="effort">M（首期）</span></td><td><span class="effort">M</span> 但技术债高</td><td><span class="effort">L</span></td></tr>
+</tbody>
+</table>
+
+<h2 id="ch7">7. 推荐目标架构与分阶段实施</h2>
+<h3>7.1 目标逻辑架构（方案 A）</h3>
+<pre><code>                      ┌──────────────────────── mydbd 平台 ────────────────────────┐
+                      │                                                              │
+ Kafka ◀── vps ── jt808_gps_topic ────────▶ ③ ingress-adapter（新增，建议独立容器）    │
+              ── jt808_warn_topic ───────▶   · 白名单/绑定校验（identity=手机号）      │
+              ── jt808_warn_media_topic ──▶   · 单位换算/级别映射/事件码字典           │
+              ── jt808_heartbeat_topic ───▶   · 坐标策略 · 幂等(trackId/warnId)       │
+              ── jt808_offline_topic ─────▶   · 文件转存(MinIO/反代)                  │
+              ── jt808_raw_hex_topic(二期)▶        │                                  │
+                      │                            ▼                                   │
+                      │              processing-service（复用）                        │
+                      │              入库 traj_gps_point / CEP / risk_event           │
+                      │              traj_warn_info / traj_gps_photo + 媒体子表        │
+                      │                            ▲                                   │
+ vps 18001 REST ◀──── ④ gateway-command-client（platform-app 新增）───────────────────┤
+   realtimeVideoReq / historyVideoReq / queryMediaItems / cameraShot / tts           │
+ vps 2078x ws-flv ◀── ⑤ 前端 flv.js（经 nginx 反代 + 时效签名；H265 增强播放器）       │
+                      └──────────────────────────────────────────────────────────────┘</code></pre>
+<h3>7.2 分阶段计划（建议）</h3>
+<table>
+<thead><tr><th>阶段</th><th>内容</th><th>产出</th><th>量级</th></tr></thead>
+<tbody>
+<tr><td><strong>P0</strong></td><td>部署 Kafka；适配服务订阅 gps/heartbeat/offline；车辆-终端-手机号对齐；speed/mileage 换算；alarm_flag 扩 bigint；接入 CEP 与在线态</td><td>真实终端轨迹上大屏，在线状态精确</td><td class="effort">M</td></tr>
+<tr><td><strong>P1</strong></td><td>订阅 warn/warn_media；事件码字典与级别映射；warnId 开闭环；媒体转存（MinIO 或反代）；写 traj_warn_info/risk_event/媒体表；接入通知与工单</td><td>主动安全报警进风控闭环，附件可看</td><td class="effort">M</td></tr>
+<tr><td><strong>P2</strong></td><td>部署 vps-video；platform-app 封装 5 个视频 REST + cameraShot；前端 flv.js/回放/对讲；ws 反代签名；调阅审批/水印(F25)；网关补拍照事件（若选改造）</td><td>F06/F07 按需调阅上线</td><td class="effort">M–L</td></tr>
+<tr><td><strong>P3</strong></td><td>通知中心 JT808-TTS 通道；原始报文留痕；资源列表检索入 UI；（远期）JT/T 809 政府平台联网（另立项目）</td><td>文本下发、审计留痕</td><td class="effort">S / 809 为 L</td></tr>
+</tbody>
+</table>
+<h3>7.3 联调检查清单（摘录）</h3>
+<ul>
+<li>网关白名单已同步本平台车辆；手机号与 traj_terminal 口径一致；</li>
+<li>Kafka 网络互通、消费组命名（如 <code>mydbd-ingest</code>）、位点策略与重试/死信；</li>
+<li>用一条已知点核验：经纬度、speed(km/h)、mileage(km)、方向、时间、报警位；</li>
+<li>一次完整 ADAS 报警联调：0200 开始→9208→1210-1212→warn/warn_media→平台事件+图片可打开；</li>
+<li>实时视频：9101→ws 可播、9102 停止、对讲回声、H265 样例终端验证；</li>
+<li>TTS 下发回执；终端离线时指令失败的提示与重试。</li>
+</ul>
+
+<h2 id="ch8">8. 风险、合规与数据权限</h2>
+<ol>
+<li><strong>数据权限锚点不变：</strong>所有车辆数据可见范围以<strong>车辆归属组织</strong>（traj_vehicle.dept_id，经 traj_vehicle_terminal→traj_terminal 到 identity_code）为锚点；网关传入的车牌/归属不得改变这一口径，<strong>严禁按车牌省份（province_code）做数据过滤</strong>；</li>
+<li><strong>媒体越权：</strong>网关 /static 与 ws-flv 均无鉴权，禁止把其裸地址直接给浏览器；必须经平台反代 + 登录态/归属校验 + 时效签名；</li>
+<li><strong>指令安全：</strong>18001 无应用鉴权，视频/拍照/TTS 为可影响行车设备的指令，需内网隔离 + 服务令牌 + 操作审计（复用 IAM/审计模块），调阅审批走 F25；</li>
+<li><strong>敏感配置：</strong>网关配置文件含明文数据库口令（详见配套文档第 5 章），对接时以最小权限只读账号访问、口令经密钥管理注入，<strong>不得复制到本项目仓库或文档</strong>；</li>
+<li><strong>重复告警/重复评分：</strong>网关报警与平台 CEP 可能对同一行为双重计分，需以 event_source/rawType 去重或制定优先级；</li>
+<li><strong>可靠性语义：</strong>网关校验失败不丢包（可能有脏数据）、附件进度仅内存（文件服务重启需终端重传）、无上线消息——适配层均需容错；</li>
+<li><strong>坐标合规：</strong>对外展示用 GCJ-02；入库保留原始坐标时需在元数据注明坐标系，避免混用造成位置偏移。</li>
+</ol>
+
+<h2 id="ch9">9. 待决策问题清单</h2>
+<table>
+<thead><tr><th>#</th><th>决策项</th><th>选项</th><th>建议</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>对接传输方式</td><td>A 引入 Kafka 适配层 / B HTTP 桥 / C 自建网关</td><td><span class="tag tag-rec">A</span></td></tr>
+<tr><td>2</td><td>identity_code 口径</td><td>改用手机号 / 经 sim_account 反查</td><td><span class="tag tag-rec">手机号作为 identity_code</span>（或双写）</td></tr>
+<tr><td>3</td><td>媒体存储</td><td>MinIO/OSS 转存 / 共享卷 / 反代 /static</td><td><span class="tag tag-rec">MinIO 转存</span>（快速过渡可先反代）</td></tr>
+<tr><td>4</td><td>视频路线</td><td>复用 vps-video / 自建 ZLMediaKit</td><td><span class="tag tag-rec">复用 vps-video</span></td></tr>
+<tr><td>5</td><td>alarm_flag/status/附加项</td><td>扩 bigint + JSONB 扩展列 / 仅扩 alarm_flag</td><td><span class="tag tag-rec">首期 alarm_flag 扩 bigint，扩展列二期</span></td></tr>
+<tr><td>6</td><td>坐标策略</td><td>入库原始 WGS84+出图转 GCJ02 / 入库即转</td><td><span class="tag tag-rec">保留原始、出图转换</span>，避免二次偏移</td></tr>
+<tr><td>7</td><td>主动拍照出口</td><td>网关补 Kafka 事件 / 适配层只读轮询 vps_gps_photo</td><td><span class="tag tag-rec">网关补事件</span>（一处小改，一劳永逸）</td></tr>
+<tr><td>8</td><td>事件源编码</td><td>risk_event 新增 source=jt808 / 归入 ADAS/DSM</td><td>保留网关码 + 映射现有码双写，CEP 与网关事件去重</td></tr>
+<tr><td>9</td><td>HTTP /api/ingest/traj 去留</td><td>保留作第三方/模拟器入口 / 废弃</td><td><span class="tag tag-rec">保留</span>，模拟器与外部系统仍在用</td></tr>
+<tr><td>10</td><td>809 政府平台联网</td><td>本期不做 / 立项</td><td>本期不做（vps 无 809，需独立建设）</td></tr>
+</tbody>
+</table>
+
+<hr>
+<p class="meta">本报告基于两侧代码当前版本的只读分析；字段与消息口径的权威出处见配套文档 <a href="GATEWAY-REF-001-vps车载网关功能接口与标准协议分析.html">GATEWAY-REF-001</a>。决策确认后，可据此输出 P0 阶段的实施 PRD 与接口设计。</p>
+
+<div class="docfoot">
+  <span>GATEWAY-CMP-001 mydbd 与 vps 车载网关对接对比分析 · 对接决策报告 · 2026-10-05</span>
+  <span>2026-10-05 迁入正式文档库 reference 分区，正文保持原貌</span>
+</div>
+
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>

@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD-DBD-016 视频智能（规划） · 北斗导航数据业务平台</title>
+<link rel="stylesheet" href="../assets/doc.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="../index.html">文档中心</a>
+  <div class="sub">MOD-DBD-016 视频智能（规划）｜ 功能模块文档 ｜ 北斗导航数据业务平台</div>
+</div>
+<div class="layout">
+  <aside class="toc"><div class="toc-inner">
+    <p class="toc-title">目录</p>
+    <ul>
+      <li><a href="#part-product">产品篇</a>
+        <ul>
+          <li><a href="#p-scope">1. 模块定位与功能范围</a></li>
+          <li><a href="#p-term">2. 术语</a></li>
+          <li><a href="#p-scenes">3. 业务场景</a></li>
+          <li><a href="#p-flow">4. 目标业务流程</a></li>
+          <li><a href="#p-gap">5. 现状与差距</a></li>
+          <li><a href="#p-value">6. 业务价值</a></li>
+          <li><a href="#p-shot">7. 规划页面占位</a></li>
+        </ul>
+      </li>
+      <li><a href="#part-tech">技术篇</a>
+        <ul>
+          <li><a href="#t-current">8. 现状架构（代码实证）</a></li>
+          <li><a href="#t-target">9. 目标架构：边缘 + 平台分工</a></li>
+          <li><a href="#f24">10. F24 终端边缘智能（DSM/ADAS）</a></li>
+          <li><a href="#f25">11. F25 视频调阅审批与水印</a></li>
+          <li><a href="#f26">12. F26 证据保全与生命周期</a></li>
+          <li><a href="#f27">13. F27 模型管理与 OTA（MLOps）</a></li>
+          <li><a href="#t-schema">14. 数据模型变更</a></li>
+          <li><a href="#t-join">15. 与现有系统衔接点</a></li>
+          <li><a href="#t-roadmap">16. 分期路线</a></li>
+          <li><a href="#t-choice">17. 选型与备选</a></li>
+          <li><a href="#t-risk">18. 风险与对策</a></li>
+          <li><a href="#t-accept">19. 验收标准</a></li>
+          <li><a href="#t-nfr">20. 非功能与容量设计</a></li>
+        </ul>
+      </li>
+      <li><a href="#deps">规划依赖关系</a></li>
+      <li><a href="#todo">待核实项</a></li>
+      <li><a href="#revisions">修订记录</a></li>
+    </ul>
+  </div></aside>
+  <main class="content">
+    <a class="backlink" href="../index.html">← 返回文档中心</a>
+    <h1>MOD-DBD-016 视频智能（规划）</h1>
+    <div class="cover-meta">
+      编号：MOD-DBD-016<span class="sep">｜</span>版本：v1.0.0<span class="sep">｜</span>日期：2026-10-05<span class="sep">｜</span>
+      状态：<span class="badge red">规划中</span><span class="sep">｜</span>覆盖功能项：F24～F27（另有 P12 页面占位）<span class="sep">｜</span>
+      代码锚点：processing-service/app（routes/analysis.py、services/risk_engine.py、cep_engine）、03-mon-tables.sql、VideoAnalysis.java
+    </div>
+
+    <span class="part-tag product" id="part-product">产品篇</span>
+
+    <h2 id="p-scope">1. 模块定位与功能范围</h2>
+    <p>视频智能模块覆盖<strong>主动安全事件的产生、取证、调阅治理与模型迭代</strong>全链路。总体策略是<strong>"边缘触发 + 按需调阅"</strong>：识别在车载终端 NPU 上完成，平台不做全量视频分析、不存全量视频；平台负责事件汇聚、证据管理、调阅审批、留痕审计与模型生命周期。</p>
+    <table>
+      <tr><th style="width:80px">功能项</th><th>名称</th><th>范围</th></tr>
+      <tr><td>F24</td><td>终端边缘智能</td><td>DSM（疲劳/分心/抽烟/接打电话）、ADAS（FCW/LDW）终端侧识别；信号 + 1～3 张水印抓拍图上报；平台仅做事件接入与分级</td></tr>
+      <tr><td>F25</td><td>调阅审批与水印</td><td>实时/历史视频调阅须有审批单；单次限时（规划 ≤10 分钟）；播放与下载水印=调阅人账号+时间；全程审计；无单不可调</td></tr>
+      <tr><td>F26</td><td>证据保全</td><td>事故相关片段 WORM 长期保全；普通片段 30～90 天自动到期清理并写销毁日志；哈希存证；MinIO 对象存储</td></tr>
+      <tr><td>F27</td><td>MLOps</td><td>模型注册/版本/灰度、OTA 升级下发（808 0x8108）、效果漂移监控、标注（Label Studio）与再训练闭环</td></tr>
+    </table>
+    <blockquote class="warn">F24～F27 均为设计规划，尚未实现。当前平台只有一个"视频分析"占位任务链路（确定性行为，无真实视觉模型），详见第 8 节。</blockquote>
+
+    <h2 id="p-term">2. 术语</h2>
+    <table>
+      <tr><th style="width:180px">术语</th><th>含义</th></tr>
+      <tr><td>DSM</td><td>Driver State Monitoring，驾驶员状态监测：疲劳驾驶、接打手机、抽烟、分心、未检测到驾驶员等。</td></tr>
+      <tr><td>ADAS</td><td>Advanced Driver Assistance System，高级驾驶辅助：前向碰撞预警 FCW、车道偏离预警 LDW、车距监测、行人碰撞等。</td></tr>
+      <tr><td>边缘触发</td><td>识别与抓拍在终端本地完成，仅把结构化事件与少量图片上传平台，区别于"全量视频回传 + 云端识别"。</td></tr>
+      <tr><td>调阅单</td><td>一次视频访问的授权凭证：申请人、车辆、通道、起止时刻、用途、时长、审批人；无单不签发播放地址。</td></tr>
+      <tr><td>WORM</td><td>Write Once Read Many，一次写入多次读取的不可篡改存储，用于事故证据长期保全。</td></tr>
+      <tr><td>证据片段</td><td>与风险事件关联的短视频（任务书口径：报警前后约 10 秒）或抓拍图集。</td></tr>
+      <tr><td>OTA</td><td>Over-The-Air，终端算法包/固件远程升级；808 消息 0x8108 为下发升级包通知。</td></tr>
+      <tr><td>漂移（模型）</td><td>真实场景分布变化导致模型指标（误报/漏报）偏离上线基线，需要再训练。</td></tr>
+    </table>
+
+    <h2 id="p-scenes">3. 业务场景</h2>
+    <div class="scene-grid">
+      <div class="scene">
+        <div class="sc-role">驾驶员 · 实时干预</div>
+        <div class="sc-name">终端本地声光提醒</div>
+        <div class="sc-desc">疲劳/抽烟/前向碰撞风险在终端毫秒级报警并语音提醒司机；事件与抓拍图异步上报平台，不依赖网络通畅。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全员 · 事件核查</div>
+        <div class="sc-name">看图判断报警真假</div>
+        <div class="sc-desc">风险事件详情直接展示 1～3 张水印抓拍图，无需调视频即可完成大部分误报/实报确认。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">安全主管 · 视频调阅</div>
+        <div class="sc-name">申请-审批-限时调阅</div>
+        <div class="sc-desc">对争议事件提交调阅申请，审批通过后在浏览器限时查看片段，画面带本人账号与时间水印，全程留痕。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">事故处理 · 证据管理</div>
+        <div class="sc-name">事故片段封存</div>
+        <div class="sc-desc">重大事故关联片段一键转 WORM 保全，超出普通保留期也不销毁，哈希可校验、调取需授权。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">算法工程师 · 模型迭代</div>
+        <div class="sc-name">误报样本闭环</div>
+        <div class="sc-desc">安全员标记的误报图片进入标注集，再训练后新版本灰度下发部分车辆，指标对比后全量。</div>
+      </div>
+      <div class="scene">
+        <div class="sc-role">合规管理员</div>
+        <div class="sc-name">留存与销毁可审计</div>
+        <div class="sc-desc">普通片段到期自动清理且写销毁日志；人脸等敏感个人信息的调阅、导出全部有记录，满足汽车数据合规要求。</div>
+      </div>
+    </div>
+
+    <h2 id="p-flow">4. 目标业务流程</h2>
+    <h3>4.1 主动安全事件闭环（F24）</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">终端识别</div><div class="s-desc">DSM/ADAS 模型在 NPU 推理命中，本地声光提醒驾驶员</div></div>
+      <div class="step"><div class="s-title">边缘抓拍</div><div class="s-desc">抓拍 1～3 张 JPEG（叠加车牌/时间/事件类型水印），经苏标 0x64/0x65 附加项或 vps warn 通道上报</div></div>
+      <div class="step"><div class="s-title">平台接入</div><div class="s-desc">MOD-014 网关映射 typeId→event_code、级别转换，落 mon.risk_event + traj_warn_media（F07）</div></div>
+      <div class="step"><div class="s-title">分级冷却</div><div class="s-desc">复用现有 cep_engine.evaluate_signal 的规则启用/分级/冷却机制，避免同类报警风暴</div></div>
+      <div class="step"><div class="s-title">核查处置</div><div class="s-desc">安全员看图确认实报/误报；实报按现有工单链路处置，误报样本回流 F27</div></div>
+    </div>
+    <h3>4.2 视频调阅闭环（F25/F06）</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">申请</div><div class="s-desc">选择车辆、通道（DSM/ADAS/其他摄像头）、时间范围（实时或历史）、用途、期望时长（≤10 分钟）</div></div>
+      <div class="step"><div class="s-title">审批</div><div class="s-desc">按用途分级审批（班长/安全主管）；调阅司机人脸画面按敏感个人信息从严</div></div>
+      <div class="step"><div class="s-title">签发</div><div class="s-desc">审批通过后后端向流媒体（F06 ZLMediaKit）签发限时播放凭证，含调阅人水印参数</div></div>
+      <div class="step"><div class="s-title">播放/下载</div><div class="s-desc">浏览器 flv.js 播放或片段下载；画面叠账号+时间水印；开始/结束/下载写审计（VIDEO_VIEW/EXPORT）</div></div>
+      <div class="step"><div class="s-title">到期失效</div><div class="s-desc">凭证到期即失效，继续观看需重新申请；调阅单归档</div></div>
+    </div>
+
+    <h2 id="p-gap">5. 现状与差距（2026-10-05 代码实证）</h2>
+    <table>
+      <tr><th>能力</th><th>现状</th><th>差距</th></tr>
+      <tr><td>视觉识别</td><td><strong>无真实模型</strong>：risk_engine.recognize() 为占位，按通道给固定画像（DSM: 疲劳 0.91/分心 0.84；ADAS: FCW 0.88/LDW 0.82），无 event_code 时按 taskId 字符和确定性选择</td><td>F24 真实识别在终端侧，平台需建事件接入与样本闭环</td></tr>
+      <tr><td>分析任务</td><td>POST /api/analysis/video（X-Service-Token）→ upsert RUNNING → recognize() → evaluate_signal → update SUCCESS（event_count 0 或 1）</td><td>保留任务状态壳，改造为真实事件来源的适配层</td></tr>
+      <tr><td>视频/图片</td><td>无截图存储、无片段调阅；risk_event.media_url 单值；traj_gps_photo 预留无入口</td><td>F25/F26 全部待建</td></tr>
+      <tr><td>调阅控制</td><td>无审批、无水印、无时长限制；vps 视频端口 20780-82 无鉴权</td><td>F25 + F06 鉴权签发待建</td></tr>
+      <tr><td>模型管理</td><td>无模型注册表、无版本、无 OTA；vps 对 0x8108 仅编解码</td><td>F27 全部待建</td></tr>
+    </table>
+
+    <h2 id="p-value">6. 业务价值</h2>
+    <ul>
+      <li><strong>实时性与成本兼得</strong>：边缘识别毫秒级提醒司机，平台只收事件与图片，避免全量视频上云的带宽/存储成本。</li>
+      <li><strong>隐私合规</strong>：无单不调阅、限时、水印、审计四件套，满足《个人信息保护法》《汽车数据安全管理若干规定》对车内人脸/行踪数据的要求。</li>
+      <li><strong>证据可信</strong>：WORM 保全 + 哈希存证 + 销毁日志，事故证据可质证。</li>
+      <li><strong>模型越用越准</strong>：误报样本→标注→再训练→灰度 OTA 的闭环，使误报率、漏报率持续下降。</li>
+      <li><strong>复用现有风控</strong>：平台不重建报警引擎，边缘事件直接进入已上线 CEP 分级/冷却/工单链路。</li>
+    </ul>
+
+    <h2 id="p-shot">7. 规划页面占位</h2>
+    <div class="shot">
+      <div class="sh-icon">🚧</div>
+      <div class="sh-t">规划页 1：调阅审批台（我的申请 / 待我审批 / 调阅中 / 已结束）</div>
+      <div class="sh-p">F25 主工作台；显示调阅单状态、剩余时长、水印说明。</div>
+    </div>
+    <div class="shot">
+      <div class="sh-icon">🚧</div>
+      <div class="sh-t">规划页 2：模型版本管理（版本列表、灰度车队、指标对比、下发记录）</div>
+      <div class="sh-p">F27 管理台；现状 P12 仅为前端占位入口。</div>
+    </div>
+
+    <span class="part-tag" id="part-tech">技术篇</span>
+
+    <h2 id="t-current">8. 现状架构（代码实证）</h2>
+    <h3>8.1 占位任务链路（processing-service）</h3>
+    <pre><code>POST /api/analysis/video            # X-Service-Token 鉴权，外部服务调用
+  └─ db.upsert_video_analysis(RUNNING)
+       └─ services/risk_engine.recognize(task)   # ★ 占位实现，非视觉模型
+            ├─ channel=DSM → DSM_FATIGUE(0.91) / DSM_DISTRACTION(0.84)
+            ├─ channel=ADAS → ADAS_FCW(0.88) / ADAS_LDW(0.82)
+            └─ 无 event_code 时：按 taskId 字符和确定性选择（可重复，无随机）
+       └─ cep_engine.evaluate_signal(...)         # 复用真实规则引擎：启用判断/分级/冷却/落库
+  └─ db.update_video_analysis(SUCCESS, event_count=0|1)</code></pre>
+    <ul>
+      <li>该链路<strong>不读取任何视频/图片</strong>，无推理、无截图、无片段调阅；它的实际价值是打通了"外部分析任务 → 真实 CEP 风险事件"的通道。</li>
+      <li>失败路径：识别/评估异常时任务置 FAILED（按代码实际结构，update 终态）。</li>
+    </ul>
+    <h3>8.2 现有数据表 mon.video_analysis（03-mon-tables.sql）</h3>
+    <table>
+      <tr><th>列</th><th>类型</th><th>说明</th></tr>
+      <tr><td>id</td><td>bigserial</td><td>主键</td></tr>
+      <tr><td>task_id</td><td>varchar（唯一）</td><td>外部分析任务 ID（upsert 幂等键）</td></tr>
+      <tr><td>plate_no</td><td>varchar</td><td>车牌号</td></tr>
+      <tr><td>channel</td><td>varchar</td><td>DSM / ADAS</td></tr>
+      <tr><td>clip_url</td><td>varchar</td><td>片段地址（占位任务无真实内容）</td></tr>
+      <tr><td>status</td><td>varchar</td><td>PENDING / RUNNING / SUCCESS / FAILED</td></tr>
+      <tr><td>result_summary</td><td>varchar</td><td>结果摘要</td></tr>
+      <tr><td>event_count</td><td>integer</td><td>产生风险事件数（0 或 1）</td></tr>
+      <tr><td>create_date / update_date</td><td>timestamp</td><td>创建/更新时间</td></tr>
+    </table>
+    <h3>8.3 Java 侧现状</h3>
+    <ul>
+      <li><code>VideoAnalysis</code> 实体 + <code>VideoAnalysisMapper</code>（纯 BaseMapper，无自定义方法）。</li>
+      <li>MonitorController 提供 <code>video-analyses</code> 只读列表（P11 能力），供监控模块查看分析任务记录。</li>
+      <li>前端无视频播放器、无调阅入口；Monitor.vue 的视频/对讲/拍照按钮为 reservedCommand 预留态。</li>
+    </ul>
+    <h3>8.4 前端与交互现状</h3>
+    <ul>
+      <li>监控页 Monitor.vue 的"视频 / 对讲 / 拍照"三个按钮当前均为 <code>reservedCommand</code> 预留态：点击仅提示功能建设中，不发任何指令。</li>
+      <li>视频分析任务仅 P11 只读列表（MonitorController <code>video-analyses</code>），列字段为任务号/车牌/通道/状态/结果摘要，无播放器、无缩略图。</li>
+      <li>P12"视频智能"菜单为占位入口；前端工程未引入 flv.js/hls.js 等播放依赖，也无水印组件。</li>
+      <li>风险事件/工单详情中的 media_url 为裸链展示（OrderDetailDrawer 等），无鉴权、无水印、无失效控制。</li>
+    </ul>
+    <h3>8.5 全量视频为什么不上云（容量基线算例）</h3>
+    <p>以 500 车规模、单车 4 路摄像头（DSM/ADAS/前向/车厢）1080P、平均码率 2Mbps 估算：</p>
+    <table>
+      <tr><th>方案</th><th>单车单日数据量</th><th>500 车单日</th><th>90 天累计</th></tr>
+      <tr><td>全量视频持续上传（4 路 ×2Mbps）</td><td>≈86.4 GB</td><td>≈43 TB</td><td>≈3.9 PB</td></tr>
+      <tr><td>边缘触发图片（20 事件/车/日 ×3 张 ×300KB）</td><td>≈18 MB</td><td>≈8.8 GB</td><td>≈0.8 TB</td></tr>
+      <tr><td>按需片段（5 次/车/日 ×20 秒 ×512kbps，30 天保留）</td><td>≈6.4 MB</td><td>≈3.2 GB（累计 ≈96 GB）</td><td>—</td></tr>
+    </table>
+    <p>两条路线相差约四个数量级，叠加 4G 弱网上行与隐私合规，"边缘触发 + 按需调阅"是唯一可持续路线；码率与事件频次为规划估算，需在试点车队实测修正。</p>
+    <h3>8.6 vps 现状视频能力对照（取证于 GATEWAY-REF-001）</h3>
+    <table>
+      <tr><th>能力</th><th>vps 现状</th><th>本模块规划姿态</th></tr>
+      <tr><td>实时视频</td><td>JavaCV 转 WS-FLV，端口 20780～20782，<strong>无鉴权</strong></td><td>F06 统一经 ZLMediaKit 与 F25 凭证，裸端口不对浏览器暴露</td></tr>
+      <tr><td>历史回放/下载</td><td>18001 管理接口可触发回放</td><td>纳入调阅单与审批，不允许无单回放</td></tr>
+      <tr><td>主动拍照</td><td>有拍照指令，<strong>无拍照完成事件出口</strong></td><td>协议扩展前不开放主动拍照取证（见待核实）</td></tr>
+      <tr><td>0x8108 升级</td><td>仅消息编解码</td><td>F27 建注册/灰度/回执管理闭环</td></tr>
+    </table>
+
+    <h2 id="t-target">9. 目标架构：边缘 + 平台分工</h2>
+    <pre><code>车载终端（DSM/ADAS 摄像头 + NPU）
+  │ 终端侧：推理（F24）→ 本地提醒 → 抓拍 1~3 张水印图
+  │ 上传：苏标 0x64/0x65 附加项 / jt808_warn_topic + warn_media（经 MOD-014）
+  ▼
+平台接入层（app/gateway：字典映射/级别转换/附件转存）
+  ├─► mon.risk_event（source_id 幂等、规则分级冷却）
+  ├─► traj_warn_media → MinIO（F26 桶策略：普通 30~90 天 / WORM 事故桶）
+  └─► 样本回流（误报标记 → Label Studio → 训练集）（F27）
+平台服务层
+  ├─ 调阅服务（F25）：调阅单/审批/限时凭证/水印 → F06 ZLMediaKit → flv.js
+  ├─ 证据服务（F26）：保全/哈希/保留策略/销毁日志
+  └─ 模型服务（F27）：注册中心/版本/灰度/OTA 0x8108/漂移监控
+横切：@AuditLog VIDEO_VIEW/EXPORT（F34）、权限 IAM、合规策略（F37）</code></pre>
+    <table>
+      <tr><th>职责</th><th>边缘（终端）</th><th>平台</th></tr>
+      <tr><td>视频原始流</td><td>本地采集、本地循环覆盖缓存（约数十秒～数分钟）</td><td><strong>不常态接收、不常态存储</strong>；仅经 F06 实时播放或 F07 按需取片段</td></tr>
+      <tr><td>智能识别</td><td>F24 模型推理、本地告警</td><td>不做全量视频分析；仅规则分级、去重、冷却、工单</td></tr>
+      <tr><td>图片/片段</td><td>事件触发抓拍、片段编码</td><td>鉴权转存、保全、到期清理、调阅审批</td></tr>
+      <tr><td>模型</td><td>按 OTA 包更新本地模型</td><td>注册、评测、灰度、下发、漂移监控（F27）</td></tr>
+    </table>
+    <h3>9.1 端到端时序（边缘事件 → 平台落库 → 坐席提示）</h3>
+    <pre><code>终端 NPU 命中事件
+  ├─ 本地声光提醒（不依赖网络）
+  ├─ 抓拍 1~3 张 JPEG（终端侧叠水印）
+  └─ 上报：808 苏标附加项(0x64/0x65) + 0x1210/0x1211 文件上传  OR  vps jt808_warn_topic
+        ▼
+MOD-014 网关接入（近期 app/gateway，终态 module-gateway）
+  ├─ typeId → event_code 字典映射；苏标级别反转（见 10.5）
+  ├─ 附件下载转存 MinIO（普通桶），计算 SHA-256
+  ├─ source_id 幂等去重（终端事件 ID）
+  └─ 投递平台事件通道
+        ▼
+cep_engine.evaluate_signal（复用现状）
+  ├─ 规则启用 / 分级 / 冷却判定
+  ├─ 落 mon.risk_event + traj_warn_media
+  └─ WebSocket 按 deptScope 过滤推送坐席（端到端 ≤3 秒）
+        ▼
+坐席弹窗 → 看图核查 → 实报派单 / 误报标记（样本回流 F27）</code></pre>
+    <h3>9.2 边缘事件接入契约（平台侧要求，规划）</h3>
+    <table>
+      <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+      <tr><td>event_id</td><td>是</td><td>终端生成的事件唯一 ID，作为平台 source_id 幂等键；重投不产生重复事件</td></tr>
+      <tr><td>terminal_no / plate_no</td><td>是</td><td>终端标识与车牌，须与平台档案一致（F36 一致性维度）</td></tr>
+      <tr><td>event_code</td><td>是</td><td>DSM/ADAS 事件码（10.1 目录）；平台不再像占位实现那样"造"事件</td></tr>
+      <tr><td>level</td><td>是</td><td>终端级别；网关按字典反转映射为平台 1/2/3 级</td></tr>
+      <tr><td>event_start / event_end</td><td>是</td><td>开闭环时刻；持续型事件必须配对（10.7）</td></tr>
+      <tr><td>gps_time / lng / lat / speed / coord_sys</td><td>是</td><td>事件时刻位置；coord_sys 标明 WGS-84 或 GCJ-02，由 F09 统一转换</td></tr>
+      <tr><td>confidence</td><td>是</td><td>0～1 置信度；低于阈值仅入样本库，不触发坐席告警（10.6）</td></tr>
+      <tr><td>images[]</td><td>是</td><td>1～3 张，含转存后对象 key、拍摄时刻、图片水印摘要</td></tr>
+      <tr><td>model_code / model_version</td><td>否</td><td>终端模型版本，用于 F27 漂移统计分桶</td></tr>
+    </table>
+
+    <h2 id="f24">10. F24 终端边缘智能（DSM/ADAS）（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。识别在终端侧完成，平台不建 GPU 全量分析集群。</blockquote>
+    <h3>10.1 事件目录（与网关字典对齐）</h3>
+    <table>
+      <tr><th>通道</th><th>事件</th><th>typeId / 附加项</th></tr>
+      <tr><td>DSM</td><td>疲劳驾驶</td><td>102001 / 苏标 0x65</td></tr>
+      <tr><td>DSM</td><td>接打手机</td><td>102002 / 0x65</td></tr>
+      <tr><td>DSM</td><td>抽烟</td><td>102003 / 0x65</td></tr>
+      <tr><td>DSM</td><td>分心驾驶（左顾/低头）</td><td>102xxx 系列 / 0x65</td></tr>
+      <tr><td>ADAS</td><td>前向碰撞预警 FCW</td><td>101001 / 苏标 0x64</td></tr>
+      <tr><td>ADAS</td><td>车道偏离 LDW</td><td>101xxx / 0x64</td></tr>
+      <tr><td>ADAS</td><td>车距过近/行人碰撞</td><td>101xxx / 0x64</td></tr>
+    </table>
+    <h3>10.2 事件载荷要求（平台接入契约）</h3>
+    <ul>
+      <li>结构化字段：终端标识、车牌、事件 code、开始/结束（开闭环）、级别、gpsTime、位置、速度、置信度。</li>
+      <li>媒体：每事件 1～3 张 JPEG，分辨率与体积在终端侧限制（规划 ≤1080p、单张 ≤500KB）；图片水印含车牌、时间、事件名。</li>
+      <li>指标目标：<strong>误报率 &lt;5%、漏报率 &lt;3%</strong>（以标注集评测为准），指标按车型/光线/天气分桶统计。</li>
+    </ul>
+    <h4>载荷示例（网关内部事件 JSON，规划）</h4>
+    <pre><code>{
+  "event_id": "EVT-HD12345-20261005-000031",
+  "terminal_no": "8888000001",
+  "plate_no": "沪D12345",
+  "event_code": "DSM_FATIGUE",
+  "level_su": 1,
+  "event_start": "2026-10-05T14:21:03+08:00",
+  "event_end": null,
+  "gps_time": "2026-10-05T14:21:03+08:00",
+  "lng": 121.4737, "lat": 31.2304, "coord_sys": "WGS-84",
+  "speed_kmh": 62.5,
+  "confidence": 0.93,
+  "model_code": "DSM_FATIGUE", "model_version": "1.4.2",
+  "images": [
+    {"seq": 1, "mime": "image/jpeg", "size": 286112,
+     "shot_time": "2026-10-05T14:21:03+08:00",
+     "watermark": "沪D12345|2026-10-05 14:21:03|疲劳驾驶"}
+  ]
+}</code></pre>
+    <h3>10.3 平台侧改造</h3>
+    <ul>
+      <li>现有 <code>POST /api/analysis/video</code> 保留为<strong>适配入口</strong>：网关/外部边缘盒子可将结构化事件按该接口（或内部 Kafka 通道）投递；recognize() 占位逻辑下线，event_code 以终端上报为准，平台不再"造"事件。</li>
+      <li>事件进入 cep_engine.evaluate_signal 时沿用已上线机制：规则启用状态、三级分级、冷却时间、落 mon.risk_event、联动工单。</li>
+      <li>误报反馈：风险事件详情增加"实报/误报/无法判断"标记（写事件 features/反馈表），作为 F27 训练样本来源。</li>
+    </ul>
+    <h3>10.4 验收标准</h3>
+    <ol>
+      <li>仿真/台架注入疲劳、手机、抽烟、FCW、LDW 五类事件，平台 3 秒内出现对应 code 的风险事件且附图可打开。</li>
+      <li>同一事件重投不产生重复风险事件（source_id 幂等）。</li>
+      <li>事件图片水印信息完整（车牌/时间/事件名），过期 URL 不可访问。</li>
+      <li>规则关闭/冷却配置对边缘事件同样生效（复用 CEP，不另建开关）。</li>
+      <li>终端模型在标准测试集上误报 &lt;5%、漏报 &lt;3%（评测报告归档）。</li>
+    </ol>
+    <h3>10.5 报警级别映射（苏标 → 平台 CEP）</h3>
+    <table>
+      <tr><th>苏标 0x64/0x65 级别</th><th>含义</th><th>平台 CEP 级别</th><th>驾驶评分扣分（F57）</th></tr>
+      <tr><td>1 级</td><td>最严重</td><td>level3（反转）</td><td>8 分/次</td></tr>
+      <tr><td>2 级</td><td>中等</td><td>level2</td><td>4 分/次</td></tr>
+      <tr><td>3 级</td><td>一般</td><td>level1（反转）</td><td>2 分/次</td></tr>
+    </table>
+    <p>两侧级别方向相反（苏标 1 级最严重、平台 level3 扣分最重），映射必须以网关 typeId 字典配置固化，严禁在业务代码写死；具体苏标字段位定义以 JT/T 808 苏标正式文本为准（见待核实）。</p>
+    <h3>10.6 告警抑制与风暴防护参数（规划默认值）</h3>
+    <table>
+      <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+      <tr><td>同车同 code 冷却</td><td>60 秒</td><td>冷却窗内重复命中只计数、不重复产生坐席告警（复用 cep_engine 冷却机制）</td></tr>
+      <tr><td>开闭环配对超时</td><td>300 秒</td><td>持续型事件有 START 无 END，超时按单点开闭环关闭（10.7）</td></tr>
+      <tr><td>低置信度阈值</td><td>0.6</td><td>低于阈值的命中仅入样本库与终端画像，不触发坐席弹窗</td></tr>
+      <tr><td>单车风暴阈值</td><td>10 事件/分钟</td><td>超过则聚合为一条"报警风暴"事件，避免坐席被刷屏</td></tr>
+      <tr><td>每事件图片上限</td><td>3 张</td><td>超出部分终端侧丢弃，平台只接收前三张</td></tr>
+    </table>
+    <h3>10.7 开闭环事件合并规则</h3>
+    <ul>
+      <li>持续型事件（疲劳、接打电话等）终端上报 START 与 END；平台按 (车 + code + START 时刻) 匹配，END 更新 risk_event 结束时刻与持续秒数。</li>
+      <li>END 先到 / START 丢失：END 作为孤立点单独落事件并标记 unmatched_end，由网关补偿任务处理。</li>
+      <li>START 后 300 秒无 END：平台超时关闭，事件标记 timeout_closed，不参与持续时长排名。</li>
+      <li>冷却窗内同类 START 视为同一持续事件刷新，不新建 risk_event。</li>
+    </ul>
+
+    <h2 id="f25">11. F25 视频调阅审批与水印（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>11.1 调阅单模型（拟新增）</h3>
+    <table>
+      <tr><th>字段</th><th>说明</th></tr>
+      <tr><td>单号 / 状态</td><td>DRAFT→PENDING→APPROVED→PLAYING→CLOSED / REJECTED / EXPIRED</td></tr>
+      <tr><td>申请人 / 审批人</td><td>平台用户 ID；审批层级按用途与通道可配置（人脸通道至少二级）</td></tr>
+      <tr><td>车辆 / 通道 / 时间段</td><td>实时或历史；起止时刻；DSM 通道涉及司机人脸按敏感数据从严</td></tr>
+      <tr><td>用途</td><td>事故调查 / 投诉处理 / 安全抽查 / 监管协查（枚举，决定审批层级与保留标记）</td></tr>
+      <tr><td>时长限制</td><td>单次签发播放凭证有效期规划 ≤10 分钟；超时需续期（再次校验审批有效性）</td></tr>
+      <tr><td>水印</td><td>播放与下载文件均叠加：调阅人账号 + 真实时间；下载文件水印不可裁剪（烧录进画面）</td></tr>
+    </table>
+    <h3>11.2 凭证与播放控制</h3>
+    <ul>
+      <li>后端向 ZLMediaKit（F06）注册带鉴权钩子的播放会话；URL 含一次性/短时 token，绑定调阅单与调阅人。</li>
+      <li>服务端记录播放开始/心跳/结束；页面关闭或到期主动终止推流。</li>
+      <li>下载仅允许"已保全/已留存的证据片段"，实时流不提供下载按钮；下载动作记 EXPORT 审计。</li>
+      <li><strong>无审批单不签发任何地址</strong>；vps 现有 20780-20782 无鉴权端口不对浏览器暴露。</li>
+    </ul>
+    <h3>11.3 审计联动</h3>
+    <p>复用 MOD-013 已预留的 <code>VIDEO_VIEW</code>（播放）与 <code>EXPORT</code>（下载）动作，经 <code>@AuditLog</code> 写入 traj.sys_audit_log：调阅人、车辆、调阅单、起止时间、IP；不新建审计通道。</p>
+    <h3>11.4 验收标准</h3>
+    <ol>
+      <li>无调阅单直接访问播放地址返回 403；过期/已关闭单据地址失效。</li>
+      <li>完整走通申请→审批→播放→到期链路；播放画面可见账号+时间水印。</li>
+      <li>同一单据连续播放超过 10 分钟自动中断，续期后方可继续。</li>
+      <li>每次播放与下载均能在审计日志检索到 VIDEO_VIEW/EXPORT 记录。</li>
+      <li>审批驳回的单据无任何凭证发放记录。</li>
+    </ol>
+    <h3>11.5 调阅单状态机</h3>
+    <table>
+      <tr><th>状态</th><th>进入条件</th><th>允许动作</th></tr>
+      <tr><td>DRAFT</td><td>申请人创建未提交</td><td>编辑、删除、提交</td></tr>
+      <tr><td>PENDING</td><td>已提交，等待审批</td><td>审批人同意/驳回；申请人撤回</td></tr>
+      <tr><td>APPROVED</td><td>审批通过</td><td>签发播放凭证（进入 PLAYING）；到期未使用转 EXPIRED</td></tr>
+      <tr><td>PLAYING</td><td>首次签发凭证</td><td>续期（每次 ≤10 分钟）、主动关闭</td></tr>
+      <tr><td>CLOSED</td><td>主动结束 / 到期 / 续期被拒</td><td>只读归档</td></tr>
+      <tr><td>REJECTED / EXPIRED</td><td>驳回 / 审批后超时未用</td><td>只读；可复制内容重新发起</td></tr>
+    </table>
+    <h3>11.6 审批矩阵（规划默认，可配置）</h3>
+    <table>
+      <tr><th>用途</th><th>普通通道（道路/货厢）</th><th>DSM 人脸通道</th></tr>
+      <tr><td>安全抽查</td><td>班长一级审批</td><td>安全主管二级审批</td></tr>
+      <tr><td>事故调查 / 投诉处理</td><td>安全主管一级审批</td><td>安全主管 + 合规管理员二级</td></tr>
+      <tr><td>监管协查</td><td colspan="2" style="text-align:center">安全主管审批 + 协查文号留痕，默认转保全（联动 F26 WORM）</td></tr>
+    </table>
+    <h3>11.7 拟新增 REST 接口（platform-app）</h3>
+    <table>
+      <tr><th>方法 / 路径</th><th>说明</th><th>权限 / 审计</th></tr>
+      <tr><td>POST /api/video/review-orders</td><td>创建调阅申请</td><td>video:order:create；车辆须在 deptScope 内</td></tr>
+      <tr><td>GET /api/video/review-orders</td><td>我的申请 / 待我审批分页</td><td>按状态与角色过滤</td></tr>
+      <tr><td>POST /api/video/review-orders/{id}/approve</td><td>同意并进入可签发态</td><td>video:order:approve</td></tr>
+      <tr><td>POST /api/video/review-orders/{id}/reject</td><td>驳回（带原因）</td><td>video:order:approve</td></tr>
+      <tr><td>POST /api/video/review-orders/{id}/play-token</td><td>签发限时播放凭证（ZLMediaKit 鉴权 hook）</td><td>VIDEO_VIEW 审计</td></tr>
+      <tr><td>POST /api/video/review-orders/{id}/close</td><td>主动结束调阅、吊销凭证</td><td>VIDEO_VIEW 审计</td></tr>
+      <tr><td>GET /api/video/evidence/{eventId}</td><td>事件证据列表（图/片段）</td><td>复用 risk:view 数据范围</td></tr>
+      <tr><td>POST /api/video/evidence/{id}/preserve</td><td>申请/执行保全</td><td>video:evidence:preserve</td></tr>
+    </table>
+    <h3>11.8 水印与防泄密细则</h3>
+    <ul>
+      <li>明水印内容：调阅人账号 + 真实时间（秒）+ 调阅单号后 4 位；画面左上与右下角交替出现，避免被固定遮挡。</li>
+      <li>实时流优先在流媒体服务端叠片（ZLMediaKit hook/转码），防止前端绕过；历史片段下载由转码任务把水印烧录进画面。</li>
+      <li>暗水印（规划）：写入调阅人 ID 的不可见标记，外泄翻拍/录屏可追溯到人；算法选型见待核实。</li>
+      <li>会话异常控制：同一凭证多 IP/多 UA 并流立即失效；调阅人账号在调阅期间被停用，已签发凭证同步吊销。</li>
+    </ul>
+
+    <h2 id="f26">12. F26 证据保全与生命周期（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。</blockquote>
+    <h3>12.1 两级存储策略（MinIO）</h3>
+    <table>
+      <tr><th>级别</th><th>对象</th><th>保留</th><th>存储方式</th></tr>
+      <tr><td>普通证据</td><td>一般报警的抓拍图与按需片段</td><td>30～90 天（按企业策略配置）</td><td>普通桶 + 生命周期规则到期自动删除</td></tr>
+      <tr><td>事故/保全证据</td><td>事故、纠纷、监管协查关联的图集/片段</td><td>长期（按案件年限，默认 ≥3 年，可延长）</td><td>WORM 桶（对象锁定/合规模式），任何人不可改删</td></tr>
+    </table>
+    <h3>12.2 完整性与销毁</h3>
+    <ul>
+      <li>每个对象上传时计算 SHA-256（与 F34 行指纹同一哈希工具体系），元数据存哈希；调阅/诉讼前可校验哈希。</li>
+      <li>到期删除由生命周期任务执行，<strong>写销毁日志</strong>（对象 key、事件、保全级别、销毁时间、关联事件）——销毁日志本身长期保留。</li>
+      <li>保全操作需审批并留痕；保全解除（案件关闭）经审批后对象转入普通保留期。</li>
+    </ul>
+    <h3>12.3 与现状字段的关系</h3>
+    <ul>
+      <li>risk_event.media_url 单值升级为 risk_event ↔ traj_warn_media 的 1:N 关联（MOD-014 P1）；保全标记、桶名、对象 key、哈希在 traj_warn_media 扩展。</li>
+      <li>OrderDetailDrawer 裸链替换为鉴权证据组件（调阅仍受 F25 单据约束）。</li>
+      <li>traj_gps_photo 预留表与 traj_warn_media 的合并决策见 MOD-014 待核实项。</li>
+    </ul>
+    <h3>12.4 验收标准</h3>
+    <ol>
+      <li>普通证据到期日自动删除并生成销毁日志；未到期对象不会被清理任务触碰。</li>
+      <li>WORM 桶中的证据用管理员凭证也无法覆盖/删除（S3 对象锁生效验证）。</li>
+      <li>对象下载后哈希与存证哈希一致；篡改任一字节即校验失败。</li>
+      <li>保全/解除保全操作均有审批记录与审计记录。</li>
+      <li>一个风险事件可关联 1～3 张图与 0～1 个片段，事件详情正确展示。</li>
+    </ol>
+    <h3>12.5 容量估算（500 车，保留 90 天）</h3>
+    <table>
+      <tr><th>对象</th><th>日增量</th><th>保留期</th><th>累计容量</th></tr>
+      <tr><td>事件抓拍图（普通桶）</td><td>≈8.8 GB</td><td>90 天</td><td>≈0.8 TB</td></tr>
+      <tr><td>按需调阅片段（普通桶）</td><td>≈3.2 GB</td><td>30 天</td><td>≈96 GB</td></tr>
+      <tr><td>WORM 事故证据</td><td>≈0.5 GB（按事故量估）</td><td>≥3 年（1095 天）</td><td>≈0.55 TB/年</td></tr>
+      <tr><td>媒体元数据（traj_warn_media 等）</td><td>&lt;50 MB</td><td>与对象同生命周期</td><td>&lt;5 GB</td></tr>
+    </table>
+    <p>MinIO 起步规划 2 TB 有效容量（含冗余），按真实事件频次与图片体积每季度修正；容量水位 80% 告警（联动 F39）。</p>
+    <h3>12.6 桶策略与生命周期（规划配置要点）</h3>
+    <pre><code># 普通证据桶
+bucket: evidence-normal
+versioning: off
+lifecycle:
+  - prefix: event-images/   Expiration: 90d   # 天数按企业策略可配 30~90
+  - prefix: review-clips/   Expiration: 30d
+  # 删除由生命周期任务执行并写 media_destroy_log
+
+# 事故证据桶（对象锁）
+bucket: evidence-worm
+object_lock: compliance     # 备选 governance，需法务确认（见待核实）
+default_retention: 1095d    # 保全期间任何账号不可删改
+required_headers: x-amz-object-lock-mode, x-amz-object-lock-retain-until-date
+
+# 完整性
+每个对象上传即计算 SHA-256 写入元数据；调阅/诉讼前支持单对象或批量校验</code></pre>
+    <h3>12.7 销毁日志 media_destroy_log（规划）</h3>
+    <table>
+      <tr><th>字段</th><th>说明</th></tr>
+      <tr><td>id / bucket / object_key</td><td>被销毁对象定位信息</td></tr>
+      <tr><td>retain_level / reason</td><td>NORMAL_EXPIRE / PRESERVE_RELEASED / MANUAL_APPROVED</td></tr>
+      <tr><td>related_event_id</td><td>关联风险事件（可空）</td></tr>
+      <tr><td>sha256</td><td>对象内容指纹：对象虽删，指纹与销毁事实长期可查</td></tr>
+      <tr><td>destroy_time / operator</td><td>系统任务记 SCHEDULER；人工销毁记录审批单号与操作人</td></tr>
+    </table>
+
+    <h2 id="f27">13. F27 模型管理与 OTA（MLOps）（设计规划）</h2>
+    <blockquote class="warn">本节为设计规划，尚未实现。vps 侧 0x8108 升级通知仅编解码，无平台管理能力。</blockquote>
+    <h3>13.1 模型注册表（拟新增 ml_model 系列表）</h3>
+    <table>
+      <tr><th>实体</th><th>内容</th></tr>
+      <tr><td>模型版本</td><td>模型名（DSM_FATIGUE 等）、版本号、适用终端型号、包地址、包 SHA-256、评测指标（误报/漏报/召回）、状态（草稿/灰度/全量/下线）</td></tr>
+      <tr><td>灰度策略</td><td>按车辆白名单/比例/车队下发；对照组保留旧版；指标自动对比</td></tr>
+      <tr><td>下发记录</td><td>终端、版本、下发时间（0x8108）、终端回执、升级成功/失败、失败原因</td></tr>
+      <tr><td>漂移监控</td><td>实报/误报反馈率、事件量分布、置信度分布按版本×天统计；偏离基线超阈值告警</td></tr>
+    </table>
+    <h3>13.2 再训练闭环</h3>
+    <div class="flow">
+      <div class="step"><div class="s-title">样本采集</div><div class="s-desc">安全员误报/实报标记的图片 + 终端回传样本，按事件 code 分类入样本湖</div></div>
+      <div class="step"><div class="s-title">标注</div><div class="s-desc">Label Studio 私有化部署标注；人脸样本按 F37 合规要求授权管理</div></div>
+      <div class="step"><div class="s-title">训练评测</div><div class="s-desc">产出新版本与评测报告；不达标（误报≥5%/漏报≥3%）禁止灰度</div></div>
+      <div class="step"><div class="s-title">灰度 OTA</div><div class="s-desc">0x8108 下发白名单车队，运行 1～2 周对比线上指标</div></div>
+      <div class="step"><div class="s-title">全量/回滚</div><div class="s-desc">指标改善则全量；劣化则一键回滚旧版本，回滚同样走 0x8108</div></div>
+    </div>
+    <h3>13.3 验收标准</h3>
+    <ol>
+      <li>模型版本注册后可对白名单车队下发，终端回执与升级状态在管理台可见。</li>
+      <li>灰度组与对照组的事件量、误报率可按日对比。</li>
+      <li>升级失败（断网/校验失败）终端重试并最终回滚到可用版本，不造成设备不可用。</li>
+      <li>漂移超阈值产生告警；漂移告警到生成再训练任务的流程可走通。</li>
+      <li>模型包哈希不匹配时终端拒绝安装。</li>
+    </ol>
+    <h3>13.4 模型注册表草案（ml_model 系列）</h3>
+    <table>
+      <tr><th>表 / 字段</th><th>说明</th></tr>
+      <tr><td>ml_model.id / model_code / version</td><td>模型（DSM_FATIGUE 等）+ 语义化版本；唯一键 (model_code, version)</td></tr>
+      <tr><td>ml_model.terminal_models</td><td>适用终端型号集合（不同 NPU 芯片对应不同包）</td></tr>
+      <tr><td>ml_model.package_url / package_sha256 / size_bytes</td><td>HTTPS 分发地址（0x8108 仅做通知）、包哈希、包大小</td></tr>
+      <tr><td>ml_model.metrics_json</td><td>评测指标：误报率、漏报率、召回率、样本集版本、评测日期</td></tr>
+      <tr><td>ml_model.status</td><td>DRAFT / GRAY / ONLINE / OFFLINE；评测不达标禁止置 GRAY</td></tr>
+      <tr><td>ml_model_deployment</td><td>模型版本 × 灰度策略（车辆白名单/车队/比例）、对照组版本、生效时段</td></tr>
+      <tr><td>ml_ota_record</td><td>终端、版本、0x8108 下发时刻、ACK、下载/校验/安装结果、失败原因、重试次数</td></tr>
+    </table>
+    <h3>13.5 漂移监控指标口径</h3>
+    <table>
+      <tr><th>指标</th><th>计算</th><th>告警阈值（规划）</th></tr>
+      <tr><td>误报反馈率</td><td>近 7 日被标记"误报"事件 ÷ 已核查事件，按模型版本分桶</td><td>较上线基线绝对值 +3 个百分点</td></tr>
+      <tr><td>置信度分布漂移</td><td>置信度分布与上线基线的 PSI（群体稳定性指标）</td><td>PSI &gt; 0.25</td></tr>
+      <tr><td>事件量异常</td><td>同车同类事件量同比/环比，排除冷却计数影响</td><td>±50% 且持续 3 天</td></tr>
+      <tr><td>未知场景占比</td><td>低置信度（&lt;0.6）命中 ÷ 全部命中</td><td>&gt;15%</td></tr>
+    </table>
+    <h3>13.6 OTA 升级时序与失败兜底</h3>
+    <pre><code>平台 → 终端：0x8108 升级通知（版本、HTTPS 地址、SHA-256、大小）
+终端 → 平台：0x8001 通用应答（收到通知）
+终端  →  HTTPS 分发服务：断点续传下载模型包
+终端：SHA-256 校验失败 → 丢弃重试（最多 3 次），上报失败原因
+终端：写入备用分区（A/B 双分区），试运行自检通过后切换
+终端 → 平台：升级结果回执（0x8108 结果 / 状态消息）
+平台：ml_ota_record 记成功；超时未回执置 TIMEOUT 并告警
+失败兜底：自检不过自动回切旧分区；连续失败车辆进入"暂停升级"名单</code></pre>
+
+    <h2 id="t-schema">14. 数据模型变更（设计规划）</h2>
+    <table>
+      <tr><th>对象</th><th>变更</th><th>功能项</th></tr>
+      <tr><td>mon.video_analysis</td><td>保留 task_id/status 壳；clip_url 不再使用裸链；增加 source（EDGE/MANUAL）、model_version、外部事件关联</td><td>F24</td></tr>
+      <tr><td>traj.traj_warn_media（MOD-014 新表）</td><td>扩展：bucket/object_key、sha256、retain_level（NORMAL/WORM）、retain_until、preserve_status、destroy_time</td><td>F26</td></tr>
+      <tr><td>video_review_order（新表）</td><td>调阅单：申请人/审批人/车辆/通道/起止/用途/状态/签发凭证 ID/起止播放时间</td><td>F25</td></tr>
+      <tr><td>video_access_log（可选）</td><td>播放心跳明细；审计主记录仍落 traj.sys_audit_log，本表仅会话级技术日志</td><td>F25</td></tr>
+      <tr><td>ml_model / ml_model_deployment / ml_ota_record（新表）</td><td>模型注册表、灰度部署、OTA 下发与回执</td><td>F27</td></tr>
+      <tr><td>事件反馈（risk_event.features 或新表）</td><td>实报/误报标记、标注人、关联样本对象</td><td>F24/F27</td></tr>
+      <tr><td>销毁日志（media_destroy_log 新表）</td><td>对象 key、原因、时间、执行器；长期保留不清理</td><td>F26/F37</td></tr>
+    </table>
+    <h3>14.1 video_review_order 表草案（核心列）</h3>
+    <pre><code>CREATE TABLE mon.video_review_order (
+  id               BIGINT PRIMARY KEY,
+  order_no         VARCHAR(32) UNIQUE NOT NULL,  -- 单号 VO + yyyyMMdd + 序列
+  applicant_id     BIGINT NOT NULL,
+  approver_id      BIGINT,
+  vehicle_id       BIGINT NOT NULL,
+  channel          VARCHAR(16) NOT NULL,         -- DSM/ADAS/ROAD/CABIN
+  query_type       VARCHAR(8)  NOT NULL,         -- LIVE / HISTORY
+  begin_time       TIMESTAMP,
+  end_time         TIMESTAMP,
+  purpose          VARCHAR(32) NOT NULL,         -- 事故调查/投诉/抽查/协查
+  status           VARCHAR(16) NOT NULL,         -- 状态机见 11.5
+  duration_limit_s INT DEFAULT 600,              -- 单次凭证 ≤10 分钟
+  credential_id    VARCHAR(64),
+  play_started_at  TIMESTAMP,
+  play_ended_at    TIMESTAMP,
+  remark           VARCHAR(500),
+  create_date      TIMESTAMP DEFAULT now(),
+  update_date      TIMESTAMP DEFAULT now()
+);</code></pre>
+    <h3>14.2 配套字典与权限初始化</h3>
+    <ul>
+      <li>新增字典类型：调阅用途 VIDEO_PURPOSE、调阅通道 VIDEO_CHANNEL、审批层级模板 VIDEO_APPROVE_TPL。</li>
+      <li>种子 INSERT 沿用项目规范：<code>ON CONFLICT (dict_type_id, item_value) DO NOTHING</code>，可重复执行不产生重复项。</li>
+      <li>菜单：调阅审批台、证据保全列表、模型版本管理分别挂监控/设置菜单组；权限点见 11.7 与第 13 节。</li>
+      <li>雪花 ID 经 REST 返回前端时统一 <code>@JsonSerialize(ToStringSerializer.class)</code>，避免 19 位 Long 丢精度（项目既定教训）。</li>
+    </ul>
+
+    <h2 id="t-join">15. 与现有系统衔接点</h2>
+    <table>
+      <tr><th>现有对象</th><th>衔接方式</th></tr>
+      <tr><td>cep_engine.evaluate_signal</td><td>F24 事件分级/冷却/落库继续复用，规则配置不新建第二套</td></tr>
+      <tr><td>mon.risk_event + 风控工单</td><td>边缘事件即 risk_event（source_id 幂等）；实报走现有工单处置；误报标记回流训练</td></tr>
+      <tr><td>@AuditLog VIDEO_VIEW/EXPORT（platform-common）</td><td>F25 播放/下载直接使用已上线审计动作，无需扩展审计模块</td></tr>
+      <tr><td>Monitor.vue reservedCommand 三按钮</td><td>F06/F25 上线后激活：视频→调阅单流程；对讲/拍照→指令流程（MOD-014 F03）</td></tr>
+      <tr><td>MonitorController video-analyses 只读列表</td><td>P11 页面继续可用，数据源改为真实边缘任务记录</td></tr>
+      <tr><td>MOD-014 F06/F07</td><td>视频通道（ZLMediaKit）与附件转存（media_store.py）是本模块的前置通道</td></tr>
+      <tr><td>MOD-DBD-018 F37</td><td>分类分级（人脸/行踪属敏感个人信息）、留存销毁、KMS 加密为合规章节归属</td></tr>
+    </table>
+
+    <h2 id="t-roadmap">16. 分期路线</h2>
+    <table>
+      <tr><th>阶段</th><th>内容</th><th>功能项</th></tr>
+      <tr><td>P1（随 MOD-014）</td><td>边缘事件/图片接入 risk_event、traj_warn_media 转存、误报标记入口</td><td>F24（事件侧）、F26（普通存储基础）</td></tr>
+      <tr><td>P2（随 F06）</td><td>ZLMediaKit 接入、调阅单/审批/限时凭证/水印、VIDEO_VIEW/EXPORT 审计</td><td>F25</td></tr>
+      <tr><td>P2+</td><td>WORM 事故桶、保留策略、销毁日志、哈希校验、证据组件替换裸链</td><td>F26</td></tr>
+      <tr><td>P3</td><td>模型注册/灰度/OTA 0x8108、Label Studio、漂移监控、再训练闭环</td><td>F27、F24 指标闭环</td></tr>
+    </table>
+
+    <h2 id="t-choice">17. 选型与备选</h2>
+    <table>
+      <tr><th>决策</th><th>选择</th><th>备选与理由</th></tr>
+      <tr><td>识别位置</td><td>终端边缘 NPU</td><td>云端全量分析成本高、隐私风险大、弱网不可用；平台不承担 GPU 推理集群投入</td></tr>
+      <tr><td>对象存储</td><td>MinIO（WORM/对象锁、S3 兼容）</td><td>云端 OSS 私有化/离线场景受限；WORM 能力需在采购版本确认（见待核实）</td></tr>
+      <tr><td>流媒体</td><td>ZLMediaKit（MOD-014 F06）</td><td>与调阅凭证/水印钩子一体化；备选 SRS</td></tr>
+      <tr><td>标注平台</td><td>Label Studio 私有化</td><td>开源、支持图像标注工作流；自研标注工具投入大且无差异化价值</td></tr>
+      <tr><td>OTA 通道</td><td>808 0x8108 + 平台注册表</td><td>标准消息；大文件实际下载走 HTTPS 分发地址，0x8108 只做通知与回执</td></tr>
+    </table>
+
+    <h2 id="t-risk">18. 风险与对策</h2>
+    <table>
+      <tr><th>风险</th><th>影响</th><th>对策</th></tr>
+      <tr><td>终端模型误报扰民</td><td>司机疲劳于告警、安全员忽略真报警</td><td>F27 闭环控误报 &lt;5%；同事件 CEP 冷却；分车型评测</td></tr>
+      <tr><td>人脸数据合规</td><td>敏感个人信息违规</td><td>无单不调阅、限时、水印、审计；样本授权管理；F37 分类分级落地</td></tr>
+      <tr><td>证据存储成本失控</td><td>视频/图片占满存储</td><td>边缘只传图；片段按需；普通证据 30～90 天硬到期；容量指标监控</td></tr>
+      <tr><td>WORM 误锁</td><td>普通文件被长期锁定无法释放空间</td><td>WORM 仅对事故桶且保全需审批；保留模式（governance/compliance）按法务意见选择</td></tr>
+      <tr><td>OTA 变砖</td><td>升级失败导致设备离线</td><td>双分区/A-B 升级要求（终端选型）；平台灰度、失败自动回滚、升级窗口避开营运高峰</td></tr>
+      <tr><td>水印被规避</td><td>录屏/翻拍外泄无法追溯</td><td>动态明水印 + 暗水印（终端用户 ID，规划）；下载烧录水印；会话绑定 IP/UA 异常检测</td></tr>
+      <tr><td>vps 拍照无完成事件</td><td>主动拍照指令无法闭环</td><td>见 MOD-014 待核实项；协议扩展前 F25 只开放调阅不开放主动拍照取证</td></tr>
+    </table>
+
+    <h2 id="t-accept">19. 验收标准</h2>
+    <ol>
+      <li>五类 DSM/ADAS 事件端到端到达风险事件并附图，3 秒及时性、幂等不重复。</li>
+      <li>终端侧评测误报 &lt;5%、漏报 &lt;3%，评测报告与线上灰度数据可对照。</li>
+      <li>调阅无单 403、限时失效、水印可见、全程有审计（VIDEO_VIEW/EXPORT）。</li>
+      <li>普通证据到期删除有销毁日志；WORM 证据管理员不可删改且哈希可校验。</li>
+      <li>模型灰度/全量/回滚经 0x8108 全流程可操作，失败终端自动恢复。</li>
+      <li>漂移监控可对指定版本告警，并能一键创建标注/再训练任务。</li>
+      <li>全量视频不落地：对象存储中仅存在事件图与经审批调阅产生的片段文件（存储审计抽查）。</li>
+      <li>现状 /api/analysis/video 占位行为在改造后不再产生"按 taskId 字符造事件"的记录，历史任务可查。</li>
+      <li>断网 10 分钟内终端缓存事件与图片，恢复后自动续传，平台无重复、无丢失。</li>
+      <li>对象存储容量水位 80%/90% 两级告警；到期清理任务失败自动重试并告警，不残留过期对象超 24 小时。</li>
+    </ol>
+
+    <h2 id="t-nfr">20. 非功能与容量设计（规划）</h2>
+    <blockquote class="warn">本节指标为一期规划目标值，需在试点车队与压测中校准；流媒体并发容量以 F06 实测为准。</blockquote>
+    <table>
+      <tr><th>类别</th><th>指标</th><th>目标值</th><th>手段</th></tr>
+      <tr><td>事件及时性</td><td>终端上报 → 坐席弹窗</td><td>P95 ≤3 秒</td><td>Kafka 分区按车、消费无阻塞、推送按 deptScope 过滤</td></tr>
+      <tr><td>图片转存</td><td>附件到达网关 → 可访问 URL</td><td>P95 ≤2 秒（单张 ≤500KB）</td><td>流式下载直转 MinIO，不落网关本地盘</td></tr>
+      <tr><td>并发调阅</td><td>一期同时播放路数</td><td>≥50 路 1080P 转协议</td><td>ZLMediaKit 实测单核能力后水平扩展</td></tr>
+      <tr><td>凭证签发</td><td>play-token 接口响应</td><td>P95 ≤200ms</td><td>调阅单与凭证落 PostgreSQL，不引入额外中间件</td></tr>
+      <tr><td>弱网续传</td><td>断网期间事件与图片</td><td>恢复后自动续传，不丢事件</td><td>终端本地缓存 + event_id 幂等</td></tr>
+      <tr><td>服务可用性</td><td>证据与调阅服务（工作日时段）</td><td>一期 99.5%</td><td>MinIO 多盘纠删；随 F39 演进高可用</td></tr>
+      <tr><td>水印渲染</td><td>实时流水印位置</td><td>优先流媒体服务端叠片</td><td>前端叠片仅作兜底（可被录屏规避）</td></tr>
+    </table>
+    <h3>20.1 播放凭证签名规则（规划）</h3>
+    <ul>
+      <li>凭证 = Base64(orderId、vehicleId、channel、exp、nonce) + HMAC-SHA256 签名；签名密钥按环境托管（F37 KMS）。</li>
+      <li>ZLMediaKit on_play 鉴权 hook 回调平台校验，校验失败拒绝出流；nonce 一次性使用，防 URL 转发扩散。</li>
+      <li>历史回放凭证绑定起止时刻，超出申请时段的 seek 请求拒绝；回放倍率（如支持）不绕过水印渲染。</li>
+    </ul>
+    <h3>20.2 部署与资源（一期）</h3>
+    <table>
+      <tr><th>组件</th><th>部署形态</th><th>起步资源</th></tr>
+      <tr><td>MinIO</td><td>compose 新增容器；4 盘纠删或单盘 + 定时备份过渡</td><td>2 TB 有效容量、2C/4G</td></tr>
+      <tr><td>ZLMediaKit</td><td>随 MOD-014 F06 部署，不独立选型</td><td>2C/4G，50 路并发基线</td></tr>
+      <tr><td>水印烧录 worker</td><td>按需任务容器（下载片段、烧录水印、再上传）</td><td>2C/2G，无任务可缩零</td></tr>
+      <tr><td>样本湖/标注</td><td>Label Studio 私有化独立容器 + 样本桶（与证据桶隔离）</td><td>1C/2G + 500GB</td></tr>
+    </table>
+
+    <h2 id="deps">规划依赖关系</h2>
+    <table>
+      <tr><th>功能项</th><th>依赖</th></tr>
+      <tr><td>F24 边缘智能</td><td>前置：F01 接入、F07 附件传输（MOD-014）；复用：cep_engine、risk_event、工单、F34</td></tr>
+      <tr><td><strong>F25 调阅审批</strong></td><td><strong>前置：F06 流媒体（MOD-014）、F34 审计；合规：F37（MOD-DBD-018）</strong></td></tr>
+      <tr><td>F26 证据保全</td><td>前置：F07 附件通道；合规：F37；存储：MinIO WORM 能力确认</td></tr>
+      <tr><td>F27 MLOps</td><td>前置：F24（需有在线事件与误报反馈）；通道：F03 指令/0x8108（MOD-014）</td></tr>
+    </table>
+
+    <h2 id="todo">待核实项</h2>
+    <table>
+      <tr><th style="width:250px">事项</th><th>说明</th></tr>
+      <tr><td>MinIO WORM 模式</td><td>对象锁定（governance/compliance 模式）与当前规划部署版本的兼容、运维解封流程需在 P2+ 前做 PoC 确认。</td></tr>
+      <tr><td>vps 主动拍照完成事件</td><td>vps 未见拍照完成事件出口；在协议扩展明确前，F25 不开放主动拍照，只开放点播/回放调阅。</td></tr>
+      <tr><td>暗水印方案</td><td>明水印（账号+时间）确定；防翻拍暗水印的算法选型与终端播放器改造成本待评估。</td></tr>
+      <tr><td>误报/漏报指标基线</td><td>&lt;5%/&lt;3% 为蓝图目标值，需确定标准测试集、光线/天气分桶方法与抽样规模。</td></tr>
+      <tr><td>人脸样本授权链路</td><td>Label Studio 中标注司机人脸图像的授权来源与保存期限需法务确认，与 F37 同步设计。</td></tr>
+      <tr><td>保留期具体天数</td><td>普通证据 30～90 天为区间，需按客户行业（两客一危/普货）与合同确定默认值。</td></tr>
+    </table>
+
+    <h2 id="revisions">修订记录</h2>
+    <table>
+      <tr><th>版本</th><th>日期</th><th>修订人</th><th>说明</th></tr>
+      <tr><td>v1.0.0</td><td>2026-10-05</td><td>平台文档组</td><td>首次发布：F24～F27 设计级方案；如实记录 risk_engine.recognize() 为确定性占位、无真实视觉模型的现状，明确"边缘触发 + 按需调阅、平台不存全量视频"的总体路线。</td></tr>
+    </table>
+    <div class="docfoot">
+      <span>北斗导航数据业务平台 mydbd · 功能模块文档</span>
+      <span>MOD-DBD-016 v1.0.0</span>
+    </div>
+  </main>
+</div>
+<script src="../assets/portal.js"></script>
+</body>
+</html>
