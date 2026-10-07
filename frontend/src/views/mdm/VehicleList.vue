@@ -290,6 +290,7 @@ const loading = ref(false)
 const records = ref<Vehicle[]>([])
 const total = ref(0)
 const deptTree = ref<Dept[]>([])
+const route = useRoute()
 
 const filters = reactive({
   page: 1,

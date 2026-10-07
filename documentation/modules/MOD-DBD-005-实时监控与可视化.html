@@ -65,11 +65,11 @@
     <a class="backlink" href="../index.html">← 返回文档中心</a>
     <h1>MOD-DBD-005 实时监控与可视化</h1>
     <p class="cover-meta">
-      文档编号 MOD-DBD-005<span class="sep">|</span>版本 v1.0.0<span class="sep">|</span>发布日期 2026-10-05<span class="sep">|</span>
+      文档编号 MOD-DBD-005<span class="sep">|</span>版本 v1.1.0<span class="sep">|</span>发布日期 2026-10-07<span class="sep">|</span>
       状态 <span class="badge green">已上线</span><span class="sep">|</span>功能编号 F14 / F15 / F16 / P07
     </p>
     <p class="cover-meta">
-      事实基准：2026-10-05 源代码（backend-java module-monitor、module-trajectory）与初始化 SQL（<code>06-iam-tables.sql</code>、<code>09-system-config.sql</code>、<code>12-dashboard.sql</code>）、nginx 配置（<code>portal.conf</code>）
+      事实基准：2026-10-07 源代码（backend-java module-monitor、module-trajectory 与 frontend/src/views/dashboard）与初始化 SQL（<code>06-iam-tables.sql</code>、<code>09-system-config.sql</code>、<code>12-dashboard.sql</code>）、nginx 配置（<code>portal.conf</code>）
     </p>
     <p class="cover-meta">
       主要代码锚点：<code>MonitorController</code> / <code>DashboardController</code> / <code>VehiclePanelController</code> / <code>GeocodeController</code>；WebSocket 链 <code>RealtimeWebSocketConfig</code> / <code>AuthHandshakeInterceptor</code> / <code>RealtimeWebSocketHandler</code> / <code>SessionRegistry</code> / <code>RealtimePushScheduler</code> / <code>WsScopeResolver</code>；<code>MonitorService</code> / <code>DashboardService</code> / <code>VehiclePanelService</code>（module-monitor）；前端 <code>views/monitor/Monitor.vue</code>、<code>views/dashboard/Dashboard.vue</code>、<code>components/VehicleDetailDrawer.vue</code>、<code>composables/useRealtime.ts</code>、<code>api/monitor.ts</code>
@@ -82,7 +82,7 @@
     <ul>
       <li><strong>WebSocket 实时推送（P07）</strong>：端点 <code>/ws/realtime</code>，1 秒一拍推送三类消息——位置全量快照 <code>POINTS</code>、增量风险事件 <code>RISK</code>、增量终端报警 <code>ALARM</code>；所有消息按各会话用户的数据范围过滤（fail-closed）；断连自动降级为 5 秒 REST 轮询。</li>
       <li><strong>实时导航监控（F14）</strong>：<code>/monitor</code> 页面，左栏组织车辆树 + 状态统计，中央高德瓦片地图实时车标，底部车辆明细表；气泡与右键菜单提供轨迹回放跳转、详情面板与预留终端指令入口。</li>
-      <li><strong>监控总览大屏（F15）</strong>：<code>/dashboard</code> 页面，面向值班室的整屏可视化——在线率、今日里程、工单积压、车队/区域 TOP8、风险热力、报警滚动条；30 秒一次聚合轮询 + 实时消息即时修正。</li>
+      <li><strong>监控总览大屏（F15）</strong>：<code>/dashboard</code> 页面，面向值班室的整屏数据驾驶舱（v1.1.0 起去地图）——顶栏当前用户视角徽标、六卡 KPI 指标带、车队全景卡片矩阵、在线车速分布、车队/区域排行、报警态势与滚动条；30 秒一次聚合轮询 + 实时消息即时修正。</li>
       <li><strong>车辆详情聚合面板（F16）</strong>：单一接口一次返回车辆档案、当前终端与在班司机、最新定位点、当日轨迹（抽稀 ≤500 点）、最新 5 条报警与当日计数；以共享抽屉组件在监控页与大屏复用。</li>
       <li><strong>地理编码代理</strong>：高德逆地理与地点检索的服务端代理（Key 不下发前端），供监控气泡显示文字地址与地图地点搜索。</li>
     </ul>
@@ -101,7 +101,7 @@
         <tr><td>按会话范围过滤</td><td>范围=null 共享一份序列化；空集合跳过该会话；非空按范围签名缓存序列化结果</td><td><code>SessionRegistry.broadcastScoped</code> + <code>WsScopeResolver</code></td><td><span class="badge green">已上线</span></td></tr>
         <tr><td>断连降级轮询</td><td>指数退避重连（1s×2ⁿ 封顶 30s），期间每 5s 轮询 overview + latest</td><td><code>composables/useRealtime.ts</code></td><td><span class="badge green">已上线</span></td></tr>
         <tr><td>实时监控页</td><td>车辆树（勾选/搜索/筛选/展示设置）、状态统计格、地图车标、底部明细表、气泡、右键菜单、持续跟踪</td><td><code>Monitor.vue</code>（1371 行）</td><td><span class="badge green">已上线</span></td></tr>
-        <tr><td>监控大屏</td><td>六块聚合 + 地图 + 热力层 + 报警滚动 + 风险飘条 + 卡片钻取 + 全屏</td><td><code>Dashboard.vue</code>（752 行）</td><td><span class="badge green">已上线</span></td></tr>
+        <tr><td>监控大屏</td><td>六块聚合 + 视角徽标 + KPI 指标带 + 车队全景卡片 + 在线车速分布（WS 聚合）+ 报警滚动 + 风险飘条 + 卡片钻取 + 全屏（无地图）</td><td><code>Dashboard.vue</code>（879 行）</td><td><span class="badge green">已上线</span></td></tr>
         <tr><td>大屏聚合接口</td><td>一次返回 在线/里程/工单/车队/区域/热力 六块；逐块按 deptScope 裁剪</td><td><code>DashboardController</code> + <code>DashboardService</code></td><td><span class="badge green">已上线</span></td></tr>
         <tr><td>车辆详情面板</td><td>档案/终端/司机/最新点/当日轨迹(≤500 抽稀)/报警 Top5/当日计数；越权 40301</td><td><code>VehiclePanelController</code> + <code>VehiclePanelService</code></td><td><span class="badge green">已上线</span></td></tr>
         <tr><td>监控总览计数</td><td>在途车辆/今日风险/未处置风险/今日终端报警，按范围过滤</td><td><code>MonitorController.overview</code></td><td><span class="badge green">已上线</span></td></tr>
@@ -144,7 +144,7 @@
       <div class="scene">
         <div class="sc-role">值班长</div>
         <div class="sc-name">大屏值守与钻取</div>
-        <div class="sc-desc">值班室投屏监控总览大屏：左侧在线率环图与今日里程，中央地图叠加风险热力，右列报警滚动条实时置顶；新风险以飘条提示 5 秒。点"待处理"数字直接带条件跳到报警中心。</div>
+        <div class="sc-desc">值班室投屏监控总览大屏：顶栏标注当前登录用户与数据范围，KPI 指标带速览全局，中央车队全景卡片矩阵逐队展示在线率，左列在线车速分布实时聚合，右列报警滚动条实时置顶；新风险以飘条提示 5 秒。点车队卡/待处理数字直接带条件跳到车辆档案/报警中心。</div>
       </div>
       <div class="scene">
         <div class="sc-role">企业车队长</div>
@@ -190,19 +190,19 @@
     <div class="flow">
       <div class="step">
         <div class="s-title">打开与自适应</div>
-        <div class="s-desc">进入 /dashboard 即整屏布局（左列指标 / 中央地图+条形图 / 右列报警），根字号按 1920 基准 rem 流式缩放（clamp 12~32px），适配 1080P 与 4K。</div>
+        <div class="s-desc">进入 /dashboard 即整屏布局（KPI 指标带 + 左列在线率/车队排行/车速分布 + 中央车队全景卡片矩阵与实时报警 + 右列报警态势/区域分布/工单处置，无地图），根字号按 1920 基准 rem 流式缩放（clamp 12~32px），适配 1080P 与 4K。</div>
       </div>
       <div class="step">
         <div class="s-title">30s 聚合轮询</div>
-        <div class="s-desc">每 30 秒拉一次 summary（六块）与报警统计，重绘环图/条形图/热力层；WS POINTS 驱动地图车标，RISK 驱动热力即时 +1 与飘条，ALARM 驱动滚动条置顶。</div>
+        <div class="s-desc">每 30 秒拉一次 summary（六块）、overview 计数与报警统计，重绘环图与排行条；WS POINTS 驱动在线车速分布实时聚合（reactive Map 按 identityCode 合并），RISK 驱动飘条，ALARM 驱动滚动条置顶。</div>
       </div>
       <div class="step">
         <div class="s-title">卡片钻取</div>
-        <div class="s-desc">各卡片标题栏"›"与关键数字可点击：在线率→/monitor，里程→/playback，工单→/risk/orders（带状态条件），今日报警→/alarms（带今日时间窗），滚动条条目→/alarms（带车牌）。</div>
+        <div class="s-desc">各卡片标题栏"›"与关键数字可点击：有效车辆/车队卡→/mdm/vehicles（车队卡带 deptId），在线率→/monitor，里程→/playback，工单→/risk/orders（带状态条件），今日报警→/alarms（带今日时间窗），区域行→/risk（带 cityCode），滚动条条目→/alarms（带车牌）。</div>
       </div>
       <div class="step">
         <div class="s-title">全屏与退出</div>
-        <div class="s-desc">顶栏"全屏"切换浏览器全屏；"退出大屏"返回上一页；离开页面自动恢复根字号 16px，不污染常规页面。</div>
+        <div class="s-desc">顶栏"全屏"切换浏览器全屏；"退出大屏"跳转 /monitor 监控页；离开页面自动恢复根字号 16px，不污染常规页面。</div>
       </div>
     </div>
 
@@ -210,7 +210,7 @@
     <div class="flow">
       <div class="step">
         <div class="s-title">打开抽屉</div>
-        <div class="s-desc">监控页气泡"车辆详情"、右键菜单"车辆详情"、大屏车标点击、风险飘条点击均可打开；无车辆档案 id（未建档或无权）时提示并拦截。</div>
+        <div class="s-desc">监控页气泡"车辆详情"、右键菜单"车辆详情"、大屏风险飘条点击均可打开；无车辆档案 id（未建档或无权）时提示并拦截。</div>
       </div>
       <div class="step">
         <div class="s-title">一次聚合加载</div>
@@ -249,7 +249,7 @@
     <div class="shot">
       <div class="sh-icon">📊</div>
       <div class="sh-t">截图 4-3：监控总览大屏（/dashboard）</div>
-      <div class="sh-p">应截：整屏三列布局——左列在线率环图/今日里程/工单积压三格+闭环率，中央地图（车标+热力圆点）与车队/区域 TOP8 条形图，右列今日报警态势环图（高中低三级图例）与报警滚动条；顶栏时钟与"实时推送"标签。</div>
+      <div class="sh-p">应截：整屏布局——顶栏视角徽标（用户·部门·数据范围）与时钟，六卡 KPI 指标带；左列在线率环图/车队在线 TOP5/在线车速分布，中央车队全景卡片矩阵与实时报警滚动条，右列今日报警态势环图（高中低三级图例）/区域分布/工单处置；无地图。</div>
     </div>
     <div class="shot">
       <div class="sh-icon">📋</div>
@@ -279,10 +279,10 @@
         <div class="al-label">前端<br>Vue3</div>
         <div class="al-body">
           <span class="node"><b>Monitor.vue</b> 实时监控页（1371 行：树/地图/表格/气泡/右键）</span>
-          <span class="node"><b>Dashboard.vue</b> 大屏（752 行：六块聚合+热力+滚动条）</span>
+          <span class="node"><b>Dashboard.vue</b> 大屏（879 行：KPI 带+车队全景+车速分布+滚动条，无地图）</span>
           <span class="node"><b>VehicleDetailDrawer.vue</b> 详情抽屉（511 行，两页共用）</span>
           <span class="node"><b>useRealtime.ts</b> WS 连接/重连/降级轮询（130 行）</span>
-          <span class="node"><b>HeatLayer.ts / useAdaptive.ts / AlarmTicker.vue</b> 热力层/rem 自适应/报警滚动</span>
+          <span class="node"><b>useAdaptive.ts / AlarmTicker.vue</b> rem 自适应/报警滚动（HeatLayer.ts 随大屏去地图已停用，文件保留）</span>
         </div>
       </div>
       <div class="arch-layer">
@@ -343,7 +343,7 @@
         <tr><td><code>GeocodeController / AmapProperties</code></td><td>web/配置</td><td>逆地理/地点检索代理</td><td>Key 未配置 50301；坐标范围校验 40001；RestTemplate 3s 连接/5s 读超时；byte[] 接收按 UTF-8 解码；高德 status!=1 归一 50000</td></tr>
         <tr><td><code>useRealtime.ts</code></td><td>前端</td><td>WS 客户端</td><td>token 从 localStorage 取；onclose 启动 5s 轮询降级 + 指数退避重连（封顶 30s）；卸载置 closedByUser 停止一切定时器</td></tr>
         <tr><td><code>Monitor.vue</code></td><td>前端</td><td>实时监控页</td><td>refTime 数据时基状态判定；rosterSig 防树每秒重建；divIcon 签名脏检查；fetchAllVehicles 并发拉满分页（size=100）</td></tr>
-        <tr><td><code>Dashboard.vue</code></td><td>前端</td><td>大屏页</td><td>rAF 合帧差分更新车标；30s summary 轮询；HeatLayer.bump 热力即时 +1；ALARM id 去重缓存 100、列表封顶 50</td></tr>
+        <tr><td><code>Dashboard.vue</code></td><td>前端</td><td>大屏页</td><td>顶栏视角徽标（auth.realName/deptName，SUPER_ADMIN 显"全部数据"）；WS 点位入 reactive Map（按 identityCode 合并）驱动在线车速分布聚合；30s summary+overview 轮询；ALARM id 去重缓存 100、列表封顶 50</td></tr>
       </tbody>
     </table>
 
@@ -423,7 +423,7 @@
         <tr><td>⑤ 工单积压</td><td><code>selectWorkOrder</code>：mon.risk_work_order 上 FILTER 聚合</td><td>pending/processing/overdue（overdue=1 且未闭环）+ 近 7 日 closed/created；closeRate=closed7d/created7d（分母 0 时 null）；FILTER 必须紧跟聚合函数（项目避坑经验）</td></tr>
         <tr><td>⑥ 车队 TOP8</td><td><code>selectFleetStats</code>：dept JOIN vehicle LEFT JOIN 绑定/终端 LEFT JOIN LATERAL 最新点</td><td>按在线数降序再按总数，LIMIT 8；deptId 用 ToStringSerializer 输出（前端 string）</td></tr>
         <tr><td>⑦ 区域 TOP8</td><td>selectRegionVehicleCounts + selectRegionRiskCounts 两路查询 Java 合并</td><td>按注册地 city_code 分组（空串归"未知"）；合并后按车辆数降序取前 8；city_code 库内存中文城市名，无城市字典表，直接回显 code 作为名称</td></tr>
-        <tr><td>⑩ 风险热力</td><td><code>selectRiskHeat</code>：近 24h risk_event 按 0.02°×0.02° 网格聚合</td><td>count 降序封顶 500 格；格内取 max(risk_level) 供前端着色</td></tr>
+        <tr><td>⑩ 风险热力</td><td><code>selectRiskHeat</code>：近 24h risk_event 按 0.02°×0.02° 网格聚合</td><td>count 降序封顶 500 格；格内取 max(risk_level) 供前端着色；v1.1.0 大屏去地图后前端暂不消费，接口保留向后兼容</td></tr>
       </tbody>
     </table>
     <p><strong>范围裁剪</strong>：summary() 先取当前用户 deptScope——null 不限制；<strong>空集合直接返回 closedSummary（全零结构，含 serverTime 与窗口分钟）</strong>，不进任何 SQL；非空则车辆类聚合按 dept_id IN、事件/工单类聚合先换算车牌集再 plate_no IN。</p>
@@ -466,8 +466,8 @@
         <tr><td>车辆树稳定性</td><td>rosterSig</td><td>树 data 只依赖"车牌集合/部门归属/终端绑定/部门结构"签名，每秒的点更新不会触发 el-tree 重建，搜索过滤与展开状态不被冲掉</td></tr>
         <tr><td>车标差分</td><td>syncMarkers</td><td>签名 <code>状态|方向|车型</code> 不变不 setIcon；setLatLng/zIndexOffset 先做值比较；报警车 zIndexOffset=1000 置顶；divIcon 根节点带 role="button" 与 aria-label（自动化/a11y 可定位）</td></tr>
         <tr><td>气泡与右键</td><td>popHtml / contextmenu</td><td>bindPopup 用函数延迟生成；逆地理结果按坐标三位小数缓存（geoCache/geoFailed/geoPending 防重复请求）；popupopen 经 (popup as any)._source._plate 取归属车标（当前 Leaflet 版本无 getSource）；地图 contextmenu 统一 preventDefault</td></tr>
-        <tr><td>大屏合帧</td><td>renderFrame（rAF）</td><td>WS 回调只暂存 + 置脏，requestAnimationFrame 帧内统一差分更新车标，避免 1s 推送与渲染争抢主线程</td></tr>
-        <tr><td>热力层</td><td><code>HeatLayer.ts</code></td><td>divIcon 圆点：半径 min(6+count×2, 40)px、颜色按 maxLevel（3 红 #dc2626 / 2 橙 #f97316 / 1 黄 #eab308）、不透明度随 count 递增；30s summary 全量 render 校正 + RISK 消息 bump 同格 +1</td></tr>
+        <tr><td>大屏车速分布</td><td>pointsStore（reactive Map）</td><td>WS POINTS/降级轮询的点位按 identityCode 合并存储，computed 聚合 &lt;20/20-40/40-60/60-80/≥80 五档车速分布；无地图改版后不再做车标差分</td></tr>
+        <tr><td>热力层（停用）</td><td><code>HeatLayer.ts</code></td><td>原大屏地图热力圆点实现（半径 min(6+count×2, 40)px、颜色按 maxLevel）；v1.1.0 大屏去地图改版后不再被引用，文件保留备查</td></tr>
         <tr><td>大屏自适应</td><td><code>useAdaptive.ts</code></td><td>根字号 = clamp(12, clientWidth/1920×16, 32)px；resize 经 rAF 节流；卸载恢复默认，不污染常规页面</td></tr>
         <tr><td>报警滚动条</td><td><code>AlarmTicker.vue</code> + Dashboard.handleAlarm</td><td>WS ALARM 按 id 去重（缓存最近 100 个 id）后 unshift 置顶，列表封顶 50；态势卡 total 与待处理本地 +1，30s 后轮询校正</td></tr>
       </tbody>
@@ -490,14 +490,14 @@
       </div>
       <div class="step">
         <div class="s-title">浏览器接收</div>
-        <div class="s-desc">useRealtime 按 type 分发：POINTS 差分刷车标/统计，RISK 弹提示 + 热力 bump + 飘条，ALARM 弹提示 + 滚动条置顶。</div>
+        <div class="s-desc">useRealtime 按 type 分发：监控页差分刷车标/统计（大屏则聚合车速分布与排行），RISK 弹提示 + 飘条，ALARM 弹提示 + 滚动条置顶。</div>
       </div>
       <div class="step">
         <div class="s-title">断连兜底</div>
         <div class="s-desc">WS 断开 → 5s REST 轮询（/api/monitor/overview + /api/traj/latest，均按 HTTP 链范围过滤）+ 指数退避重连；恢复后停轮询。</div>
       </div>
     </div>
-    <p>大屏聚合链路：浏览器每 30s GET /api/monitor/dashboard/summary → DashboardController（monitor:dashboard:view）→ DashboardService 读窗口配置 + deptScope 判定 → DashboardMapper 六组 @Select 聚合（跨 schema 直查）→ DashboardSummaryVO 一次返回；WS 增量消息在两次轮询之间即时修正车标、热力与报警滚动条。</p>
+    <p>大屏聚合链路：浏览器每 30s GET /api/monitor/dashboard/summary → DashboardController（monitor:dashboard:view）→ DashboardService 读窗口配置 + deptScope 判定 → DashboardMapper 六组 @Select 聚合（跨 schema 直查）→ DashboardSummaryVO 一次返回；WS 增量消息在两次轮询之间即时修正车速分布与报警滚动条。</p>
 
     <h2 id="s9">9 数据模型</h2>
     <table>
@@ -717,6 +717,11 @@
       <thead><tr><th>版本</th><th>日期</th><th>说明</th></tr></thead>
       <tbody>
         <tr>
+          <td>v1.1.0</td>
+          <td>2026-10-07</td>
+          <td>监控总览大屏改版：移除地图与热力层，新增顶栏当前用户视角徽标、六卡 KPI 指标带（新增消费 overview 未处置风险/今日风险事件）、中央车队全景卡片矩阵与左列在线车速分布（WS 点位本地聚合），车队/区域排行改为 HTML 排行条并全部带条件钻取，"退出大屏"明确跳转 /monitor；同步修正 §3.2/§3.3/§4/§6/§7.5/§8 相关描述。方案：<a href="../plans/20261007-01-dashboard-no-map-redesign.md">20261007-01-dashboard-no-map-redesign</a>。同轮修复 VehicleList.vue 缺失 <code>const route = useRoute()</code> 导致大屏钻取车辆档案抛 ReferenceError 的存量缺陷（deptId 过滤恢复生效）。</td>
+        </tr>
+        <tr>
           <td>v1.0.0</td>
           <td>2026-10-05</td>
           <td>首次发布。以 2026-10-05 源代码与初始化 SQL 为准编写：固化 /ws/realtime 握手鉴权（query token + purpose=access）、SessionRegistry 会话管理与范围签名序列化缓存、1s 调度与 id 游标、WsScopeResolver 会话级数据范围过滤（fail-closed）、LATERAL 最新点优化（53s→0.5s）、大屏六块聚合与在线窗口 sys_config 读取、车辆面板聚合与 500 点抽稀、前端 refTime 状态口径/divIcon 脏检查/rAF 合帧/HeatLayer/useAdaptive、菜单 10/11/15 与 12-dashboard.sql 授权、高德代理与 AMAP_KEY 等实现事实；如实登记 MonitorController 无类级权限点、DashboardController 注释滞后两处现状。</td>
@@ -725,8 +730,8 @@
     </table>
 
     <div class="docfoot">
-      <span>MOD-DBD-005 实时监控与可视化 · v1.0.0</span>
-      <span>北斗导航数据业务平台 mydbd · 2026-10-05</span>
+      <span>MOD-DBD-005 实时监控与可视化 · v1.1.0</span>
+      <span>北斗导航数据业务平台 mydbd · 2026-10-07</span>
     </div>
   </main>
 </div>

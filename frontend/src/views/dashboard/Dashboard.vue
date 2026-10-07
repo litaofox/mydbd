@@ -4,6 +4,10 @@
     <header class="topbar">
       <div class="brand">北斗导航数据业务平台 · 监控总览大屏</div>
       <div class="top-mid">
+        <span class="scope-chip" title="数据范围随登录用户权限自动过滤">
+          <i class="dot"></i>
+          当前视角：{{ perspectiveName }} · {{ perspectiveDept }}（{{ perspectiveScope }}）
+        </span>
         <span class="clock">{{ clock }}</span>
         <span class="ws-tag" :class="connected ? 'ok' : 'warn'">
           {{ connected ? '实时推送' : '降级轮询' }}
@@ -14,6 +18,40 @@
         <button class="op-btn exit" @click="exitDash">退出大屏</button>
       </div>
     </header>
+
+    <!-- KPI 指标带 -->
+    <div class="kpis">
+      <section class="kpi drill" title="查看车辆档案" @click="drill('/mdm/vehicles')">
+        <div class="lb">有效车辆<span class="hint">车辆档案 ›</span></div>
+        <div class="num">{{ summary?.online.vehicleTotal ?? '--' }}<small>辆</small></div>
+        <div class="sub">覆盖 {{ summary?.fleetStats.length ?? '--' }} 个车队</div>
+      </section>
+      <section class="kpi drill" title="查看实时监控" @click="drill('/monitor')">
+        <div class="lb">在线车辆<span class="hint">实时监控 ›</span></div>
+        <div class="num good">{{ summary?.online.onlineCount ?? '--' }}<small>辆</small></div>
+        <div class="sub">在线率 {{ summary ? fmtRate(summary.online.onlineRate) : '--' }} · 窗口 {{ summary?.online.windowMinutes ?? 5 }} 分钟</div>
+      </section>
+      <section class="kpi drill" title="查看轨迹回放" @click="drill('/playback')">
+        <div class="lb">今日里程<span class="hint">轨迹回放 ›</span></div>
+        <div class="num">{{ summary ? fmtKm(summary.mileage.todayMileage) : '--' }}<small>km</small></div>
+        <div class="sub">里程表差值近似口径</div>
+      </section>
+      <section class="kpi drill" title="查看报警中心" @click="drill('/alarms', todayAlarmQuery())">
+        <div class="lb">今日报警<span class="hint">报警中心 ›</span></div>
+        <div class="num">{{ alarmStats?.total ?? '--' }}<small>起</small></div>
+        <div class="sub">待处理 <em>{{ pendingAlarmCount }}</em></div>
+      </section>
+      <section class="kpi drill" title="查看未处置风险" @click="drill('/risk', { handleStatus: 0 })">
+        <div class="lb">未处置风险<span class="hint">风险预警 ›</span></div>
+        <div class="num warn">{{ overview?.pendingRisks ?? '--' }}<small>起</small></div>
+        <div class="sub">今日风险 {{ overview?.todayRisks ?? '--' }} 起</div>
+      </section>
+      <section class="kpi drill" title="查看风险事件" @click="drill('/risk')">
+        <div class="lb">今日风险事件<span class="hint">风险事件 ›</span></div>
+        <div class="num">{{ overview?.todayRisks ?? '--' }}<small>起</small></div>
+        <div class="sub">CEP 规则命中</div>
+      </section>
+    </div>
 
     <div class="body">
       <!-- 左列 -->
@@ -30,19 +68,107 @@
           </div>
         </section>
 
-        <section class="card drill" title="点击查看轨迹回放" @click="drill('/playback')">
-          <div class="card-title">今日里程（全网）<span class="drill-hint">轨迹回放 ›</span></div>
-          <div class="mileage">
-            <span class="big">{{ summary ? fmtKm(summary.mileage.todayMileage) : '--' }}</span>
-            <span class="unit">km</span>
+        <section v-if="(summary?.fleetStats.length ?? 0) >= 2" class="card grow drill" title="点击车辆名称查看该车队档案" @click="drill('/mdm/vehicles')">
+          <div class="card-title">我的车队在线 TOP5<span class="drill-hint">车辆档案 ›</span></div>
+          <div class="rank">
+            <div
+              v-for="f in topFleets"
+              :key="f.deptId"
+              class="rank-row drill"
+              :title="`${f.deptName}：在线 ${f.online} / 共 ${f.total} 辆，点击查看车辆档案`"
+              @click.stop="drill('/mdm/vehicles', { deptId: f.deptId })"
+            >
+              <span class="name">{{ f.deptName }}</span>
+              <div class="track"><div class="fill" :style="{ width: fleetPct(f) + '%' }"></div></div>
+              <span class="val">{{ f.online }}<small>/{{ f.total }}</small></span>
+            </div>
           </div>
-          <div class="tip-line">里程表差值近似口径</div>
         </section>
 
-        <section class="card grow">
-          <div class="card-title">处置工单积压<span class="drill-hint" @click.stop="drill('/risk/orders')">全部工单 ›</span></div>
+        <section class="card speed-card">
+          <div class="card-title">在线车速分布<span class="drill-hint">实时聚合</span></div>
+          <div v-if="hasLivePoints" class="speed">
+            <div v-for="(b, i) in SPEED_BUCKETS" :key="b.label" class="speed-row">
+              <span class="name">{{ b.label }}</span>
+              <div class="track"><div class="fill" :class="'sp' + i" :style="{ width: speedPct(i) + '%' }"></div></div>
+              <span class="val">{{ speedBuckets[i] }}</span>
+            </div>
+            <div class="speed-foot">样本 {{ livePointCount }} 辆 · 来自实时定位</div>
+          </div>
+          <div v-else class="empty">等待实时数据…</div>
+        </section>
+      </aside>
+
+      <!-- 中央：车队全景 + 实时报警 -->
+      <main class="col center">
+        <section class="card">
+          <div class="card-title">我的车队全景<span class="drill-hint">点击卡片 → 车辆档案（按部门）›</span></div>
+          <div v-if="(summary?.fleetStats.length ?? 0) > 0" class="fleet-grid">
+            <div
+              v-for="f in summary!.fleetStats"
+              :key="f.deptId"
+              class="fcard"
+              :title="`${f.deptName}：在线 ${f.online} / 共 ${f.total} 辆，点击查看车辆档案`"
+              @click="drill('/mdm/vehicles', { deptId: f.deptId })"
+            >
+              <div class="fname">{{ f.deptName }}<span class="go">›</span></div>
+              <div class="fnum">{{ f.online }} <small>/ {{ f.total }} 在线</small></div>
+              <div class="track"><div class="fill" :style="{ width: fleetPct(f) + '%' }"></div></div>
+              <div class="fsub">在线率 {{ fleetPct(f).toFixed(1) }}%</div>
+            </div>
+          </div>
+          <div v-else class="empty">暂无可视车队，请联系管理员分配数据权限</div>
+          <div v-if="(summary?.fleetStats.length ?? 0) > 0" class="fleet-foot">
+            共 <b>{{ summary!.fleetStats.length }}</b> 个车队 · 数据范围随登录用户权限自动过滤
+          </div>
+        </section>
+
+        <section class="card grow ticker-card">
+          <div class="card-title">实时报警<span class="drill-hint" @click.stop="drill('/alarms', todayAlarmQuery())">报警中心 ›</span></div>
+          <AlarmTicker :items="alarmList" @pick="goAlarmCenter" />
+        </section>
+      </main>
+
+      <!-- 右列 -->
+      <aside class="col right">
+        <section class="card drill" title="点击查看报警中心" @click="drill('/alarms', todayAlarmQuery())">
+          <div class="card-title">今日报警态势<span class="drill-hint">报警中心 ›</span></div>
+          <div class="alarm-row">
+            <div ref="alarmRingRef" class="ring"></div>
+            <div class="alarm-nums">
+              <div class="big">{{ alarmStats?.total ?? '--' }}<span class="unit">今日总数</span></div>
+              <div class="sub danger-text" title="查看待处理报警">待处理 {{ pendingAlarmCount }}</div>
+              <div class="grade-legend">
+                <span><i class="dot g3"></i>高 {{ gradeCount(3) }}</span>
+                <span><i class="dot g2"></i>中 {{ gradeCount(2) }}</span>
+                <span><i class="dot g1"></i>低 {{ gradeCount(1) }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card grow drill" title="点击查看未处置风险" @click="drill('/risk', { handleStatus: 0 })">
+          <div class="card-title">区域分布 TOP8<span class="drill-hint">风险预警 ›</span></div>
+          <div v-if="(summary?.regionStats.length ?? 0) > 0" class="region">
+            <div
+              v-for="r in summary!.regionStats"
+              :key="r.cityCode"
+              class="region-row drill"
+              :title="`${r.cityName}：${r.vehicleCount} 辆车 · 今日 ${r.riskCount} 起风险，点击按该市过滤未处置风险`"
+              @click.stop="drill('/risk', { handleStatus: 0, cityCode: r.cityCode, cityName: r.cityName })"
+            >
+              <span class="name">{{ r.cityName }}</span>
+              <div class="track"><div class="fill" :style="{ width: regionPct(r) + '%' }"></div></div>
+              <span class="risk">{{ r.riskCount }} 风险</span>
+            </div>
+          </div>
+          <div v-else class="empty">暂无可视区域数据</div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">工单处置<span class="drill-hint" @click="drill('/risk/orders')">风险工单 ›</span></div>
           <div class="wo-grid">
-            <div class="wo-cell drill" title="查看待处理工单" @click="drill('/risk/orders', { status: 'PENDING' })">
+            <div class="wo-cell blue drill" title="查看待处理工单" @click="drill('/risk/orders', { status: 'PENDING' })">
               <b>{{ summary?.workOrder.pending ?? '--' }}</b><span>待处理</span>
             </div>
             <div class="wo-cell drill" title="查看处理中工单" @click="drill('/risk/orders', { status: 'PROCESSING' })">
@@ -57,46 +183,6 @@
             <b>{{ summary ? fmtRate(summary.workOrder.closeRate) : '--' }}</b>
             <span class="sub">（{{ summary?.workOrder.closed7d ?? 0 }}/{{ summary?.workOrder.created7d ?? 0 }}）</span>
           </div>
-        </section>
-      </aside>
-
-      <!-- 中央地图 + 底部条形 -->
-      <main class="col center">
-        <section class="card map-card">
-          <div ref="mapRef" class="map-box"></div>
-        </section>
-        <div class="bottom-row">
-          <section class="card half">
-            <div class="card-title">车队分布 TOP8（辆）<span class="drill-hint" @click="drill('/mdm/vehicles')">车辆档案 ›</span></div>
-            <div ref="fleetChartRef" class="chart"></div>
-          </section>
-          <section class="card half">
-            <div class="card-title">区域分布 TOP8（注册地）<span class="drill-hint" @click="drill('/risk', { handleStatus: 0 })">未处置风险 ›</span></div>
-            <div ref="regionChartRef" class="chart"></div>
-          </section>
-        </div>
-      </main>
-
-      <!-- 右列 -->
-      <aside class="col right">
-        <section class="card drill" title="点击查看报警中心" @click="drill('/alarms', todayAlarmQuery())">
-          <div class="card-title">今日报警态势<span class="drill-hint">报警中心 ›</span></div>
-          <div class="alarm-row">
-            <div ref="alarmRingRef" class="ring"></div>
-            <div class="alarm-nums">
-              <div class="big">{{ alarmStats?.total ?? '--' }}<span class="unit">今日总数</span></div>
-              <div class="sub danger-text drill" title="查看待处理报警" @click.stop="drill('/alarms', { ...todayAlarmQuery(), handleStatus: 0 })">待处理 {{ pendingAlarmCount }}</div>
-              <div class="grade-legend">
-                <span><i class="dot g3"></i>高 {{ gradeCount(3) }}</span>
-                <span><i class="dot g2"></i>中 {{ gradeCount(2) }}</span>
-                <span><i class="dot g1"></i>低 {{ gradeCount(1) }}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card grow ticker-card">
-          <AlarmTicker :items="alarmList" @pick="goAlarmCenter" />
         </section>
       </aside>
     </div>
@@ -125,31 +211,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElLoading } from 'element-plus'
+import { ElLoading, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import type { GpsPoint } from '@/api/traj'
 import { getVehicleOptions } from '@/api/mdm'
-import { getDashboardSummary, type DashboardSummary } from '@/api/monitor'
+import { getDashboardSummary, getOverview, type DashboardSummary, type DashboardFleetStat, type DashboardRegionStat, type Overview } from '@/api/monitor'
 import { getAlarmLatest, getAlarmStats, type AlarmVO, type AlarmStats } from '@/api/alarm'
 import { useRealtime, type RiskBrief, type AlarmBrief } from '@/composables/useRealtime'
+import { useAuthStore } from '@/store/auth'
 import VehicleDetailDrawer from '@/components/VehicleDetailDrawer.vue'
 import AlarmTicker from './components/AlarmTicker.vue'
-import { HeatLayer } from './components/HeatLayer'
 import { useAdaptive } from './components/useAdaptive'
-import { vehicleIconSvg, VEHICLE_ICON_COLOR } from '@/config/vehicleIcons'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 // ===== 响应式状态 =====
 const summary = ref<DashboardSummary | null>(null)
+const overview = ref<Overview | null>(null)
 const alarmStats = ref<AlarmStats | null>(null)
 const alarmList = ref<AlarmVO[]>([])
-const points = ref<GpsPoint[]>([])
 const clock = ref('')
+
+// ===== 当前用户视角（数据本身由后端按 deptScope 裁剪） =====
+const perspectiveName = computed(() => auth.realName || auth.username || '--')
+const perspectiveDept = computed(() => auth.profile?.deptName || '未分配部门')
+const perspectiveScope = computed(() =>
+  auth.roles.includes('SUPER_ADMIN') ? '全部数据' : '本部门及下级'
+)
 
 const pendingAlarmCount = computed(() => {
   const s = alarmStats.value?.byStatus.find((x) => x.handleStatus === 0)
@@ -176,22 +267,42 @@ function tickClock() {
   clock.value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+// ===== 实时定位存储（无地图：仅用于车速分布聚合与详情抽屉） =====
+const pointsStore = reactive(new Map<string, GpsPoint>())
+
+const SPEED_BUCKETS = [
+  { label: '<20 km/h', min: 0, max: 20 },
+  { label: '20-40', min: 20, max: 40 },
+  { label: '40-60', min: 40, max: 60 },
+  { label: '60-80', min: 60, max: 80 },
+  { label: '≥80', min: 80, max: Infinity }
+]
+const speedBuckets = computed(() => {
+  const counts = [0, 0, 0, 0, 0]
+  for (const p of pointsStore.values()) {
+    const v = p.speed ?? 0
+    const i = v < 20 ? 0 : v < 40 ? 1 : v < 60 ? 2 : v < 80 ? 3 : 4
+    counts[i]++
+  }
+  return counts
+})
+const speedMax = computed(() => Math.max(1, ...speedBuckets.value))
+const hasLivePoints = computed(() => pointsStore.size > 0)
+const livePointCount = computed(() => pointsStore.size)
+function speedPct(i: number): number {
+  return (speedBuckets.value[i] / speedMax.value) * 100
+}
+
 // ===== 实时链路（F14 复用，零改动） =====
 const { connected } = useRealtime({
   onPoints: handlePoints,
   onRisk: handleRisk,
   onAlarm: handleAlarm,
-  onOverview: () => { /* 大屏统计走 30s summary，不使用 overview 降级载荷 */ }
+  onOverview: (ov) => { overview.value = ov }
 })
 
-// rAF 合帧：回调只暂存 + 置脏（§7.5-1）
-let pendingPoints: GpsPoint[] | null = null
-let dirty = false
-let rafId = 0
-
 function handlePoints(pts: GpsPoint[]) {
-  pendingPoints = pts
-  dirty = true
+  for (const p of pts) pointsStore.set(p.identityCode, p)
 }
 
 // 风险飘条
@@ -200,9 +311,6 @@ const toasts = ref<Toast[]>([])
 let toastSeq = 0
 function handleRisk(risks: RiskBrief[]) {
   if (!risks.length) return
-  for (const r of risks) {
-    if (r.lng != null && r.lat != null) heat?.bump(r.lng, r.lat, r.riskLevel)
-  }
   for (const r of risks.slice(-3)) {
     const t: Toast = { key: ++toastSeq, plateNo: r.plateNo, title: r.eventCode, level: r.riskLevel }
     toasts.value.push(t)
@@ -285,15 +393,29 @@ function drill(path: string, query: Record<string, string | number> = {}) {
   })
 }
 
+// ===== 车队 / 区域排行 =====
+const topFleets = computed(() => (summary.value?.fleetStats ?? []).slice(0, 5))
+function fleetPct(f: DashboardFleetStat): number {
+  return f.total === 0 ? 0 : (f.online / f.total) * 100
+}
+function regionPct(r: DashboardRegionStat): number {
+  const rows = summary.value?.regionStats ?? []
+  const max = Math.max(1, ...rows.map((x) => x.vehicleCount))
+  return (r.vehicleCount / max) * 100
+}
+
 // ===== 30s 统计轮询 =====
 let pollTimer: number | null = null
 async function loadStats() {
   try {
     summary.value = await getDashboardSummary()
-    renderCharts()
-    if (heat) heat.render(summary.value.riskHeat)
   } catch {
     /* 下一轮再试 */
+  }
+  try {
+    overview.value = await getOverview()
+  } catch {
+    /* ignore */
   }
 }
 async function loadAlarmStats() {
@@ -305,116 +427,11 @@ async function loadAlarmStats() {
   }
 }
 
-// ===== 地图：marker 差分更新（§7.5-2） =====
-const mapRef = ref<HTMLDivElement>()
-let map: L.Map | null = null
-let markerLayer: L.LayerGroup | null = null
-let heat: HeatLayer | null = null
-const markerMap = new Map<string, { marker: L.Marker; dir: number }>()
-let firstFit = false
-
-function makeIcon(p: GpsPoint): L.DivIcon {
-  const dir = p.direction ?? 0
-  return L.divIcon({
-    className: '',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    html: `<div class="vm-mk ${p.alarmFlag === 1 ? 'vm-alarm' : ''}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(null, 16, VEHICLE_ICON_COLOR)}</span></div>`
-  })
-}
-
-function renderFrame() {
-  rafId = requestAnimationFrame(renderFrame)
-  if (!dirty || !map || !markerLayer) return
-  dirty = false
-  const pts = pendingPoints
-  if (!pts) return
-  points.value = pts
-
-  const bounds: L.LatLngExpression[] = []
-  const seen = new Set<string>()
-  const view = map.getBounds()
-  for (const p of pts) {
-    seen.add(p.identityCode)
-    bounds.push([p.lat, p.lng])
-    let entry = markerMap.get(p.identityCode)
-    if (!entry) {
-      const marker = L.marker([p.lat, p.lng], { icon: makeIcon(p) })
-        .bindTooltip(`${p.plateNo}　${p.speed} km/h`, { direction: 'top' })
-      marker.on('click', () => openPanel(p))
-      markerLayer.addLayer(marker)
-      entry = { marker, dir: p.direction ?? -999 }
-      markerMap.set(p.identityCode, entry)
-    } else {
-      entry.marker.setLatLng([p.lat, p.lng])
-      const dir = p.direction ?? 0
-      if (Math.abs(dir - entry.dir) > 15) {
-        entry.marker.setIcon(makeIcon(p))
-        entry.dir = dir
-      }
-    }
-    if (view.contains([p.lat, p.lng])) {
-      entry.marker.setTooltipContent(`${p.plateNo}　${p.speed} km/h`)
-    }
-  }
-  for (const [code, entry] of markerMap) {
-    if (!seen.has(code)) {
-      markerLayer.removeLayer(entry.marker)
-      markerMap.delete(code)
-    }
-  }
-  if (!firstFit && bounds.length > 0) {
-    map.fitBounds(L.latLngBounds(bounds).pad(0.2))
-    firstFit = true
-  }
-}
-
-// ===== F16 抽屉接入（同 Monitor.vue 模式） =====
-const plateNoToId = new Map<string, string>()
-const panelVisible = ref(false)
-const panelVehicleId = ref<string | null>(null)
-const panelPlateNo = ref<string | null>(null)
-const panelLivePoint = computed(() =>
-  panelPlateNo.value ? points.value.find((x) => x.plateNo === panelPlateNo.value) ?? null : null
-)
-
-/** 抽屉在线状态：与监控页同口径——以实时点集中最新定位时间为基准，10 分钟窗口内视为在线（数据时基可能滞后墙钟） */
-const panelOnline = computed(() => {
-  const pts = points.value
-  if (!pts.length) return undefined
-  const ts = (v: string) => new Date(String(v).replace('T', ' ').replace(/-/g, '/')).getTime()
-  let refTime = 0
-  for (const p of pts) refTime = Math.max(refTime, ts(p.gpsTime))
-  if (!refTime) return undefined
-  const p = panelPlateNo.value ? pts.find((x) => x.plateNo === panelPlateNo.value) : null
-  if (!p) return undefined
-  return refTime - ts(p.gpsTime) <= 10 * 60 * 1000
-})
-
-function openPanelByPlate(plateNo: string) {
-  const id = plateNoToId.get(plateNo)
-  if (!id) {
-    ElMessage.warning('无权查看该车辆或车辆未建档')
-    return
-  }
-  panelVehicleId.value = id
-  panelPlateNo.value = plateNo
-  panelVisible.value = true
-}
-
-function openPanel(p: GpsPoint) {
-  openPanelByPlate(p.plateNo)
-}
-
-// ===== ECharts =====
+// ===== ECharts（在线率环 / 报警等级环） =====
 const onlineRingRef = ref<HTMLDivElement>()
 const alarmRingRef = ref<HTMLDivElement>()
-const fleetChartRef = ref<HTMLDivElement>()
-const regionChartRef = ref<HTMLDivElement>()
 let onlineChart: echarts.ECharts | null = null
 let alarmChart: echarts.ECharts | null = null
-let fleetChart: echarts.ECharts | null = null
-let regionChart: echarts.ECharts | null = null
 
 const AXIS_TEXT = '#94a3b8'
 
@@ -469,89 +486,9 @@ function renderAlarmRing() {
   })
 }
 
-/**
- * 动态刻度（需求 2）：按数据最大值计算"整齐"的坐标上界与间隔。
- * - 数据全 0 → 固定 0~5，避免空图压缩
- * - 整数计数 → minInterval=1，杜绝小数刻度
- * - interval 取 1/2/5×10^n 系列，max = interval × 4，保证 4~5 个刻度且柱顶留白
- */
-function niceAxis(values: number[]): { max: number; interval: number } {
-  const maxVal = Math.max(0, ...values)
-  if (maxVal === 0) return { max: 5, interval: 1 }
-  const rough = maxVal / 4
-  const mag = Math.pow(10, Math.floor(Math.log10(rough)))
-  const norm = rough / mag
-  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag
-  return { max: step * Math.ceil(maxVal / step), interval: step }
-}
-
-function barOption(rows: { name: string; a: number; b: number; aName: string; bName: string }[]) {
-  const axis = niceAxis(rows.flatMap((r) => [r.a, r.b]))
-  return {
-    grid: { left: 8, right: 24, top: 22, bottom: 4, containLabel: true },
-    legend: { top: 0, textStyle: { color: AXIS_TEXT, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
-    xAxis: {
-      type: 'value',
-      min: 0,
-      max: axis.max,
-      interval: axis.interval,
-      minInterval: 1,
-      axisLabel: { color: AXIS_TEXT, fontSize: 10 },
-      splitLine: { lineStyle: { color: 'rgba(148,163,184,.15)' } }
-    },
-    yAxis: {
-      type: 'category',
-      inverse: true,
-      data: rows.map((r) => r.name),
-      axisLabel: { color: '#cbd5e1', fontSize: 11, width: 90, overflow: 'truncate' },
-      axisLine: { show: false },
-      axisTick: { show: false }
-    },
-    series: [
-      { name: rows[0]?.aName ?? '', type: 'bar', data: rows.map((r) => r.a), barWidth: 7, itemStyle: { color: '#3b82f6', borderRadius: 3 } },
-      { name: rows[0]?.bName ?? '', type: 'bar', data: rows.map((r) => r.b), barWidth: 7, itemStyle: { color: '#22c55e', borderRadius: 3 } }
-    ]
-  }
-}
-
-function renderCharts() {
-  renderOnlineRing()
-  const s = summary.value
-  if (!s) return
-  if (fleetChartRef.value) {
-    if (!fleetChart) {
-      fleetChart = echarts.init(fleetChartRef.value)
-      // 点击车队柱子 → 车辆档案按 deptId 过滤（运行时取最新 summary，避免闭包陈旧）
-      fleetChart.on('click', (p: { dataIndex: number }) => {
-        const f = summary.value?.fleetStats[p.dataIndex]
-        if (f) drill('/mdm/vehicles', { deptId: f.deptId })
-      })
-    }
-    fleetChart.setOption(barOption(
-      s.fleetStats.map((f) => ({ name: f.deptName, a: f.total, b: f.online, aName: '车辆数', bName: '在线数' }))
-    ), true)
-  }
-  if (regionChartRef.value) {
-    if (!regionChart) {
-      regionChart = echarts.init(regionChartRef.value)
-      // 点击区域柱子 → 风险预警分析（未处置，按该市注册车辆过滤）
-      regionChart.on('click', (p: { dataIndex: number }) => {
-        const r = summary.value?.regionStats[p.dataIndex]
-        if (r) drill('/risk', { handleStatus: 0, cityCode: r.cityCode, cityName: r.cityName })
-      })
-    }
-    regionChart.setOption(barOption(
-      s.regionStats.map((r) => ({ name: r.cityName, a: r.vehicleCount, b: r.riskCount, aName: '车辆数', bName: '今日风险' }))
-    ), true)
-  }
-}
-
 useAdaptive(() => {
   onlineChart?.resize()
   alarmChart?.resize()
-  fleetChart?.resize()
-  regionChart?.resize()
-  map?.invalidateSize()
 })
 
 // ===== 全屏 / 退出 =====
@@ -566,19 +503,46 @@ function exitDash() {
   router.push('/monitor')
 }
 
+// ===== F16 抽屉接入（同 Monitor.vue 模式） =====
+const plateNoToId = new Map<string, string>()
+const panelVisible = ref(false)
+const panelVehicleId = ref<string | null>(null)
+const panelPlateNo = ref<string | null>(null)
+const panelLivePoint = computed(() =>
+  panelPlateNo.value
+    ? [...pointsStore.values()].find((x) => x.plateNo === panelPlateNo.value) ?? null
+    : null
+)
+
+/** 抽屉在线状态：与监控页同口径——以实时点集中最新定位时间为基准，10 分钟窗口内视为在线（数据时基可能滞后墙钟） */
+const panelOnline = computed(() => {
+  if (!pointsStore.size) return undefined
+  const ts = (v: string) => new Date(String(v).replace('T', ' ').replace(/-/g, '/')).getTime()
+  let refTime = 0
+  for (const p of pointsStore.values()) refTime = Math.max(refTime, ts(p.gpsTime))
+  if (!refTime) return undefined
+  const p = panelPlateNo.value
+    ? [...pointsStore.values()].find((x) => x.plateNo === panelPlateNo.value)
+    : null
+  if (!p) return undefined
+  return refTime - ts(p.gpsTime) <= 10 * 60 * 1000
+})
+
+function openPanelByPlate(plateNo: string) {
+  const id = plateNoToId.get(plateNo)
+  if (!id) {
+    ElMessage.warning('无权查看该车辆或车辆未建档')
+    return
+  }
+  panelVehicleId.value = id
+  panelPlateNo.value = plateNo
+  panelVisible.value = true
+}
+
 // ===== 生命周期 =====
 onMounted(async () => {
   tickClock()
   clockTimer = window.setInterval(tickClock, 1000)
-
-  map = L.map(mapRef.value!, { zoomControl: true, attributionControl: false }).setView([39.91, 116.4], 11)
-  L.tileLayer(
-    'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
-    { subdomains: ['1', '2', '3', '4'], maxZoom: 18 }
-  ).addTo(map)
-  heat = new HeatLayer(map)
-  markerLayer = L.layerGroup().addTo(map)
-  rafId = requestAnimationFrame(renderFrame)
 
   try {
     const opts = await getVehicleOptions()
@@ -605,17 +569,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
   if (pollTimer) clearInterval(pollTimer)
-  cancelAnimationFrame(rafId)
-  heat?.destroy()
-  markerMap.clear()
-  if (map) {
-    map.remove()
-    map = null
-  }
   onlineChart?.dispose()
   alarmChart?.dispose()
-  fleetChart?.dispose()
-  regionChart?.dispose()
 })
 </script>
 
@@ -642,6 +597,24 @@ onBeforeUnmount(() => {
 }
 .brand { font-size: 1.15rem; font-weight: 700; color: #dbeafe; letter-spacing: 1px; }
 .top-mid { display: flex; align-items: center; gap: 0.8rem; }
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 1rem;
+  padding: 0.2rem 0.7rem;
+  white-space: nowrap;
+}
+.scope-chip .dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #4ade80;
+}
 .clock { font-size: 1rem; color: #93c5fd; font-variant-numeric: tabular-nums; }
 .ws-tag {
   font-size: 0.75rem;
@@ -664,12 +637,46 @@ onBeforeUnmount(() => {
 .op-btn:hover { background: rgba(59, 130, 246, 0.3); }
 .op-btn.exit { color: #fecaca; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.12); }
 
+/* KPI 指标带 */
+.kpis {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.7rem;
+  padding: 0.7rem 0.7rem 0;
+}
+.kpi {
+  background: rgba(15, 26, 46, 0.85);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.9rem;
+}
+.kpi .lb {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.kpi .num {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.15rem;
+}
+.kpi .num.good { color: #4ade80; }
+.kpi .num.warn { color: #fb923c; }
+.kpi .num small { font-size: 0.75rem; font-weight: 400; color: #64748b; margin-left: 0.3rem; }
+.kpi .sub { font-size: 0.72rem; color: #64748b; margin-top: 0.1rem; }
+.kpi .sub em { font-style: normal; color: #f87171; font-weight: 600; }
+
 /* 主体三栏 */
 .body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 21rem minmax(0, 1fr) 21rem;
+  grid-template-columns: 20rem minmax(0, 1fr) 20rem;
   gap: 0.7rem;
   padding: 0.7rem;
 }
@@ -697,13 +704,113 @@ onBeforeUnmount(() => {
 /* 在线率 */
 .online-row { display: flex; align-items: center; gap: 0.8rem; }
 .ring { width: 7rem; height: 7rem; flex-shrink: 0; }
-.online-nums .big, .mileage .big { font-size: 1.6rem; font-weight: 700; color: #f1f5f9; }
+.online-nums .big, .alarm-nums .big { font-size: 1.6rem; font-weight: 700; color: #f1f5f9; }
 .unit { font-size: 0.75rem; color: #64748b; margin-left: 0.3rem; }
 .sub { font-size: 0.75rem; color: #94a3b8; margin-top: 0.2rem; }
 
-/* 里程 */
-.mileage { display: flex; align-items: baseline; }
-.tip-line { font-size: 0.7rem; color: #475569; margin-top: 0.3rem; }
+/* 车队在线排行 */
+.rank { display: flex; flex-direction: column; gap: 0.45rem; }
+.rank-row {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr 3.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 0.3rem;
+}
+.rank-row .name { color: #cbd5e1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row .track { height: 0.5rem; border-radius: 0.5rem; background: rgba(51, 65, 85, 0.6); overflow: hidden; }
+.rank-row .fill { height: 100%; border-radius: 0.5rem; background: #3b82f6; }
+.rank-row .val { text-align: right; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.rank-row .val small { color: #64748b; }
+
+/* 车速分布 */
+.speed-card { flex-shrink: 0; }
+.speed-row {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr 2.6rem;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+}
+.speed-row:last-of-type { margin-bottom: 0; }
+.speed-row .name { color: #94a3b8; }
+.speed-row .track { height: 0.5rem; border-radius: 0.5rem; background: rgba(51, 65, 85, 0.6); overflow: hidden; }
+.speed-row .fill { height: 100%; border-radius: 0.5rem; background: #22c55e; }
+.speed-row .fill.sp2 { background: #3b82f6; }
+.speed-row .fill.sp3 { background: #f97316; }
+.speed-row .fill.sp4 { background: #dc2626; }
+.speed-row .val { text-align: right; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.speed-foot { font-size: 0.7rem; color: #475569; margin-top: 0.45rem; }
+
+/* 车队全景 */
+.fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.55rem;
+}
+.fcard {
+  background: rgba(30, 58, 95, 0.45);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.fcard:hover { background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.5); }
+.fcard .fname {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.fcard .go { color: #64748b; }
+.fcard:hover .go { color: #93c5fd; }
+.fcard .fnum {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.fcard .fnum small { font-size: 0.72rem; font-weight: 400; color: #64748b; }
+.fcard .track { height: 0.4rem; border-radius: 0.4rem; background: rgba(51, 65, 85, 0.6); margin: 0.4rem 0 0.35rem; overflow: hidden; }
+.fcard .fill { height: 100%; border-radius: 0.4rem; background: #22c55e; }
+.fcard .fsub { font-size: 0.7rem; color: #94a3b8; }
+.fleet-foot { font-size: 0.72rem; color: #475569; margin-top: 0.5rem; }
+.fleet-foot b { color: #93c5fd; font-weight: 600; }
+
+/* 实时报警 */
+.ticker-card { padding-bottom: 0.4rem; }
+
+/* 区域分布 */
+.region { display: flex; flex-direction: column; gap: 0.45rem; }
+.region-row {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr 4.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 0.3rem;
+}
+.region-row .name { color: #cbd5e1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.region-row .track { height: 0.5rem; border-radius: 0.5rem; background: rgba(51, 65, 85, 0.6); overflow: hidden; }
+.region-row .fill { height: 100%; border-radius: 0.5rem; background: #3b82f6; }
+.region-row .risk { text-align: right; color: #fb923c; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* 报警态势 */
+.alarm-row { display: flex; align-items: center; gap: 0.8rem; }
+.alarm-nums .big { font-size: 1.5rem; font-weight: 700; }
+.danger-text { color: #f87171; }
+.grade-legend { display: flex; gap: 0.6rem; margin-top: 0.4rem; font-size: 0.75rem; color: #94a3b8; }
+.dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-right: 0.2rem; }
+.dot.g3 { background: #dc2626; }
+.dot.g2 { background: #f97316; }
+.dot.g1 { background: #eab308; }
 
 /* 工单 */
 .wo-grid { display: flex; gap: 0.6rem; }
@@ -715,38 +822,24 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 .wo-cell b { display: block; font-size: 1.4rem; color: #bfdbfe; }
+.wo-cell.blue b { color: #60a5fa; }
 .wo-cell span { font-size: 0.72rem; color: #94a3b8; }
 .wo-cell.danger b { color: #f87171; }
 .wo-rate { margin-top: 0.6rem; font-size: 0.8rem; color: #94a3b8; }
 .wo-rate b { color: #4ade80; margin: 0 0.3rem; }
 
-/* 地图 */
-.center { min-width: 0; }
-.map-card { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
-.map-box { width: 100%; height: 100%; }
-.bottom-row { display: flex; gap: 0.7rem; height: 13rem; flex-shrink: 0; }
-.half { flex: 1; min-width: 0; }
-.chart { flex: 1; min-height: 0; }
-
-/* 报警 */
-.alarm-row { display: flex; align-items: center; gap: 0.8rem; }
-.alarm-nums .big { font-size: 1.5rem; font-weight: 700; }
-.danger-text { color: #f87171; }
-.grade-legend { display: flex; gap: 0.6rem; margin-top: 0.4rem; font-size: 0.75rem; color: #94a3b8; }
-.dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-right: 0.2rem; }
-.dot.g3 { background: #dc2626; }
-.dot.g2 { background: #f97316; }
-.dot.g1 { background: #eab308; }
-.ticker-card { padding-bottom: 0.4rem; }
-
-.drill {
-  cursor: pointer;
-  transition: background 0.18s, border-color 0.18s;
+/* 空态 */
+.empty {
+  color: #64748b;
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 1rem 0;
 }
-.drill:hover {
-  background: rgba(30, 58, 95, 0.55);
-  border-color: rgba(59, 130, 246, 0.5);
-}
+
+/* 钻取交互 */
+.drill { cursor: pointer; transition: background 0.18s, border-color 0.18s; }
+.drill:hover { background: rgba(30, 58, 95, 0.55); border-color: rgba(59, 130, 246, 0.5); }
+.rank-row.drill:hover, .region-row.drill:hover { background: rgba(59, 130, 246, 0.18); }
 .drill-hint {
   font-size: 0.72rem;
   color: #64748b;
@@ -756,15 +849,9 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .drill:hover .drill-hint,
-.drill-hint:hover {
-  color: #93c5fd;
-}
-.wo-cell.drill:hover {
-  background: rgba(59, 130, 246, 0.2);
-}
-.wo-cell.danger.drill:hover {
-  background: rgba(239, 68, 68, 0.25);
-}
+.drill-hint:hover { color: #93c5fd; }
+.wo-cell.drill:hover { background: rgba(59, 130, 246, 0.2); }
+.wo-cell.danger.drill:hover { background: rgba(239, 68, 68, 0.25); }
 
 /* 飘条 */
 .toasts {
@@ -788,22 +875,5 @@ onBeforeUnmount(() => {
   pointer-events: auto;
   cursor: pointer;
 }
-.toast:hover {
-  background: rgba(220, 38, 38, 0.95);
-}
-
-/* 车辆 marker（与 Monitor.vue 同款式） */
-:deep(.vehicle-marker) {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #16a34a;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-:deep(.vehicle-marker.alarm) { background: #dc2626; }
+.toast:hover { background: rgba(220, 38, 38, 0.95); }
 </style>
