@@ -527,7 +527,7 @@ const stats = computed(() => {
 
 // ========================= 组织树 =========================
 const UNGROUPED = -1
-// 仅首屏自动全选一次；之后用户手动取消勾选不再被强制还原
+// 仅首屏自动全选"行驶中"车辆一次；之后用户手动取消勾选不再被强制还原
 let treeInitialized = false
 
 // 结构签名：仅当车牌集合 / 部门归属 / 终端绑定变化时才变化。
@@ -855,9 +855,9 @@ function makeIcon(vm: Vm): L.DivIcon {
   // 图标统一绿色、16px（矢量 SVG 缩放不损失清晰度）；形状区分车型，状态经树/气泡/表格表达
   return L.divIcon({
     className: '',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${vm.vehicleType || '未知类型'}，${statusText(vm)}" data-plate="${vm.plate}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(vm.vehicleType, 16, VEHICLE_ICON_COLOR)}</span></div>`
+    iconSize: [56, 56],
+    iconAnchor: [28, 28],
+    html: `<div class="vm-mk vm-${s}" role="button" aria-label="车辆 ${vm.plate}，${vm.vehicleType || '未知类型'}，${statusText(vm)}" data-plate="${vm.plate}"><span class="vm-mk-rot" style="transform:rotate(${dir}deg)">${vehicleIconSvg(vm.vehicleType, 32, VEHICLE_ICON_COLOR)}</span></div>`
   })
 }
 
@@ -1222,8 +1222,7 @@ onMounted(async () => {
     deptTree.value = depts || []
     ledger.value = vehicles
     await nextTick()
-    // 默认不勾选任何节点；勾选集合为空时地图显示全部车辆（见 syncMarkers）
-    treeInitialized = true
+    // 首屏默认勾选"行驶中"车辆由 watch(points) 在实时定位到达后执行
   } catch {
     /* 全局拦截器已提示 */
   }
@@ -1243,11 +1242,18 @@ onMounted(async () => {
 watch([points, checkedPlates, windowMin], () => syncMarkers(), { deep: false })
 watch(treeData, () => {
   nextTick(() => {
-    // 默认不勾选（空勾选集 = 地图显示全部车辆）；尊重用户手动勾选
-    if (!treeInitialized && treeData.value.length) {
-      treeInitialized = true
-    }
     syncMarkers()
+  })
+})
+
+// 首屏默认全选"行驶中"车辆：等待实时定位点到达后判定车辆状态，
+// 若存在行驶中车辆则批量勾选并切换到底部"行驶中"标签；仅执行一次。
+watch(points, (pts) => {
+  if (treeInitialized || pts.length === 0 || ledger.value.length === 0 || treeData.value.length === 0) return
+  nextTick(() => {
+    const hasDriving = [...vmMap.value.values()].some((vm) => statusOf(vm) === 'drive')
+    if (hasDriving) pickStat('drive')
+    treeInitialized = true
   })
 })
 

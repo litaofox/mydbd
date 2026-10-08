@@ -46,8 +46,8 @@
 | P04 | 终端接入 | 样例 CSV 批量导入 | 将 samples 中 GPS 轨迹 CSV 幂等导入 PostGIS（重导先清旧点），并同步导入当日司机风险事件。 | POST /api/ingest/load-sample |
 | P05 | 终端接入 | 终端 HTTP 实时推送 | 面向终端/第三方的轨迹点批量推送接口，以 X-Service-Token 服务令牌鉴权。 | POST /api/ingest/traj |
 | P06 | 终端接入 | 轨迹模拟器 | 进程内模拟 5 辆车在北京城区随机游走，每 2 秒批量推点，支持 start/stop/status。 | /api/simulator/*、services/simulator.py |
-| P07 | 实时监控 | 实时导航监控页 | Leaflet 地图每 5 秒刷新车辆位置/速度/方向/报警标记，侧栏实时状态表，顶部 4 项总览指标。 | views/monitor/Monitor.vue、GET /api/traj/latest、/api/monitor/overview |
-| P08 | 轨迹应用 | 历史轨迹回放 | 按车辆与时间范围查询轨迹，地图绘制轨迹线，支持播放/暂停、1~8 倍速、时间轴滑块联动。 | views/playback/Playback.vue、GET /api/traj/track |
+| P07 | 实时监控 | 实时导航监控页 | Leaflet 地图每 5 秒刷新车辆位置/速度/方向/报警标记，侧栏实时状态表，顶部 4 项总览指标；打开页面默认全选行驶中车辆。 | views/monitor/Monitor.vue、GET /api/traj/latest、/api/monitor/overview |
+| P08 | 轨迹应用 | 历史轨迹回放 | 按车辆与时间范围查询轨迹，地图绘制轨迹线，支持播放/暂停、1/4/8/16/32 倍速、时间轴滑块联动；底部结果面板支持轨迹/事件/停车三标签分页查询与滚动加载。 | views/playback/Playback.vue、GET /api/traj/track |
 | P09 | 轨迹应用 | 车辆/轨迹查询接口 | 在途车辆去重列表、车辆台账、各终端最新位置、历史轨迹四个查询 API。 | TrajectoryController、traj.* 表 |
 | P10 | 风险预警 | 风险事件查询与处置 | 风险事件分页查询（按来源/等级/处置状态筛选），单条处置填写备注并持久化状态。 | views/risk/RiskEvents.vue、/api/monitor/risks |
 | P11 | 风险预警 | 风险统计与只读列表 | 监控总览四指标、事件类型分布（饼图数据）、终端报警列表、视频分析任务列表。 | MonitorController: overview/type-stats/warnings/video-analyses |

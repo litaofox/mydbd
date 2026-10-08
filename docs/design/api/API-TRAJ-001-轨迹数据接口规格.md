@@ -50,6 +50,9 @@
 | 6 | GET | /api/traj/dashboard/realtime | 大屏实时位置 | traj:view |
 | 7 | GET | /api/traj/dashboard/alarms | 大屏报警统计 | traj:view |
 | 8 | GET | /api/traj/dashboard/hourly | 大屏时段分布 | traj:view |
+| 9 | GET | /api/traj/track/page | 轨迹点分页查询（含当前绑定司机） | traj:query |
+| 10 | GET | /api/traj/events/page | 事件分页查询（跨 schema 只读） | traj:query |
+| 11 | GET | /api/traj/stops/page | 停车段分页查询 | traj:query |
 
 ---
 
@@ -561,6 +564,231 @@ curl -X GET "http://localhost:8080/api/traj/export?identityCode=TERM_001&startTi
 
 ---
 
+### 3.9 轨迹点分页查询（含当前绑定司机）
+
+- **方法**：GET
+- **路径**：/api/traj/track/page
+- **权限**：traj:query
+- **描述**：按设备号/车牌/时间范围分页查询轨迹点，并通过 LATERAL 关联返回每条点位时刻当前绑定的司机姓名，用于历史轨迹播放页底部"轨迹"标签页结果列表
+
+#### 请求
+
+- **查询参数**：
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| identityCode | string | 否 | — | 设备号 |
+| plateNo | string | 否 | — | 车牌号 |
+| start | string | 否 | — | 起始时间（ISO 8601: 2026-09-30T08:00:00） |
+| end | string | 否 | — | 结束时间 |
+| page | integer | 否 | 1 | 页码（从1开始） |
+| size | integer | 否 | 50 | 每页条数 |
+
+#### 响应
+
+- **成功**（200）：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 3600,
+    "page": 1,
+    "size": 50,
+    "records": [
+      {
+        "id": 144001,
+        "identityCode": "TERM_001",
+        "plateNo": "京A12345",
+        "gpsTime": "2026-09-30T08:00:01",
+        "lng": 116.407526,
+        "lat": 39.904030,
+        "speed": 42,
+        "direction": 90,
+        "altitude": 50,
+        "alarmFlag": 0,
+        "mileage": 12.35,
+        "driverName": "张三"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| total | long | 总记录数 |
+| page | integer | 当前页码 |
+| size | integer | 每页条数 |
+| records | array | 轨迹点列表 |
+| records[].id | long | 记录ID |
+| records[].identityCode | string | 设备号 |
+| records[].plateNo | string | 车牌号 |
+| records[].gpsTime | string | GPS时间 |
+| records[].lng | double | 经度 |
+| records[].lat | double | 纬度 |
+| records[].speed | integer | 速度 km/h |
+| records[].direction | integer | 方向角 0-359 |
+| records[].altitude | integer | 海拔 米 |
+| records[].alarmFlag | integer | 报警标志 0=正常 1=报警 |
+| records[].mileage | double | 累计里程 km |
+| records[].driverName | string | 当前绑定司机姓名（LATERAL 关联，无绑定为 null） |
+
+#### 变更记录
+
+| 版本 | 变更内容 |
+|---|---|
+| v1.1 | 新增（v0.4.0） |
+
+---
+
+### 3.10 事件分页查询（跨 schema 只读）
+
+- **方法**：GET
+- **路径**：/api/traj/events/page
+- **权限**：traj:query
+- **描述**：按设备号/车牌/时间范围分页查询风险事件，数据来源 `mon.risk_event`（跨 schema 只读访问），用于历史轨迹播放页底部"事件"标签页结果列表
+
+#### 请求
+
+- **查询参数**：
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| identityCode | string | 否 | — | 设备号 |
+| plateNo | string | 否 | — | 车牌号 |
+| start | string | 否 | — | 起始时间（ISO 8601） |
+| end | string | 否 | — | 结束时间 |
+| page | integer | 否 | 1 | 页码（从1开始） |
+| size | integer | 否 | 50 | 每页条数 |
+
+#### 响应
+
+- **成功**（200）：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 128,
+    "page": 1,
+    "size": 50,
+    "records": [
+      {
+        "id": 9001,
+        "identityCode": "TERM_001",
+        "plateNo": "京A12345",
+        "eventTime": "2026-09-30T08:12:33",
+        "eventType": "OVER_SPEED",
+        "level": "HIGH",
+        "lng": 116.407526,
+        "lat": 39.904030,
+        "speed": 78,
+        "description": "超速报警：限速60，当前78"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| total | long | 总记录数 |
+| page | integer | 当前页码 |
+| size | integer | 每页条数 |
+| records | array | 事件列表 |
+| records[].id | long | 事件ID |
+| records[].identityCode | string | 设备号 |
+| records[].plateNo | string | 车牌号 |
+| records[].eventTime | string | 事件时间 |
+| records[].eventType | string | 事件类型 |
+| records[].level | string | 风险等级 |
+| records[].lng | double | 经度 |
+| records[].lat | double | 纬度 |
+| records[].speed | integer | 事件时刻速度 km/h |
+| records[].description | string | 事件描述 |
+
+#### 变更记录
+
+| 版本 | 变更内容 |
+|---|---|
+| v1.1 | 新增（v0.4.0） |
+
+---
+
+### 3.11 停车段分页查询
+
+- **方法**：GET
+- **路径**：/api/traj/stops/page
+- **权限**：traj:query
+- **描述**：按设备号/车牌/时间范围分页查询停车段，由连续零速点聚合而成（速度=0 视为停车），间隔>5 分钟切分为不同停车段，时长≥3 分钟才计入结果，用于历史轨迹播放页底部"停车"标签页结果列表
+
+#### 请求
+
+- **查询参数**：
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| identityCode | string | 否 | — | 设备号 |
+| plateNo | string | 否 | — | 车牌号 |
+| start | string | 否 | — | 起始时间（ISO 8601） |
+| end | string | 否 | — | 结束时间 |
+| page | integer | 否 | 1 | 页码（从1开始） |
+| size | integer | 否 | 50 | 每页条数 |
+
+#### 响应
+
+- **成功**（200）：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 6,
+    "page": 1,
+    "size": 50,
+    "records": [
+      {
+        "identityCode": "TERM_001",
+        "plateNo": "京A12345",
+        "startTime": "2026-09-30T08:15:00",
+        "endTime": "2026-09-30T08:18:30",
+        "duration": 210,
+        "lng": 116.408000,
+        "lat": 39.905000,
+        "pointCount": 32
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| total | long | 总记录数 |
+| page | integer | 当前页码 |
+| size | integer | 每页条数 |
+| records | array | 停车段列表 |
+| records[].identityCode | string | 设备号 |
+| records[].plateNo | string | 车牌号 |
+| records[].startTime | string | 停车开始时间 |
+| records[].endTime | string | 停车结束时间 |
+| records[].duration | integer | 停车时长 秒 |
+| records[].lng | double | 停车点经度 |
+| records[].lat | double | 停车点纬度 |
+| records[].pointCount | integer | 聚合的零速点数 |
+
+#### 变更记录
+
+| 版本 | 变更内容 |
+|---|---|
+| v1.1 | 新增（v0.4.0） |
+
+---
+
 ## 4. 错误码
 
 | code | HTTP | message | 场景 |
@@ -579,3 +807,4 @@ curl -X GET "http://localhost:8080/api/traj/export?identityCode=TERM_001&startTi
 | 版本 | 日期 | 修订人 | 修订内容 |
 |---|---|---|---|
 | v1.0 | 2026-09-30 | system | 初版：8 个轨迹数据接口 |
+| v1.1 | 2026-10-08 | system | 新增 3 个分页查询接口（3.9 轨迹点 / 3.10 事件 / 3.11 停车段），服务于历史轨迹播放页底部结果面板 |

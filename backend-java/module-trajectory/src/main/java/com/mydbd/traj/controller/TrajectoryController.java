@@ -1,7 +1,11 @@
 package com.mydbd.traj.controller;
 
+import com.mydbd.common.api.PageData;
 import com.mydbd.common.api.Result;
+import com.mydbd.traj.entity.EventRow;
 import com.mydbd.traj.entity.GpsPoint;
+import com.mydbd.traj.entity.StopSeg;
+import com.mydbd.traj.entity.TrackPointRow;
 import com.mydbd.traj.entity.Vehicle;
 import com.mydbd.traj.entity.VehicleOption;
 import com.mydbd.traj.service.TrajectoryService;
@@ -51,5 +55,41 @@ public class TrajectoryController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime start,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime end) {
         return Result.ok(trajectoryService.queryTrack(identityCode, plateNo, start, end));
+    }
+
+    /** 轨迹结果分页（底部"轨迹"标签） */
+    @GetMapping("/track/page")
+    public Result<PageData<TrackPointRow>> trackPage(
+            @RequestParam(required = false) String identityCode,
+            @RequestParam(required = false) String plateNo,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime start,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime end,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "50") long size) {
+        return Result.ok(trajectoryService.pageTrack(identityCode, plateNo, start, end, page, size));
+    }
+
+    /** 事件结果分页（底部"事件"标签） */
+    @GetMapping("/events/page")
+    public Result<PageData<EventRow>> eventsPage(
+            @RequestParam(required = false) String identityCode,
+            @RequestParam(required = false) String plateNo,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime start,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime end,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "50") long size) {
+        return Result.ok(trajectoryService.pageEvents(identityCode, plateNo, start, end, page, size));
+    }
+
+    /** 停车结果分页（底部"停车"标签） */
+    @GetMapping("/stops/page")
+    public Result<PageData<StopSeg>> stopsPage(
+            @RequestParam(required = false) String identityCode,
+            @RequestParam(required = false) String plateNo,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime start,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime end,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "50") long size) {
+        return Result.ok(trajectoryService.pageStops(identityCode, plateNo, start, end, page, size));
     }
 }

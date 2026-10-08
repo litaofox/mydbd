@@ -36,6 +36,73 @@ export function getTrack(params: {
   return http.get('/api/traj/track', { params })
 }
 
+// ===== 回放页底部结果列表（分页） =====
+export interface PageData<T> {
+  total: number
+  page: number
+  size: number
+  records: T[]
+}
+
+export interface TrackPointRow {
+  id: number
+  identityCode: string
+  plateNo: string
+  gpsTime: string
+  lng: number
+  lat: number
+  speed: number
+  direction: number
+  altitude: number
+  alarmFlag: number
+  mileage: number
+  receiveTime: string
+  driverName: string | null
+}
+
+export interface EventRow {
+  id: number
+  identityCode: string
+  plateNo: string
+  eventCode: string
+  eventSource: string
+  eventTime: string
+  speed: number
+  riskLevel: number
+  lng: number
+  lat: number
+}
+
+export interface StopSeg {
+  plateNo: string
+  startTime: string
+  endTime: string
+  durationSec: number
+  lng: number
+  lat: number
+}
+
+interface PageQuery {
+  identityCode?: string
+  plateNo?: string
+  start?: string
+  end?: string
+  page?: number
+  size?: number
+}
+
+export function getTrackPage(params: PageQuery): Promise<PageData<TrackPointRow>> {
+  return http.get('/api/traj/track/page', { params })
+}
+
+export function getEventsPage(params: PageQuery): Promise<PageData<EventRow>> {
+  return http.get('/api/traj/events/page', { params })
+}
+
+export function getStopsPage(params: PageQuery): Promise<PageData<StopSeg>> {
+  return http.get('/api/traj/stops/page', { params })
+}
+
 export interface LoadSampleResult {
   file: string
   identityCode: string
